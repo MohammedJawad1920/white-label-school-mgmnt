@@ -1,0 +1,5 @@
+{
+  "devDependencies": {
+    "@lavamoat/allow-scripts": "^3.4.2"
+  }
+}
