@@ -84,4 +84,10 @@ async function login(req, res) {
   }
 }
 
-module.exports = { login };
+async function logout(req, res) {
+  // Stateless logout - client must discard token
+  // Server just acknowledges the logout action
+  return res.status(204).send();
+}
+
+module.exports = { login, logout };
