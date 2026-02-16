@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 function tenantContextMiddleware(req, res, next) {
   try {
     // 1. Extract token from Authorization header
-    const authHeader = req.header.authorization;
+    const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         error: "UNAUTHORIZED",

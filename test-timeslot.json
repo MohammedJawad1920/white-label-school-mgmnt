@@ -1,0 +1,10 @@
+{
+  "classId": "C001",
+  "subjectId": "SUB001",
+  "teacherId": "U001",
+  "dayOfWeek": "Monday",
+  "periodNumber": 1,
+  "effectiveFrom": "2026-01-28",
+  "startTime": "09:00",
+  "endTime": "09:45"
+}
