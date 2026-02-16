@@ -7,42 +7,42 @@ async function getTimetable(req, res) {
     const { date, dayOfWeek, teacherId, classId, status } = req.query;
 
     // Build WHERE conditions
-    const conditions = ["tenant_id = $1"];
+    const conditions = ["ts.tenant_id = $1"];
     const params = [tenantId];
     let paramCount = 1;
 
     // Add date filter if provided
     if (date) {
       paramCount++;
-      conditions.push(`effective_from <= $${paramCount}`);
+      conditions.push(`ts.effective_from <= $${paramCount}`);
       params.push(date);
 
       paramCount++;
       conditions.push(
-        `(effective_to IS NULL OR effective_to >= $${paramCount})`,
+        `(ts.effective_to IS NULL OR ts.effective_to >= $${paramCount})`,
       );
       params.push(date);
     }
 
     if (dayOfWeek) {
       paramCount++;
-      conditions.push(`day_of_week = $${paramCount}`);
+      conditions.push(`ts.day_of_week = $${paramCount}`);
       params.push(dayOfWeek);
     }
     if (teacherId) {
       paramCount++;
-      conditions.push(`teacher_id = $${paramCount}`);
+      conditions.push(`ts.teacher_id = $${paramCount}`);
       params.push(teacherId);
     }
     if (classId) {
       paramCount++;
-      conditions.push(`class_id = $${paramCount}`);
+      conditions.push(`ts.class_id = $${paramCount}`);
       params.push(classId);
     }
 
     // Add status filter
     if (!status || status === "Active") {
-      conditions.push("effective_to IS NULL");
+      conditions.push("ts.effective_to IS NULL");
     }
 
     // Build query with JOINs
