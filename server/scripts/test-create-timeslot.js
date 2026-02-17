@@ -20,7 +20,7 @@ async function testCreateTimeSlot() {
     // Step 2: Create timeslot
     console.log("2️⃣  Creating timeslot...\n");
     const createResponse = await axios.post(
-      "http://localhost:3000/api/timetable/create",
+      "http://localhost:3000/api/timetable",
       {
         classId: "C001",
         subjectId: "SUB001",

@@ -77,8 +77,12 @@ async function getTimetable(req, res) {
   } catch (error) {
     console.error("Get timetable error:", error);
     return res.status(500).json({
-      error: "INTERNAL_ERROR",
-      message: "An error occurred while fetching timetable",
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "An error occurred while fetching timetable",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
     });
   }
 }
@@ -97,13 +101,19 @@ async function createTimeSlot(req, res) {
       endTime,
     } = req.body;
 
+    // Authorization
     if (!roles.includes("Admin")) {
       return res.status(403).json({
-        error: "FORBIDDEN",
-        message: "Only Admin can create Time Slots",
+        error: {
+          code: "FORBIDDEN",
+          message: "Only Admin can create TimeSlots",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
+    // Validation
     if (
       !classId ||
       !subjectId ||
@@ -113,11 +123,58 @@ async function createTimeSlot(req, res) {
       !effectiveFrom
     ) {
       return res.status(400).json({
-        error: "VALIDATION_ERROR",
-        message: "Missing required fields",
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Missing required fields",
+          details: {
+            required: [
+              "classId",
+              "subjectId",
+              "teacherId",
+              "dayOfWeek",
+              "periodNumber",
+              "effectiveFrom",
+            ],
+          },
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
+    // Validate dayOfWeek
+    const validDays = [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday",
+    ];
+    if (!validDays.includes(dayOfWeek)) {
+      return res.status(400).json({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid dayOfWeek",
+          details: { validDays },
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    // Validate periodNumber
+    if (periodNumber < 1 || periodNumber > 10) {
+      return res.status(400).json({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "periodNumber must be between 1 and 10",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    // Verify class exists
     const doesClassExist = await db.query(
       `SELECT id FROM classes WHERE id = $1 AND tenant_id = $2`,
       [classId, tenantId],
@@ -125,10 +182,16 @@ async function createTimeSlot(req, res) {
 
     if (doesClassExist.rows.length === 0) {
       return res.status(404).json({
-        error: "NOT_FOUND",
-        message: "Class not found",
+        error: {
+          code: "NOT_FOUND",
+          message: "Class not found",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
       });
     }
+
+    // Verify subject exists
     const doesSubjectExist = await db.query(
       `SELECT id FROM subjects WHERE id = $1 AND tenant_id = $2`,
       [subjectId, tenantId],
@@ -136,10 +199,16 @@ async function createTimeSlot(req, res) {
 
     if (doesSubjectExist.rows.length === 0) {
       return res.status(404).json({
-        error: "NOT_FOUND",
-        message: "Subject not found",
+        error: {
+          code: "NOT_FOUND",
+          message: "Subject not found",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
       });
     }
+
+    // Verify teacher exists and has Teacher role
     const doesTeacherExist = await db.query(
       `SELECT id, roles FROM users WHERE id = $1 AND tenant_id = $2`,
       [teacherId, tenantId],
@@ -147,19 +216,28 @@ async function createTimeSlot(req, res) {
 
     if (doesTeacherExist.rows.length === 0) {
       return res.status(404).json({
-        error: "NOT_FOUND",
-        message: "Teacher not found",
+        error: {
+          code: "NOT_FOUND",
+          message: "Teacher not found",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
     const teacherRoles = doesTeacherExist.rows[0].roles;
     if (!teacherRoles.includes("Teacher")) {
       return res.status(400).json({
-        error: "VALIDATION_ERROR",
-        message: "User does not have Teacher role",
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "User does not have Teacher role",
+          details: { userId: teacherId, roles: teacherRoles },
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
+    // Check for duplicate active slot
     const existingSlot = await db.query(
       `SELECT id FROM time_slots 
       WHERE tenant_id = $1 
@@ -172,10 +250,21 @@ async function createTimeSlot(req, res) {
 
     if (existingSlot.rows.length > 0) {
       return res.status(409).json({
-        error: "CONFLICT",
-        message: "Active Time Slot already exists for this class/day/period",
+        error: {
+          code: "CONFLICT",
+          message: "Active TimeSlot already exists for this class/day/period",
+          details: {
+            existingSlotId: existingSlot.rows[0].id,
+            classId,
+            dayOfWeek,
+            periodNumber,
+          },
+          timestamp: new Date().toISOString(),
+        },
       });
     }
+
+    // Create new timeslot
     const id = nanoid(10);
 
     const newTimeSlot = await db.query(
@@ -201,8 +290,12 @@ async function createTimeSlot(req, res) {
   } catch (error) {
     console.error("Create timeslot error:", error);
     return res.status(500).json({
-      error: "INTERNAL_ERROR",
-      message: "An error occurred while creating timeslot",
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "An error occurred while creating timeslot",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
     });
   }
 }
@@ -213,19 +306,27 @@ async function endTimeSlot(req, res) {
     const { timeSlotId } = req.params;
     const { effectiveTo } = req.body;
 
-    // Step 1: Authorization (Admin only)
+    // Step 1: Authorization (v3: Admin only)
     if (!roles.includes("Admin")) {
       return res.status(403).json({
-        error: "FORBIDDEN",
-        message: "Only Admin can end TimeSlot assignments",
+        error: {
+          code: "FORBIDDEN",
+          message: "Only Admin can end TimeSlot assignments",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
     // Step 2: Validate required field
     if (!effectiveTo) {
       return res.status(400).json({
-        error: "VALIDATION_ERROR",
-        message: "effectiveTo is required",
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "effectiveTo is required",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
@@ -237,16 +338,26 @@ async function endTimeSlot(req, res) {
 
     if (existingSlot.rows.length === 0) {
       return res.status(404).json({
-        error: "NOT_FOUND",
-        message: "TimeSlot does not exist",
+        error: {
+          code: "NOT_FOUND",
+          message: "TimeSlot does not exist",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
     // Step 4: Check if already ended
     if (existingSlot.rows[0].effective_to !== null) {
       return res.status(409).json({
-        error: "CONFLICT",
-        message: "TimeSlot is already ended",
+        error: {
+          code: "CONFLICT",
+          message: "TimeSlot is already ended",
+          details: {
+            effectiveTo: existingSlot.rows[0].effective_to,
+          },
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
@@ -262,8 +373,12 @@ async function endTimeSlot(req, res) {
   } catch (error) {
     console.error("End timeslot error:", error);
     return res.status(500).json({
-      error: "INTERNAL_ERROR",
-      message: "An error occurred while ending timeslot",
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "An error occurred while ending timeslot",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
     });
   }
 }

@@ -9,21 +9,29 @@ async function login(req, res) {
     // 1. Validate inputs
     if (!email || !password || !tenantSlug) {
       return res.status(400).json({
-        error: "VALIDATION_ERROR",
-        message: "email, password, and tenantSlug are required",
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "email, password, and tenantSlug are required",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
     // 2. Look up tenant by slug
     const tenantResult = await db.query(
-      "SELECT id FROM tenants WHERE slug = $1 ",
+      "SELECT id FROM tenants WHERE slug = $1",
       [tenantSlug],
     );
 
     if (tenantResult.rows.length === 0) {
       return res.status(404).json({
-        error: "TENANT_NOT_FOUND",
-        message: "Tenant does not exist",
+        error: {
+          code: "TENANT_NOT_FOUND",
+          message: "Tenant does not exist",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
@@ -31,26 +39,34 @@ async function login(req, res) {
 
     // 3. Look up user in that tenant
     const userResult = await db.query(
-      "SELECT id, name, email, password_hash, roles FROM users WHERE tenant_id = $1 AND  email = $2",
+      "SELECT id, name, email, password_hash, roles FROM users WHERE tenant_id = $1 AND email = $2",
       [tenantId, email],
     );
 
     if (userResult.rows.length === 0) {
       return res.status(401).json({
-        error: "INVALID_CREDENTIALS",
-        message: "Invalid credentials",
+        error: {
+          code: "INVALID_CREDENTIALS",
+          message: "Invalid credentials",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
     const user = userResult.rows[0];
 
-    // Verify password
+    // 4. Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
     if (!isPasswordValid) {
       return res.status(401).json({
-        error: "INVALID_CREDENTIALS",
-        message: "Invalid credentials",
+        error: {
+          code: "INVALID_CREDENTIALS",
+          message: "Invalid credentials",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
@@ -78,8 +94,12 @@ async function login(req, res) {
   } catch (error) {
     console.error("Login error:", error);
     return res.status(500).json({
-      error: "INTERNAL_ERROR",
-      message: "An error occurred during login",
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "An error occurred during login",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
     });
   }
 }
