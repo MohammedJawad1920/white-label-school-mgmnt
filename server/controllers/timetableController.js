@@ -7,7 +7,14 @@ async function getTimetable(req, res) {
     const { date, dayOfWeek, teacherId, classId, status } = req.query;
 
     // Build WHERE conditions
-    const conditions = ["ts.tenant_id = $1"];
+    // v3.1: Filter out soft-deleted timeslots, classes, subjects, and users
+    const conditions = [
+      "ts.tenant_id = $1",
+      "ts.deleted_at IS NULL",
+      "c.deleted_at IS NULL",
+      "s.deleted_at IS NULL",
+      "u.deleted_at IS NULL",
+    ];
     const params = [tenantId];
     let paramCount = 1;
 
@@ -174,9 +181,9 @@ async function createTimeSlot(req, res) {
       });
     }
 
-    // Verify class exists
+    // v3.1: Verify class exists and not deleted
     const doesClassExist = await db.query(
-      `SELECT id FROM classes WHERE id = $1 AND tenant_id = $2`,
+      `SELECT id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
       [classId, tenantId],
     );
 
@@ -191,9 +198,9 @@ async function createTimeSlot(req, res) {
       });
     }
 
-    // Verify subject exists
+    // v3.1: Verify subject exists and not deleted
     const doesSubjectExist = await db.query(
-      `SELECT id FROM subjects WHERE id = $1 AND tenant_id = $2`,
+      `SELECT id FROM subjects WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
       [subjectId, tenantId],
     );
 
@@ -208,9 +215,9 @@ async function createTimeSlot(req, res) {
       });
     }
 
-    // Verify teacher exists and has Teacher role
+    // v3.1: Verify teacher exists, has Teacher role, and not deleted
     const doesTeacherExist = await db.query(
-      `SELECT id, roles FROM users WHERE id = $1 AND tenant_id = $2`,
+      `SELECT id, roles FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
       [teacherId, tenantId],
     );
 
@@ -237,14 +244,15 @@ async function createTimeSlot(req, res) {
       });
     }
 
-    // Check for duplicate active slot
+    // v3.1: Check for duplicate active slot (only non-deleted)
     const existingSlot = await db.query(
       `SELECT id FROM time_slots 
       WHERE tenant_id = $1 
       AND class_id = $2 
       AND day_of_week = $3 
       AND period_number = $4 
-      AND effective_to IS NULL`,
+      AND effective_to IS NULL
+      AND deleted_at IS NULL`,
       [tenantId, classId, dayOfWeek, periodNumber],
     );
 
@@ -330,9 +338,9 @@ async function endTimeSlot(req, res) {
       });
     }
 
-    // Step 3: Check if timeslot exists
+    // Step 3: v3.1: Check if timeslot exists and not deleted
     const existingSlot = await db.query(
-      "SELECT id, effective_to FROM time_slots WHERE id = $1 AND tenant_id = $2",
+      "SELECT id, effective_to FROM time_slots WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
       [timeSlotId, tenantId],
     );
 
@@ -361,7 +369,7 @@ async function endTimeSlot(req, res) {
       });
     }
 
-    // Step 5: Update effective_to
+    // Step 5: Update effective_to (NOT soft delete - this is ending assignment)
     const result = await db.query(
       "UPDATE time_slots SET effective_to = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
       [effectiveTo, timeSlotId],

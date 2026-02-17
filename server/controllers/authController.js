@@ -37,9 +37,9 @@ async function login(req, res) {
 
     const tenantId = tenantResult.rows[0].id;
 
-    // 3. Look up user in that tenant
+    // 3. v3.1: Look up user in that tenant (exclude deleted users)
     const userResult = await db.query(
-      "SELECT id, name, email, password_hash, roles FROM users WHERE tenant_id = $1 AND email = $2",
+      "SELECT id, name, email, password_hash, roles FROM users WHERE tenant_id = $1 AND email = $2 AND deleted_at IS NULL",
       [tenantId, email],
     );
 

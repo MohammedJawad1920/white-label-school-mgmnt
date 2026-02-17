@@ -7,11 +7,12 @@ async function getClasses(req, res) {
     const { tenantId } = req.context;
     const { batchId, search } = req.query;
 
+    // v3.1: Filter out soft-deleted records (both classes and batches)
     let query = `
       SELECT c.*, b.name as batch_name 
       FROM classes c
       JOIN batches b ON c.batch_id = b.id
-      WHERE c.tenant_id = $1
+      WHERE c.tenant_id = $1 AND c.deleted_at IS NULL AND b.deleted_at IS NULL
     `;
     const params = [tenantId];
     let paramCount = 1;
@@ -78,9 +79,9 @@ async function createClass(req, res) {
       });
     }
 
-    // Verify batch exists
+    // v3.1: Verify batch exists and not deleted
     const batchCheck = await db.query(
-      "SELECT id FROM batches WHERE id = $1 AND tenant_id = $2",
+      "SELECT id FROM batches WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
       [batchId, tenantId],
     );
 
@@ -138,9 +139,9 @@ async function updateClass(req, res) {
       });
     }
 
-    // Check if class exists
+    // v3.1: Check if class exists and not deleted
     const existing = await db.query(
-      "SELECT id FROM classes WHERE id = $1 AND tenant_id = $2",
+      "SELECT id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
       [id, tenantId],
     );
 
@@ -155,10 +156,10 @@ async function updateClass(req, res) {
       });
     }
 
-    // If batchId is being changed, verify new batch exists
+    // If batchId is being changed, verify new batch exists and not deleted
     if (batchId) {
       const batchCheck = await db.query(
-        "SELECT id FROM batches WHERE id = $1 AND tenant_id = $2",
+        "SELECT id FROM batches WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
         [batchId, tenantId],
       );
 
@@ -173,9 +174,9 @@ async function updateClass(req, res) {
         });
       }
 
-      // Check if students exist that would violate batch constraint
+      // v3.1: Check if non-deleted students exist that would violate batch constraint
       const studentCheck = await db.query(
-        "SELECT COUNT(*) as count FROM students WHERE class_id = $1 AND batch_id != $2",
+        "SELECT COUNT(*) as count FROM students WHERE class_id = $1 AND batch_id != $2 AND deleted_at IS NULL",
         [id, batchId],
       );
 
@@ -223,7 +224,7 @@ async function updateClass(req, res) {
 
     updates.push(`updated_at = NOW()`);
 
-    const query = `UPDATE classes SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2 RETURNING *`;
+    const query = `UPDATE classes SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL RETURNING *`;
 
     const result = await db.query(query, params);
 
@@ -243,7 +244,7 @@ async function updateClass(req, res) {
   }
 }
 
-// DELETE /api/classes/:id
+// DELETE /api/classes/:id (v3.1: SOFT DELETE)
 async function deleteClass(req, res) {
   try {
     const { tenantId, roles } = req.context;
@@ -261,9 +262,9 @@ async function deleteClass(req, res) {
       });
     }
 
-    // Check if class exists
+    // v3.1: Check if class exists and not already deleted
     const existing = await db.query(
-      "SELECT id FROM classes WHERE id = $1 AND tenant_id = $2",
+      "SELECT id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
       [id, tenantId],
     );
 
@@ -278,9 +279,9 @@ async function deleteClass(req, res) {
       });
     }
 
-    // Check for student references (RESTRICT constraint)
+    // v3.1: Check for student references (only non-deleted)
     const studentCheck = await db.query(
-      "SELECT COUNT(*) as count FROM students WHERE class_id = $1",
+      "SELECT COUNT(*) as count FROM students WHERE class_id = $1 AND deleted_at IS NULL",
       [id],
     );
 
@@ -297,10 +298,11 @@ async function deleteClass(req, res) {
       });
     }
 
-    await db.query("DELETE FROM classes WHERE id = $1 AND tenant_id = $2", [
-      id,
-      tenantId,
-    ]);
+    // v3.1: SOFT DELETE - Update deleted_at instead of hard delete
+    await db.query(
+      "UPDATE classes SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND tenant_id = $2",
+      [id, tenantId],
+    );
 
     return res.status(204).send();
   } catch (error) {

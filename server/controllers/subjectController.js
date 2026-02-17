@@ -7,7 +7,8 @@ async function getSubjects(req, res) {
     const { tenantId } = req.context;
     const { search } = req.query;
 
-    let query = `SELECT * FROM subjects WHERE tenant_id = $1`;
+    // v3.1: Filter out soft-deleted records
+    let query = `SELECT * FROM subjects WHERE tenant_id = $1 AND deleted_at IS NULL`;
     const params = [tenantId];
 
     if (search) {
@@ -108,9 +109,9 @@ async function updateSubject(req, res) {
       });
     }
 
-    // Check if subject exists
+    // v3.1: Check if subject exists and not deleted
     const existing = await db.query(
-      "SELECT id FROM subjects WHERE id = $1 AND tenant_id = $2",
+      "SELECT id FROM subjects WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
       [id, tenantId],
     );
 
@@ -154,7 +155,7 @@ async function updateSubject(req, res) {
 
     updates.push(`updated_at = NOW()`);
 
-    const query = `UPDATE subjects SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2 RETURNING *`;
+    const query = `UPDATE subjects SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL RETURNING *`;
 
     const result = await db.query(query, params);
 
@@ -174,7 +175,7 @@ async function updateSubject(req, res) {
   }
 }
 
-// DELETE /api/subjects/:id
+// DELETE /api/subjects/:id (v3.1: SOFT DELETE)
 async function deleteSubject(req, res) {
   try {
     const { tenantId, roles } = req.context;
@@ -192,9 +193,9 @@ async function deleteSubject(req, res) {
       });
     }
 
-    // Check if subject exists
+    // v3.1: Check if subject exists and not already deleted
     const existing = await db.query(
-      "SELECT id FROM subjects WHERE id = $1 AND tenant_id = $2",
+      "SELECT id FROM subjects WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
       [id, tenantId],
     );
 
@@ -209,9 +210,9 @@ async function deleteSubject(req, res) {
       });
     }
 
-    // Check for timeslot references (RESTRICT constraint)
+    // v3.1: Check for timeslot references (only non-deleted)
     const timeslotCheck = await db.query(
-      "SELECT COUNT(*) as count FROM time_slots WHERE subject_id = $1",
+      "SELECT COUNT(*) as count FROM time_slots WHERE subject_id = $1 AND deleted_at IS NULL",
       [id],
     );
 
@@ -228,10 +229,11 @@ async function deleteSubject(req, res) {
       });
     }
 
-    await db.query("DELETE FROM subjects WHERE id = $1 AND tenant_id = $2", [
-      id,
-      tenantId,
-    ]);
+    // v3.1: SOFT DELETE - Update deleted_at instead of hard delete
+    await db.query(
+      "UPDATE subjects SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND tenant_id = $2",
+      [id, tenantId],
+    );
 
     return res.status(204).send();
   } catch (error) {

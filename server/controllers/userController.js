@@ -20,7 +20,8 @@ async function getUsers(req, res) {
       });
     }
 
-    let query = `SELECT id, name, email, roles, created_at FROM users WHERE tenant_id = $1`;
+    // v3.1: Filter out soft-deleted records
+    let query = `SELECT id, name, email, roles, created_at FROM users WHERE tenant_id = $1 AND deleted_at IS NULL`;
     const params = [tenantId];
     let paramCount = 1;
 
@@ -143,9 +144,9 @@ async function createUser(req, res) {
     // Deduplicate roles
     const uniqueRoles = [...new Set(roles)];
 
-    // Check if email already exists
+    // v3.1: Check if email already exists (only among non-deleted users)
     const existingUser = await db.query(
-      "SELECT id FROM users WHERE tenant_id = $1 AND email = $2",
+      "SELECT id FROM users WHERE tenant_id = $1 AND email = $2 AND deleted_at IS NULL",
       [tenantId, email],
     );
 
@@ -209,9 +210,9 @@ async function updateUser(req, res) {
       });
     }
 
-    // Check if user exists
+    // v3.1: Check if user exists and not deleted
     const existing = await db.query(
-      "SELECT id FROM users WHERE id = $1 AND tenant_id = $2",
+      "SELECT id FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
       [id, tenantId],
     );
 
@@ -226,10 +227,10 @@ async function updateUser(req, res) {
       });
     }
 
-    // If email is being changed, check for duplicates
+    // v3.1: If email is being changed, check for duplicates (only non-deleted)
     if (email) {
       const emailCheck = await db.query(
-        "SELECT id FROM users WHERE tenant_id = $1 AND email = $2 AND id != $3",
+        "SELECT id FROM users WHERE tenant_id = $1 AND email = $2 AND id != $3 AND deleted_at IS NULL",
         [tenantId, email, id],
       );
 
@@ -326,7 +327,7 @@ async function updateUser(req, res) {
 
     updates.push(`updated_at = NOW()`);
 
-    const query = `UPDATE users SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2 RETURNING id, name, email, roles, updated_at`;
+    const query = `UPDATE users SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL RETURNING id, name, email, roles, updated_at`;
 
     const result = await db.query(query, params);
 
@@ -346,7 +347,7 @@ async function updateUser(req, res) {
   }
 }
 
-// DELETE /api/users/:id
+// DELETE /api/users/:id (v3.1: SOFT DELETE)
 async function deleteUser(req, res) {
   try {
     const { tenantId, roles: currentUserRoles } = req.context;
@@ -364,9 +365,9 @@ async function deleteUser(req, res) {
       });
     }
 
-    // Check if user exists
+    // v3.1: Check if user exists and not already deleted
     const existing = await db.query(
-      "SELECT id FROM users WHERE id = $1 AND tenant_id = $2",
+      "SELECT id FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
       [id, tenantId],
     );
 
@@ -381,9 +382,9 @@ async function deleteUser(req, res) {
       });
     }
 
-    // Check for timeslot references (RESTRICT constraint)
+    // v3.1: Check for timeslot references (only non-deleted)
     const timeslotCheck = await db.query(
-      "SELECT COUNT(*) as count FROM time_slots WHERE teacher_id = $1",
+      "SELECT COUNT(*) as count FROM time_slots WHERE teacher_id = $1 AND deleted_at IS NULL",
       [id],
     );
 
@@ -400,10 +401,11 @@ async function deleteUser(req, res) {
       });
     }
 
-    await db.query("DELETE FROM users WHERE id = $1 AND tenant_id = $2", [
-      id,
-      tenantId,
-    ]);
+    // v3.1: SOFT DELETE - Update deleted_at instead of hard delete
+    await db.query(
+      "UPDATE users SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND tenant_id = $2",
+      [id, tenantId],
+    );
 
     return res.status(204).send();
   } catch (error) {
