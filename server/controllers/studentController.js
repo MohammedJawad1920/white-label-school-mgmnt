@@ -2,7 +2,6 @@ const { nanoid } = require("nanoid");
 const db = require("../config/database");
 
 // GET /api/students
-
 async function getStudents(req, res) {
   try {
     const { tenantId, roles, userId } = req.context;
@@ -18,9 +17,7 @@ async function getStudents(req, res) {
       // Get classes this teacher is assigned to
       const teacherClasses = await db.query(
         `SELECT DISTINCT class_id FROM time_slots 
-        WHERE teacher_id = $1 
-        AND tenant_id = $2 
-        AND deleted_at = NULL`,
+         WHERE teacher_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
         [userId, tenantId],
       );
       authorizedClassIds = teacherClasses.rows.map((r) => r.class_id);
@@ -33,61 +30,71 @@ async function getStudents(req, res) {
       }
     }
 
-    // Filter out soft-deleted records (students, classes, batches)
-    let query = `
-    SELECT s.*, c.name as class_name, b.name as batch_name 
-    FROM students s
-    JOIN classes c ON s.class_id = c.id
-    JOIN batches b ON s.batch_id = b.id
-    WHERE s.tenant_id = $1
-    AND s.deleted_at = NULL
-    AND c.deleted_at = NULL
-    AND b.deleted_at = NULL
-    `;
+    // Build WHERE conditions
+    const conditions = [
+      "s.tenant_id = $1",
+      "s.deleted_at IS NULL",
+      "c.deleted_at IS NULL",
+      "b.deleted_at IS NULL",
+    ];
     const params = [tenantId];
     let paramCount = 1;
 
     // Teacher authorization filter
     if (!roles.includes("Admin")) {
       paramCount++;
-      query += ` AND s.class_id = ANY($${paramCount}::text[])`;
+      conditions.push(`s.class_id = ANY($${paramCount}::text[])`);
       params.push(authorizedClassIds);
     }
 
     // Filter by classId
     if (classId) {
       paramCount++;
-      query += ` AND s.class_id = $${paramCount}`;
+      conditions.push(`s.class_id = $${paramCount}`);
       params.push(classId);
     }
 
     // Filter by batchId
     if (batchId) {
       paramCount++;
-      query += ` AND s.batch_id = $${paramCount}`;
+      conditions.push(`s.batch_id = $${paramCount}`);
       params.push(batchId);
     }
 
     // Search by name
     if (search) {
       paramCount++;
-      query += ` AND s.name ILIKE $${paramCount}`;
-      params.push(search);
+      conditions.push(`s.name ILIKE $${paramCount}`);
+      params.push(`%${search}%`);
     }
 
+    const whereClause = conditions.join(" AND ");
+
     // Get total count
-    const countQuery = query.replace(
-      `SELECT s.*, c.name as class_name, b.name as batch_name`,
-      `SELECT COUNT(*) as total`,
-    );
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM students s
+      JOIN classes c ON s.class_id = c.id
+      JOIN batches b ON s.batch_id = b.id
+      WHERE ${whereClause}
+    `;
     const countResult = await db.query(countQuery, params);
     const total = parseInt(countResult.rows[0].total);
 
-    // Add pagination
-    query += ` ORDER BY s.name ASC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    // Get students with pagination
+    const dataQuery = `
+      SELECT s.id, s.name, s.class_id, s.batch_id, s.created_at,
+             c.name as class_name, b.name as batch_name
+      FROM students s
+      JOIN classes c ON s.class_id = c.id
+      JOIN batches b ON s.batch_id = b.id
+      WHERE ${whereClause}
+      ORDER BY s.name ASC
+      LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+    `;
     params.push(limitInt, offsetInt);
 
-    const result = await db.query(query, params);
+    const result = await db.query(dataQuery, params);
 
     return res.status(200).json({
       students: result.rows.map((row) => ({
@@ -273,6 +280,11 @@ async function updateStudent(req, res) {
     const params = [id, tenantId];
     let paramCount = 2;
 
+    if (name !== undefined) {
+      paramCount++;
+      updates.push(`name = $${paramCount}`);
+      params.push(name);
+    }
     if (classId !== undefined) {
       paramCount++;
       updates.push(`class_id = $${paramCount}`);
@@ -317,7 +329,7 @@ async function updateStudent(req, res) {
   }
 }
 
-// DELETE /api/students/:id (v3.1: SOFT DELETE)
+// DELETE /api/students/:id (SOFT DELETE)
 async function deleteStudent(req, res) {
   try {
     const { tenantId, roles } = req.context;
