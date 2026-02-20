@@ -316,3 +316,97 @@ async function updateStudent(req, res) {
     });
   }
 }
+
+// DELETE /api/students/:id (v3.1: SOFT DELETE)
+async function deleteStudent(req, res) {
+  try {
+    const { tenantId, roles } = req.context;
+    const { id } = req.params;
+
+    // Authorization: Only Admin
+    if (!roles.includes("Admin")) {
+      return res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
+          message: "Only Admin can delete students",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    // Check if student exists and not already deleted
+    const existing = await db.query(
+      "SELECT id FROM students WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+      [id, tenantId],
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: "NOT_FOUND",
+          message: "Student does not exist",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    // Check for attendance record references (RESTRICT constraint)
+    const attendanceCheck = await db.query(
+      "SELECT COUNT(*) as count FROM attendance_records WHERE student_id = $1",
+      [id],
+    );
+
+    if (parseInt(attendanceCheck.rows[0].count) > 0) {
+      return res.status(409).json({
+        error: {
+          code: "CONFLICT",
+          message: "Cannot delete student with existing attendance records",
+          details: {
+            attendanceCount: parseInt(attendanceCheck.rows[0].count),
+          },
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    // SOFT DELETE - Update deleted_at instead of hard delete
+    await db.query(
+      "UPDATE students SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND tenant_id = $2",
+      [id, tenantId],
+    );
+
+    return res.status(204).send();
+  } catch (error) {
+    console.error("Delete student error:", error);
+
+    // Handle foreign key constraint violations
+    if (error.code === "23503") {
+      return res.status(409).json({
+        error: {
+          code: "CONFLICT",
+          message: "Cannot delete student due to existing references",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    return res.status(500).json({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "An error occurred while deleting student",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+}
+
+module.exports = {
+  getStudents,
+  createStudent,
+  updateStudent,
+  deleteStudent,
+};
