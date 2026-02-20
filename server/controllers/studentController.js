@@ -116,3 +116,87 @@ async function getStudents(req, res) {
     });
   }
 }
+
+// POST /api/students
+async function createStudent(req, res) {
+  try {
+    const { tenantId, roles } = req.context;
+    const { name, classId, batchId } = req.body;
+
+    // Authorization: Only Admin
+    if (!roles.includes("Admin")) {
+      return res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
+          message: "Only Admin can create students",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    // Validation
+    if (!name || !classId || !batchId) {
+      return res.status(400).json({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "name, classId, and batchId are required",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    // Verify class exists and not deleted
+    const classCheck = await db.query(
+      "SELECT batch_id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+      [classId, tenantId],
+    );
+
+    if (classCheck.rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: "NOT_FOUND",
+          message: "Class does not exist",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    // CRITICAL: Validate student batch matches class batch
+    const classBatchId = classCheck.rows[0].batch_id;
+    if (classBatchId !== batchId) {
+      return res.status(400).json({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: `Student batch must match class batch (Class is in batch ${classBatchId}, you provided ${batchId})`,
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    const id = nanoid(10);
+
+    const result = await db.query(
+      `INSERT INTO students (id, tenant_id, name, class_id, batch_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [id, tenantId, name, classId, batchId],
+    );
+
+    return res.status(201).json({
+      student: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Create student error:", error);
+    return res.status(500).json({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "An error occurred while creating student",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+}
