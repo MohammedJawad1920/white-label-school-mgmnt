@@ -8,6 +8,8 @@ const batchRoutes = require("./routes/batchRoutes");
 const subjectRoutes = require("./routes/subjectRoutes");
 const classRoutes = require("./routes/classRoutes");
 const userRoutes = require("./routes/userRoutes");
+const studentRoutes = require("./routes/studentRoutes");
+const attendanceRoutes = require("./routes/attendanceRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,6 +25,8 @@ app.use("/api/batches", batchRoutes);
 app.use("/api/subjects", subjectRoutes);
 app.use("/api/classes", classRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/students", studentRoutes);
+app.use("/api/attendance", attendanceRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
@@ -81,4 +85,11 @@ app.listen(PORT, () => {
   console.log("   GET    /api/timetable");
   console.log("   POST   /api/timetable");
   console.log("   PUT    /api/timetable/:timeSlotId/end");
+  console.log("   GET    /api/students");
+  console.log("   POST   /api/students");
+  console.log("   GET    /api/students/:studentId/attendance");
+  console.log("   PUT    /api/students/:id");
+  console.log("   DELETE /api/students/:id");
+  console.log("   POST   /api/attendance/record-class");
+  console.log("   GET    /api/attendance/summary");
 });
