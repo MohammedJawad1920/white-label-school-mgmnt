@@ -200,3 +200,119 @@ async function createStudent(req, res) {
     });
   }
 }
+
+// PUT /api/students/:id
+async function updateStudent(req, res) {
+  try {
+    const { tenantId, roles } = req.context;
+    const { id } = req.params;
+    const { name, classId, batchId } = req.body;
+
+    // Authorization: Only Admin
+    if (!roles.includes("Admin")) {
+      return res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
+          message: "Only Admin can update students",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    // Check if student exists and not deleted
+    const existing = await db.query(
+      "SELECT id FROM students WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+      [id, tenantId],
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: "NOT_FOUND",
+          message: "Student does not exist",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    // If classId or batchId changing, validate consistency
+    if (classId && batchId) {
+      const classCheck = await db.query(
+        "SELECT batch_id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+        [classId, tenantId],
+      );
+
+      if (classCheck.rows.length === 0) {
+        return res.status(404).json({
+          error: {
+            code: "NOT_FOUND",
+            message: "Class does not exist",
+            details: {},
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      const classBatchId = classCheck.rows[0].batch_id;
+      if (classBatchId !== batchId) {
+        return res.status(400).json({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: `Student batch must match class batch (Class is in batch ${classBatchId}, you provided ${batchId})`,
+            details: {},
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+    }
+
+    // Build update query
+    const updates = [];
+    const params = [id, tenantId];
+    let paramCount = 2;
+
+    if (classId !== undefined) {
+      paramCount++;
+      updates.push(`class_id = $${paramCount}`);
+      params.push(classId);
+    }
+    if (batchId !== undefined) {
+      paramCount++;
+      updates.push(`batch_id = $${paramCount}`);
+      params.push(batchId);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "No fields to update",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    updates.push(`updated_at = NOW()`);
+
+    const query = `UPDATE students SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL RETURNING *`;
+
+    const result = await db.query(query, params);
+
+    return res.status(200).json({
+      student: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Update student error:", error);
+    return res.status(500).json({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "An error occurred while updating student",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+}
