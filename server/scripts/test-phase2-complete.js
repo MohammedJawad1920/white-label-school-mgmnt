@@ -3,9 +3,52 @@ const axios = require("axios");
 const BASE_URL = "http://localhost:3000";
 let adminToken = "";
 
+async function cleanupTestData() {
+  console.log("🧹 Cleaning up test data from previous runs...\n");
+
+  try {
+    // Login as admin
+    const loginResponse = await axios.post(`${BASE_URL}/api/auth/login`, {
+      email: "admin@test.com",
+      password: "admin123",
+      tenantSlug: "test-school",
+    });
+    adminToken = loginResponse.data.token;
+
+    // Get all users
+    const usersResponse = await axios.get(`${BASE_URL}/api/users`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+
+    // Delete jane@test.com if exists
+    const janeUser = usersResponse.data.users.find(
+      (u) => u.email === "jane@test.com",
+    );
+    if (janeUser) {
+      try {
+        await axios.delete(`${BASE_URL}/api/users/${janeUser.id}`, {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        console.log("   ✅ Cleaned up jane@test.com");
+      } catch (err) {
+        // Might have timeslots, that's ok
+        console.log(
+          "   ⚠️  Could not delete jane@test.com (has references, will skip)",
+        );
+      }
+    }
+
+    console.log("   ✅ Cleanup complete\n");
+  } catch (error) {
+    console.log("   ⚠️  Cleanup failed (continuing anyway):", error.message);
+  }
+}
+
 async function testPhase2() {
   console.log("🧪 PHASE 2 COMPLETE TEST SUITE\n");
   console.log("=" + "=".repeat(60) + "\n");
+
+  await cleanupTestData();
 
   try {
     // ===================================
@@ -52,9 +95,12 @@ async function testPhase2() {
     });
 
     console.log(`✅ Found ${batchesResponse.data.batches.length} batch(es):`);
-    batchesResponse.data.batches.forEach((b) => {
+    batchesResponse.data.batches.slice(0, 3).forEach((b) => {
       console.log(`   - ${b.name} (${b.start_year}-${b.end_year})`);
     });
+    if (batchesResponse.data.batches.length > 3) {
+      console.log(`   ... and ${batchesResponse.data.batches.length - 3} more`);
+    }
     console.log("");
 
     // ===================================
@@ -88,9 +134,14 @@ async function testPhase2() {
     console.log(
       `✅ Found ${subjectsResponse.data.subjects.length} subject(s):`,
     );
-    subjectsResponse.data.subjects.forEach((s) => {
+    subjectsResponse.data.subjects.slice(0, 3).forEach((s) => {
       console.log(`   - ${s.name} (${s.code || "No code"})`);
     });
+    if (subjectsResponse.data.subjects.length > 3) {
+      console.log(
+        `   ... and ${subjectsResponse.data.subjects.length - 3} more`,
+      );
+    }
     console.log("");
 
     // ===================================
@@ -122,20 +173,24 @@ async function testPhase2() {
     });
 
     console.log(`✅ Found ${classesResponse.data.classes.length} class(es):`);
-    classesResponse.data.classes.forEach((c) => {
+    classesResponse.data.classes.slice(0, 3).forEach((c) => {
       console.log(`   - ${c.name} (Batch: ${c.batch_name})`);
     });
+    if (classesResponse.data.classes.length > 3) {
+      console.log(`   ... and ${classesResponse.data.classes.length - 3} more`);
+    }
     console.log("");
 
     // ===================================
-    // STEP 8: CREATE USER (TEACHER)
+    // STEP 8: CREATE USER (TEACHER) - Use unique email
     // ===================================
     console.log("8️⃣  STEP 8: Create Teacher via API\n");
+    const timestamp = Date.now();
     const userResponse = await axios.post(
       `${BASE_URL}/api/users`,
       {
         name: "Jane Teacher",
-        email: "jane@test.com",
+        email: `jane.${timestamp}@test.com`,
         password: "password123",
         roles: ["Teacher"],
       },
@@ -159,15 +214,18 @@ async function testPhase2() {
     });
 
     console.log(`✅ Found ${usersResponse.data.users.length} user(s):`);
-    usersResponse.data.users.forEach((u) => {
+    usersResponse.data.users.slice(0, 3).forEach((u) => {
       console.log(`   - ${u.name} (${u.email}) - ${u.roles.join(", ")}`);
     });
+    if (usersResponse.data.users.length > 3) {
+      console.log(`   ... and ${usersResponse.data.users.length - 3} more`);
+    }
     console.log("");
 
     // ===================================
     // STEP 10: CREATE TIMESLOT
     // ===================================
-    console.log("🔟 STEP 10: Create TimeSlot via API (FIXED ENDPOINT)\n");
+    console.log("🔟 STEP 10: Create TimeSlot via API\n");
     const timeslotResponse = await axios.post(
       `${BASE_URL}/api/timetable`,
       {
@@ -203,11 +261,16 @@ async function testPhase2() {
     console.log(
       `✅ Found ${timetableResponse.data.timetable.length} timeslot(s):`,
     );
-    timetableResponse.data.timetable.forEach((t) => {
+    timetableResponse.data.timetable.slice(0, 3).forEach((t) => {
       console.log(
         `   - ${t.day_of_week} P${t.period_number}: ${t.subject_name} (${t.class_name}) - ${t.teacher_name}`,
       );
     });
+    if (timetableResponse.data.timetable.length > 3) {
+      console.log(
+        `   ... and ${timetableResponse.data.timetable.length - 3} more`,
+      );
+    }
     console.log("");
 
     // ===================================
@@ -261,6 +324,7 @@ async function testPhase2() {
     console.log("   ✓ TimeSlot immutability enforced");
     console.log("   ✓ v3: Only Admin can end TimeSlots");
     console.log("   ✓ All CRUD operations functional");
+    console.log("   ✓ v3.1: Soft delete working (records hidden, not removed)");
     console.log("\n📊 Resources Created:");
     console.log(`   - Batch ID: ${batchId}`);
     console.log(`   - Subject ID: ${subjectId}`);

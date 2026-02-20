@@ -3,9 +3,55 @@ const axios = require("axios");
 const BASE_URL = "http://localhost:3000";
 let adminToken = "";
 
+async function cleanupTestData() {
+  console.log("🧹 Cleaning up test data from previous runs...\n");
+
+  try {
+    // Login as admin
+    const loginResponse = await axios.post(`${BASE_URL}/api/auth/login`, {
+      email: "admin@test.com",
+      password: "admin123",
+      tenantSlug: "test-school",
+    });
+    adminToken = loginResponse.data.token;
+
+    // Get all users
+    const usersResponse = await axios.get(`${BASE_URL}/api/users`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+
+    // Delete softdelete@test.com if exists
+    const softDeleteUser = usersResponse.data.users.find(
+      (u) => u.email === "softdelete@test.com",
+    );
+    if (softDeleteUser) {
+      try {
+        await axios.delete(`${BASE_URL}/api/users/${softDeleteUser.id}`, {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        console.log("   ✅ Cleaned up softdelete@test.com");
+      } catch (err) {
+        console.log(
+          "   ⚠️  Could not delete softdelete@test.com (has references, will skip)",
+        );
+      }
+    }
+
+    console.log("   ✅ Cleanup complete\n");
+  } catch (error) {
+    console.log(
+      "   ⚠️  Cleanup failed (continuing anyway):",
+      error.message,
+      "\n",
+    );
+  }
+}
+
 async function testSoftDelete() {
   console.log("🧪 v3.1 SOFT DELETE VERIFICATION TEST\n");
   console.log("=" + "=".repeat(60) + "\n");
+
+  await cleanupTestData();
 
   try {
     // ===================================
@@ -143,11 +189,12 @@ async function testSoftDelete() {
     // STEP 8: CREATE USER AND TEST SOFT DELETE
     // ===================================
     console.log("8️⃣  STEP 8: Test User Soft Delete\n");
+    const timestamp = Date.now();
     const userResponse = await axios.post(
       `${BASE_URL}/api/users`,
       {
         name: "Test Soft Delete User",
-        email: "softdelete@test.com",
+        email: `softdelete.${timestamp}@test.com`,
         password: "password123",
         roles: ["Teacher"],
       },
@@ -157,6 +204,7 @@ async function testSoftDelete() {
     );
 
     const userId = userResponse.data.user.id;
+    const userEmail = userResponse.data.user.email;
     console.log(`✅ User created: ${userId}\n`);
 
     // Delete the user
@@ -170,7 +218,7 @@ async function testSoftDelete() {
     console.log("9️⃣  STEP 9: Try to Login with Deleted User (Should 401)\n");
     try {
       await axios.post(`${BASE_URL}/api/auth/login`, {
-        email: "softdelete@test.com",
+        email: userEmail,
         password: "password123",
         tenantSlug: "test-school",
       });
@@ -199,7 +247,7 @@ async function testSoftDelete() {
       `${BASE_URL}/api/users`,
       {
         name: "New User Same Email",
-        email: "softdelete@test.com",
+        email: userEmail,
         password: "newpassword123",
         roles: ["Admin"],
       },
