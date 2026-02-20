@@ -184,6 +184,17 @@ async function testPhase3() {
     console.log(
       `✅ Found ${studentsListResponse.data.students.length} students`,
     );
+
+    if (studentsListResponse.data.students.length === 0) {
+      console.log(
+        `❌ FAIL: Expected to find ${studentIds.length} students, but found 0\n`,
+      );
+      console.log(`   Debug: Created student IDs: ${studentIds.join(", ")}`);
+      console.log(`   Debug: Class ID: ${classId}`);
+      console.log(`   Debug: Batch ID: ${batchId}\n`);
+      process.exit(1);
+    }
+
     console.log(
       `   First student: ${studentsListResponse.data.students[0].name}\n`,
     );
@@ -455,7 +466,22 @@ async function testPhase3() {
     // ===================================
     console.log("1️⃣3️⃣  STEP 13: Test Student Soft Delete\n");
 
-    const studentToDelete = studentIds[4];
+    // Create a NEW student without attendance for soft delete test
+    const newStudentResponse = await axios.post(
+      `${BASE_URL}/api/students`,
+      {
+        name: "Student For Deletion Test",
+        classId: classId,
+        batchId: batchId,
+      },
+      {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      },
+    );
+    const studentToDelete = newStudentResponse.data.student.id;
+    console.log(
+      `   ✅ Created new student for deletion test: ${studentToDelete}`,
+    );
 
     // Delete student
     await axios.delete(`${BASE_URL}/api/students/${studentToDelete}`, {
@@ -480,6 +506,36 @@ async function testPhase3() {
     }
 
     // ===================================
+    // STEP 14: TEST CANNOT DELETE STUDENT WITH ATTENDANCE
+    // ===================================
+    console.log("1️⃣4️⃣  STEP 14: Test Cannot Delete Student With Attendance\n");
+
+    // Try to delete a student with attendance records (should fail)
+    try {
+      await axios.delete(`${BASE_URL}/api/students/${studentIds[0]}`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      console.log(
+        `   ❌ FAIL: Deleted student with attendance (should have been blocked)\n`,
+      );
+      process.exit(1);
+    } catch (error) {
+      if (error.response && error.response.status === 409) {
+        console.log(
+          `   ✅ Correctly prevented deletion: ${error.response.data.error.message}`,
+        );
+        console.log(
+          `   ✅ Attendance count: ${error.response.data.error.details.attendanceCount}\n`,
+        );
+      } else {
+        console.log(
+          `   ❌ FAIL: Wrong error: ${error.response?.status || error.message}\n`,
+        );
+        process.exit(1);
+      }
+    }
+
+    // ===================================
     // SUMMARY
     // ===================================
     console.log("=" + "=".repeat(60));
@@ -487,6 +543,7 @@ async function testPhase3() {
     console.log("✅ All Tests Passed:");
     console.log("   ✓ Student CRUD with batch validation");
     console.log("   ✓ Student soft delete (v3.1)");
+    console.log("   ✓ Cannot delete student with attendance records");
     console.log("   ✓ Bulk attendance recording (30 students = 1 API call)");
     console.log("   ✓ Attendance with exceptions (Present/Absent/Late)");
     console.log("   ✓ Duplicate attendance prevention");

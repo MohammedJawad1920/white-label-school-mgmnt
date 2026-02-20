@@ -84,7 +84,7 @@ async function recordClassAttendance(req, res) {
 
     // Check for duplicate attendance record
     const duplicateCheck = await db.query(
-      "SELECT COUNT(*) as count FROM attendance_records WHERE timeslot_id = $1 AND date = $2 AND tenant_id = $3",
+      "SELECT COUNT(*) as count FROM attendance_records WHERE time_slot_id = $1 AND date = $2 AND tenant_id = $3",
       [timeSlotId, date, tenantId],
     );
 
@@ -137,7 +137,7 @@ async function recordClassAttendance(req, res) {
       const recordId = nanoid(10);
 
       await db.query(
-        `INSERT INTO attendance_records (id, tenant_id, student_id, timeslot_id, date, status, recorded_by)
+        `INSERT INTO attendance_records (id, tenant_id, student_id, time_slot_id, date, status, recorded_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [recordId, tenantId, student.id, timeSlotId, date, status, userId],
       );
@@ -233,13 +233,13 @@ async function getStudentAttendance(req, res) {
         ar.date,
         ar.status,
         ar.recorded_at,
-        ts.id as timeslot_id,
+        ts.id as time_slot_id,
         s.name as subject_name,
         ts.period_number,
         ts.day_of_week,
         u.name as recorded_by_name
       FROM attendance_records ar
-      JOIN time_slots ts ON ar.timeslot_id = ts.id
+      JOIN time_slots ts ON ar.time_slot_id = ts.id
       JOIN subjects s ON ts.subject_id = s.id
       JOIN users u ON ar.recorded_by = u.id
       WHERE ar.student_id = $1 AND ar.tenant_id = $2
@@ -324,7 +324,7 @@ async function getStudentAttendance(req, res) {
         date: r.date,
         status: r.status,
         timeSlot: {
-          id: r.timeslot_id,
+          id: r.time_slot_id,
           subjectName: r.subject_name,
           periodNumber: r.period_number,
           dayOfWeek: r.day_of_week,
