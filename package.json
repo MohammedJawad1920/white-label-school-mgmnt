@@ -1,5 +1,11 @@
 {
+  "scripts": {
+    "server": "npm start --prefix server",
+    "client": "npm run dev --prefix client",
+    "dev": "concurrently \"npm run server\" \"npm run client\""
+  },
   "devDependencies": {
-    "@lavamoat/allow-scripts": "^3.4.2"
+    "@lavamoat/allow-scripts": "^3.4.2",
+    "concurrently": "^9.2.1"
   }
 }
