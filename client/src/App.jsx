@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
+import TimetablePage from "./pages/TimetablePage";
 import Layout from "./components/Layout";
 
 // Protected Route wrapper
@@ -41,6 +42,7 @@ function App() {
             <Layout>
               <Routes>
                 <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/timetable" element={<TimetablePage />} />
                 <Route
                   path="/"
                   element={<Navigate to="/dashboard" replace />}
