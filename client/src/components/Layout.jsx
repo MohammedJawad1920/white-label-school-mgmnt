@@ -10,6 +10,12 @@ import {
   ClipboardCheck,
   LogOut,
   Menu,
+  School,
+  BookOpen,
+  UserCircle,
+  CalendarDays,
+  History,
+  BarChart3,
 } from "lucide-react";
 
 export default function Layout({ children }) {
@@ -35,13 +41,70 @@ export default function Layout({ children }) {
       href: "/attendance",
       icon: ClipboardCheck,
       roles: ["Teacher", "Admin"],
+      submenu: [
+        {
+          name: "Record Attendance",
+          href: "/attendance",
+          roles: ["Teacher", "Admin"],
+        },
+        {
+          name: "History",
+          href: "/attendance/history",
+          icon: History,
+          roles: ["Admin"],
+        },
+        {
+          name: "Reports",
+          href: "/attendance/reports",
+          icon: BarChart3,
+          roles: ["Admin"],
+        },
+      ],
     },
-    { name: "Students", href: "/students", icon: Users, roles: ["Admin"] },
+    {
+      name: "Students",
+      href: "/students",
+      icon: Users,
+      roles: ["Admin"],
+    },
+    {
+      name: "Classes",
+      href: "/classes",
+      icon: School,
+      roles: ["Admin"],
+    },
+    {
+      name: "Subjects",
+      href: "/subjects",
+      icon: BookOpen,
+      roles: ["Admin"],
+    },
+    {
+      name: "Teachers",
+      href: "/teachers",
+      icon: UserCircle,
+      roles: ["Admin"],
+    },
+    {
+      name: "Batches",
+      href: "/batches",
+      icon: CalendarDays,
+      roles: ["Admin"],
+    },
   ];
 
   const filteredNav = navigation.filter((item) =>
     item.roles.some((role) => user?.roles?.includes(role)),
   );
+
+  const isActiveRoute = (href) => {
+    if (href === "/attendance") {
+      return location.pathname === "/attendance";
+    }
+    return (
+      location.pathname === href || location.pathname.startsWith(href + "/")
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -93,20 +156,58 @@ export default function Layout({ children }) {
           <nav className="p-4 space-y-1">
             {filteredNav.map((item) => {
               const Icon = item.icon;
-              const isActive = location.pathname === item.href;
+              const isActive = isActiveRoute(item.href);
+              const hasSubmenu = item.submenu && item.submenu.length > 0;
+              const showSubmenu =
+                hasSubmenu &&
+                (isActive || location.pathname.startsWith(item.href + "/"));
+
               return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-gray-100 text-gray-700"
-                  }`}
-                >
-                  <Icon className="h-5 w-5" />
-                  <span className="font-medium">{item.name}</span>
-                </Link>
+                <div key={item.name}>
+                  <Link
+                    to={item.href}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                      isActive && !showSubmenu
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-gray-100 text-gray-700"
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span className="font-medium">{item.name}</span>
+                  </Link>
+
+                  {/* Submenu */}
+                  {showSubmenu && (
+                    <div className="ml-4 mt-1 space-y-1 border-l-2 border-gray-200 pl-4">
+                      {item.submenu
+                        .filter((subItem) =>
+                          subItem.roles.some((role) =>
+                            user?.roles?.includes(role),
+                          ),
+                        )
+                        .map((subItem) => {
+                          const SubIcon = subItem.icon;
+                          const isSubActive =
+                            location.pathname === subItem.href;
+
+                          return (
+                            <Link
+                              key={subItem.name}
+                              to={subItem.href}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                                isSubActive
+                                  ? "bg-primary text-primary-foreground"
+                                  : "hover:bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {SubIcon && <SubIcon className="h-4 w-4" />}
+                              <span>{subItem.name}</span>
+                            </Link>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </nav>
@@ -131,21 +232,60 @@ export default function Layout({ children }) {
               <nav className="p-4 space-y-1">
                 {filteredNav.map((item) => {
                   const Icon = item.icon;
-                  const isActive = location.pathname === item.href;
+                  const isActive = isActiveRoute(item.href);
+                  const hasSubmenu = item.submenu && item.submenu.length > 0;
+                  const showSubmenu =
+                    hasSubmenu &&
+                    (isActive || location.pathname.startsWith(item.href + "/"));
+
                   return (
-                    <Link
-                      key={item.name}
-                      to={item.href}
-                      onClick={() => setSidebarOpen(false)}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                        isActive
-                          ? "bg-primary text-primary-foreground"
-                          : "hover:bg-gray-100 text-gray-700"
-                      }`}
-                    >
-                      <Icon className="h-5 w-5" />
-                      <span className="font-medium">{item.name}</span>
-                    </Link>
+                    <div key={item.name}>
+                      <Link
+                        to={item.href}
+                        onClick={() => !hasSubmenu && setSidebarOpen(false)}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                          isActive && !showSubmenu
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        <Icon className="h-5 w-5" />
+                        <span className="font-medium">{item.name}</span>
+                      </Link>
+
+                      {/* Submenu */}
+                      {showSubmenu && (
+                        <div className="ml-4 mt-1 space-y-1 border-l-2 border-gray-200 pl-4">
+                          {item.submenu
+                            .filter((subItem) =>
+                              subItem.roles.some((role) =>
+                                user?.roles?.includes(role),
+                              ),
+                            )
+                            .map((subItem) => {
+                              const SubIcon = subItem.icon;
+                              const isSubActive =
+                                location.pathname === subItem.href;
+
+                              return (
+                                <Link
+                                  key={subItem.name}
+                                  to={subItem.href}
+                                  onClick={() => setSidebarOpen(false)}
+                                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                                    isSubActive
+                                      ? "bg-primary text-primary-foreground"
+                                      : "hover:bg-gray-100 text-gray-600"
+                                  }`}
+                                >
+                                  {SubIcon && <SubIcon className="h-4 w-4" />}
+                                  <span>{subItem.name}</span>
+                                </Link>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </nav>

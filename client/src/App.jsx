@@ -4,6 +4,14 @@ import { useAuth } from "./contexts/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import TimetablePage from "./pages/TimetablePage";
+import AttendancePage from "./pages/AttendancePage";
+import AttendanceHistoryPage from "./pages/AttendanceHistoryPage";
+import AttendanceReportsPage from "./pages/AttendanceReportsPage";
+import StudentsPage from "./pages/StudentsPage";
+import ClassesPage from "./pages/ClassesPage";
+import SubjectsPage from "./pages/SubjectsPage";
+import TeachersPage from "./pages/TeachersPage";
+import BatchesPage from "./pages/BatchesPage";
 import Layout from "./components/Layout";
 
 // Protected Route wrapper
@@ -43,6 +51,20 @@ function App() {
               <Routes>
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/timetable" element={<TimetablePage />} />
+                <Route path="/attendance" element={<AttendancePage />} />
+                <Route
+                  path="/attendance/history"
+                  element={<AttendanceHistoryPage />}
+                />
+                <Route
+                  path="/attendance/reports"
+                  element={<AttendanceReportsPage />}
+                />
+                <Route path="/students" element={<StudentsPage />} />
+                <Route path="/classes" element={<ClassesPage />} />
+                <Route path="/subjects" element={<SubjectsPage />} />
+                <Route path="/teachers" element={<TeachersPage />} />
+                <Route path="/batches" element={<BatchesPage />} />
                 <Route
                   path="/"
                   element={<Navigate to="/dashboard" replace />}
