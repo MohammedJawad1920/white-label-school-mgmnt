@@ -1,9 +1,6 @@
-// FILE: server/routes/timetableRoutes.js
-// CHANGE: Add feature guard to check if timetable module is enabled
-
 const express = require("express");
 const tenantContextMiddleware = require("../middleware/tenantContext");
-const { requireFeature } = require("../middleware/featureGuard"); // ADD THIS LINE
+const { requireFeature } = require("../middleware/featureGuard");
 const {
   createTimeSlot,
   endTimeSlot,
@@ -12,16 +9,14 @@ const {
 
 const router = express.Router();
 
-// CRITICAL: Check if timetable feature is enabled
-router.use(requireFeature("timetable")); // ADD THIS LINE
+// CRITICAL: Order matters with router.use()!
+// These apply to ALL routes defined below
+router.use(tenantContextMiddleware); // FIRST: Set req.context
+router.use(requireFeature("timetable")); // SECOND: Check feature (uses req.context)
 
-// GET /api/timetable
-router.get("/", tenantContextMiddleware, getTimetable);
-
-// POST /api/timetable (FIXED: removed /create)
-router.post("/", tenantContextMiddleware, createTimeSlot);
-
-// PUT /api/timetable/:timeSlotId/end
-router.put("/:timeSlotId/end", tenantContextMiddleware, endTimeSlot);
+// Now all routes have both middleware in correct order
+router.get("/", getTimetable);
+router.post("/", createTimeSlot);
+router.put("/:timeSlotId/end", endTimeSlot);
 
 module.exports = router;

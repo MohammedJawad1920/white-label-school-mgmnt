@@ -6,7 +6,7 @@ const db = require("../config/database");
  */
 exports.getFeatures = async (req, res) => {
   try {
-    const { tenantId } = req;
+    const { tenantId } = req.context;
 
     const featuresQuery = `
       SELECT 
@@ -52,7 +52,7 @@ exports.getFeatures = async (req, res) => {
  */
 exports.updateFeature = async (req, res) => {
   try {
-    const { tenantId } = req;
+    const { tenantId } = req.context;
     const { featureKey } = req.params;
     const { enabled } = req.body;
 

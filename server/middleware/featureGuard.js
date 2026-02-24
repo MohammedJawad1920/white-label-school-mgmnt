@@ -6,7 +6,7 @@ const db = require("../config/database");
  */
 const requireFeature = (featureKey) => {
   return async (req, res, next) => {
-    const { tenantId } = req;
+    const { tenantId } = req.context;
 
     if (!tenantId) {
       return res.status(401).json({
