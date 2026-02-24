@@ -62,98 +62,109 @@ async function getUsers(req, res) {
 
 // POST /api/users
 async function createUser(req, res) {
+  const { name, email, password, roles } = req.body;
+  const { tenantId, roles: userRoles } = req.context;
+
+  // AUTHORIZATION CHECK
+  if (!userRoles.includes("Admin")) {
+    return res.status(403).json({
+      error: {
+        code: "FORBIDDEN",
+        message: "Only Admin can create users",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  // VALIDATION: Required fields
+  if (!name || !email || !password || !roles) {
+    return res.status(400).json({
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Name, email, password, and roles are required",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  // VALIDATION: Roles must be an array
+  if (!Array.isArray(roles)) {
+    return res.status(400).json({
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Roles must be an array",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  // ✅ NEW VALIDATION: Roles array cannot be empty
+  if (roles.length === 0) {
+    return res.status(400).json({
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Roles array cannot be empty",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  // ✅ NEW VALIDATION: All roles must be valid
+  const validRoles = ["Teacher", "Admin"];
+  for (const role of roles) {
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: `Invalid role: ${role}. Valid roles are: ${validRoles.join(", ")}`,
+          details: { invalidRole: role, validRoles },
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  }
+
+  // ✅ NEW VALIDATION: Remove duplicate roles
+  const uniqueRoles = [...new Set(roles)];
+
+  // Continue with user creation...
   try {
-    const { tenantId, roles: currentUserRoles } = req.context;
-    const { name, email, password, roles } = req.body;
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
 
-    // Authorization: Only Admin
-    if (!currentUserRoles.includes("Admin")) {
-      return res.status(403).json({
-        error: {
-          code: "FORBIDDEN",
-          message: "Only Admin can create users",
-          details: {},
-          timestamp: new Date().toISOString(),
-        },
-      });
-    }
+    // Generate user ID
+    const userId = `U${Date.now()}`;
 
-    // Validation
-    if (!name || !email || !password || !roles) {
-      return res.status(400).json({
-        error: {
-          code: "VALIDATION_ERROR",
-          message: "name, email, password, and roles are required",
-          details: {},
-          timestamp: new Date().toISOString(),
-        },
-      });
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({
-        error: {
-          code: "VALIDATION_ERROR",
-          message: "Invalid email format",
-          details: {},
-          timestamp: new Date().toISOString(),
-        },
-      });
-    }
-
-    // Validate password length
-    if (password.length < 8) {
-      return res.status(400).json({
-        error: {
-          code: "VALIDATION_ERROR",
-          message: "Password must be at least 8 characters",
-          details: {},
-          timestamp: new Date().toISOString(),
-        },
-      });
-    }
-
-    // Validate roles array
-    if (!Array.isArray(roles) || roles.length === 0) {
-      return res.status(400).json({
-        error: {
-          code: "VALIDATION_ERROR",
-          message: "roles must be a non-empty array",
-          details: {},
-          timestamp: new Date().toISOString(),
-        },
-      });
-    }
-
-    // Validate role values
-    const validRoles = ["Teacher", "Admin"];
-    const invalidRoles = roles.filter((r) => !validRoles.includes(r));
-    if (invalidRoles.length > 0) {
-      return res.status(400).json({
-        error: {
-          code: "VALIDATION_ERROR",
-          message: "Invalid role(s): " + invalidRoles.join(", "),
-          details: { validRoles },
-          timestamp: new Date().toISOString(),
-        },
-      });
-    }
-
-    // Deduplicate roles
-    const uniqueRoles = [...new Set(roles)];
-
-    // v3.1: Check if email already exists (only among non-deleted users)
-    const existingUser = await db.query(
-      "SELECT id FROM users WHERE tenant_id = $1 AND email = $2 AND deleted_at IS NULL",
-      [tenantId, email],
+    // Insert user with deduplicated roles
+    const result = await db.query(
+      `INSERT INTO users (id, tenant_id, name, email, password_hash, roles, deleted_at, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NULL, NOW(), NOW())
+       RETURNING id, name, email, roles`,
+      [
+        userId,
+        tenantId,
+        name,
+        email,
+        passwordHash,
+        JSON.stringify(uniqueRoles),
+      ],
     );
 
-    if (existingUser.rows.length > 0) {
+    res.status(201).json({
+      user: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Error creating user:", error);
+
+    // Handle duplicate email
+    if (error.code === "23505") {
       return res.status(409).json({
         error: {
-          code: "CONFLICT",
+          code: "DUPLICATE_EMAIL",
           message: "Email already exists for this school",
           details: {},
           timestamp: new Date().toISOString(),
@@ -161,29 +172,10 @@ async function createUser(req, res) {
       });
     }
 
-    // Hash password
-    const passwordHash = await bcrypt.hash(
-      password,
-      parseInt(process.env.BCRYPT_ROUNDS) || 10,
-    );
-
-    const id = nanoid(10);
-
-    const result = await db.query(
-      `INSERT INTO users (id, tenant_id, name, email, password_hash, roles)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb) RETURNING id, name, email, roles, created_at`,
-      [id, tenantId, name, email, passwordHash, JSON.stringify(uniqueRoles)],
-    );
-
-    return res.status(201).json({
-      user: result.rows[0],
-    });
-  } catch (error) {
-    console.error("Create user error:", error);
-    return res.status(500).json({
+    res.status(500).json({
       error: {
         code: "INTERNAL_ERROR",
-        message: "An error occurred while creating user",
+        message: "Failed to create user",
         details: {},
         timestamp: new Date().toISOString(),
       },
