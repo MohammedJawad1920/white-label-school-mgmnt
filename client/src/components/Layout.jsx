@@ -16,6 +16,7 @@ import {
   CalendarDays,
   History,
   BarChart3,
+  Settings,
 } from "lucide-react";
 
 export default function Layout({ children }) {
@@ -89,6 +90,12 @@ export default function Layout({ children }) {
       name: "Batches",
       href: "/batches",
       icon: CalendarDays,
+      roles: ["Admin"],
+    },
+    {
+      name: "Features",
+      href: "/features",
+      icon: Settings,
       roles: ["Admin"],
     },
   ];

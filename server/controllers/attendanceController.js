@@ -274,7 +274,7 @@ async function getStudentAttendance(req, res) {
     const attendanceResult = await db.query(attendanceQuery, params);
 
     // Calculate summary
-    const summaryQuery = `
+    let summaryQuery = `
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) as present,

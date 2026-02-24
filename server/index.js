@@ -1,3 +1,6 @@
+// FILE: server/index.js
+// CHANGE: Add featuresRoutes to enable feature management
+
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
@@ -10,6 +13,7 @@ const classRoutes = require("./routes/classRoutes");
 const userRoutes = require("./routes/userRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
+const featuresRoutes = require("./routes/featuresRoutes"); // ADD THIS LINE
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +31,7 @@ app.use("/api/classes", classRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/attendance", attendanceRoutes);
+app.use("/api/features", featuresRoutes); // ADD THIS LINE
 
 // Health check
 app.get("/health", (req, res) => {
@@ -66,6 +71,8 @@ app.listen(PORT, () => {
   console.log("\n📚 Available endpoints:");
   console.log("   POST   /api/auth/login");
   console.log("   POST   /api/auth/logout");
+  console.log("   GET    /api/features"); // ADD THIS LINE
+  console.log("   PUT    /api/features/:featureKey"); // ADD THIS LINE
   console.log("   GET    /api/batches");
   console.log("   POST   /api/batches");
   console.log("   PUT    /api/batches/:id");
