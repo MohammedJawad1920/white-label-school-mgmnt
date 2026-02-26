@@ -12,6 +12,7 @@ import ClassesPage from "./pages/ClassesPage";
 import SubjectsPage from "./pages/SubjectsPage";
 import TeachersPage from "./pages/TeachersPage";
 import BatchesPage from "./pages/BatchesPage";
+import FeaturesPage from "./pages/FeaturesPage";
 import Layout from "./components/Layout";
 
 // Protected Route wrapper
@@ -65,6 +66,7 @@ function App() {
                 <Route path="/subjects" element={<SubjectsPage />} />
                 <Route path="/teachers" element={<TeachersPage />} />
                 <Route path="/batches" element={<BatchesPage />} />
+                <Route path="/features" element={<FeaturesPage />} />
                 <Route
                   path="/"
                   element={<Navigate to="/dashboard" replace />}

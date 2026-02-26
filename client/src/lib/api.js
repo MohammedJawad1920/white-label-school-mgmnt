@@ -97,4 +97,9 @@ export const usersAPI = {
   delete: (id) => api.delete(`/users/${id}`),
 };
 
+export const featuresAPI = {
+  list: () => api.get("/features"),
+  update: (featureKey, data) => api.put(`/features/${featureKey}`, data),
+};
+
 export default api;
