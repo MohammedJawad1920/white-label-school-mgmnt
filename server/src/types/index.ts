@@ -1,0 +1,280 @@
+// =====================================================
+// FREEZE v3.3 — Canonical Type Definitions (§3.2)
+// All application code must import from here.
+// =====================================================
+
+// ─── DB Row Types (snake_case — matches PostgreSQL columns) ──────────────────
+
+export interface TenantRow {
+  id: string;
+  name: string;
+  slug: string;
+  status: "active" | "inactive";
+  deactivated_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface SuperAdminRow {
+  id: string;
+  name: string;
+  email: string;
+  password_hash: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface UserRow {
+  id: string;
+  tenant_id: string;
+  name: string;
+  email: string;
+  password_hash: string;
+  roles: UserRole[];
+  deleted_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface BatchRow {
+  id: string;
+  tenant_id: string;
+  name: string;
+  start_year: number;
+  end_year: number;
+  status: "Active" | "Archived";
+  deleted_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface SubjectRow {
+  id: string;
+  tenant_id: string;
+  name: string;
+  code: string | null;
+  deleted_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ClassRow {
+  id: string;
+  tenant_id: string;
+  name: string;
+  batch_id: string;
+  deleted_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface StudentRow {
+  id: string;
+  tenant_id: string;
+  name: string;
+  class_id: string;
+  batch_id: string;
+  deleted_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface SchoolPeriodRow {
+  id: string;
+  tenant_id: string;
+  period_number: number;
+  label: string;
+  start_time: string; // "HH:MM:SS" from PostgreSQL TIME
+  end_time: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface TimeslotRow {
+  id: string;
+  tenant_id: string;
+  class_id: string;
+  subject_id: string;
+  teacher_id: string;
+  day_of_week: DayOfWeek;
+  period_number: number;
+  effective_from: string; // DATE as ISO string
+  effective_to: string | null;
+  deleted_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface AttendanceRecordRow {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  timeslot_id: string;
+  date: string; // DATE as ISO string
+  status: AttendanceStatus;
+  recorded_by: string;
+  recorded_at: Date;
+}
+
+export interface FeatureRow {
+  id: string;
+  key: FeatureKey;
+  name: string;
+  description: string | null;
+  created_at: Date;
+}
+
+export interface TenantFeatureRow {
+  id: string;
+  tenant_id: string;
+  feature_key: FeatureKey;
+  enabled: boolean;
+  enabled_at: Date | null;
+}
+
+// ─── Domain Enums / Unions ───────────────────────────────────────────────────
+
+export type UserRole = "Teacher" | "Admin";
+
+export type DayOfWeek =
+  | "Monday"
+  | "Tuesday"
+  | "Wednesday"
+  | "Thursday"
+  | "Friday"
+  | "Saturday"
+  | "Sunday";
+
+export type AttendanceStatus = "Present" | "Absent" | "Late";
+
+export type FeatureKey = "timetable" | "attendance";
+
+export type TenantStatus = "active" | "inactive";
+
+export type BatchStatus = "Active" | "Archived";
+
+// ─── JWT Payload Types ───────────────────────────────────────────────────────
+
+/** Payload inside tenant-user JWTs */
+export interface TenantJwtPayload {
+  userId: string;
+  tenantId: string;
+  roles: UserRole[];
+  activeRole: UserRole;
+  iat?: number;
+  exp?: number;
+}
+
+/** Payload inside SuperAdmin JWTs */
+export interface SuperAdminJwtPayload {
+  superAdminId: string;
+  role: "SuperAdmin";
+  iat?: number;
+  exp?: number;
+}
+
+// ─── Express Request Augmentation ────────────────────────────────────────────
+// Adds typed fields that middleware attaches to req
+
+declare global {
+  namespace Express {
+    interface Request {
+      tenantId?: string;
+      userId?: string;
+      userRoles?: UserRole[];
+      activeRole?: UserRole;
+      superAdminId?: string;
+    }
+  }
+}
+
+// ─── API Response Types (camelCase — matches OpenAPI) ────────────────────────
+
+export interface ApiUser {
+  id: string;
+  tenantId: string;
+  name: string;
+  email: string;
+  roles: UserRole[];
+  activeRole: UserRole;
+}
+
+export interface ApiTenant {
+  id: string;
+  name: string;
+  slug: string;
+  status: TenantStatus;
+  deactivatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiSchoolPeriod {
+  id: string;
+  tenantId: string;
+  periodNumber: number;
+  label: string;
+  startTime: string; // "HH:MM"
+  endTime: string; // "HH:MM"
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiTimeslot {
+  id: string;
+  classId: string;
+  className: string;
+  subjectId: string;
+  subjectName: string;
+  teacherId: string;
+  teacherName: string;
+  dayOfWeek: DayOfWeek;
+  periodNumber: number;
+  startTime: string; // from JOIN with school_periods
+  endTime: string; // from JOIN with school_periods
+  label: string; // from JOIN with school_periods
+  effectiveFrom: string;
+  effectiveTo: string | null;
+}
+
+export interface ApiAttendanceRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  timeslotId: string;
+  date: string;
+  status: AttendanceStatus;
+  recordedBy: string;
+  recordedAt: string;
+}
+
+// ─── Standard Error Shape (matches OpenAPI v3.3.0) ──────────────────────────
+
+export interface ApiError {
+  error: {
+    code: string;
+    message: string;
+    details: Record<string, unknown>;
+  };
+  timestamp: string;
+}
+
+// ─── Bulk Delete (Phase 3) ───────────────────────────────────────────────────
+
+export interface BulkDeleteRequest {
+  ids: string[];
+}
+
+export interface BulkDeleteResult {
+  deleted: string[];
+  failed: Array<{ id: string; reason: string }>;
+}
+
+// ─── Pagination ──────────────────────────────────────────────────────────────
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+}

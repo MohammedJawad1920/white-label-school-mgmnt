@@ -1,0 +1,89 @@
+/**
+ * PostgreSQL Connection Pool
+ *
+ * WHY a pool singleton: Opening a new connection per request adds ~50–200ms.
+ * A pool maintains N open connections and hands them to queries immediately.
+ * pg.Pool handles acquire/release automatically — callers just call pool.query().
+ *
+ * All modules import `pool` from here. Never create a new Pool elsewhere.
+ */
+
+import { Pool, PoolClient } from "pg";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+// ── Validate required env vars ───────────────────────────────────────────────
+const DATABASE_URL = process.env["DATABASE_URL"];
+if (!DATABASE_URL) {
+  throw new Error("Missing required environment variable: DATABASE_URL");
+}
+
+export const pool = new Pool({
+  connectionString: DATABASE_URL,
+  min: parseInt(process.env["DATABASE_POOL_MIN"] ?? "2", 10),
+  max: parseInt(process.env["DATABASE_POOL_MAX"] ?? "10", 10),
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
+  ssl:
+    process.env["NODE_ENV"] === "production"
+      ? { rejectUnauthorized: true }
+      : undefined,
+});
+
+// Log pool-level errors without crashing the process
+pool.on("error", (err: Error) => {
+  console.error("[DB Pool] Unexpected error on idle client:", err.message);
+});
+
+// Verify connection on startup
+// NOTE: @types/pg defines this callback as (err: Error | undefined, ...)
+// NOT (err: Error | null, ...) — using null here causes TS2345
+pool.connect(
+  (
+    err: Error | undefined,
+    client: PoolClient | undefined,
+    release: (err?: Error) => void,
+  ) => {
+    if (err) {
+      console.error("Failed to connect to PostgreSQL:", err.message);
+      process.exit(1);
+    }
+    console.log("PostgreSQL connected");
+    release();
+  },
+);
+
+/**
+ * withTransaction — runs multiple queries atomically.
+ *
+ * WHY: Operations like tenant creation + seeding 8 default periods must either
+ * all succeed or all roll back. This helper manages BEGIN/COMMIT/ROLLBACK so
+ * service code doesn't have to.
+ */
+export async function withTransaction<T>(
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * checkDbConnection — used by /health endpoint
+ */
+export async function checkDbConnection(): Promise<void> {
+  const result = await pool.query<{ now: Date }>("SELECT NOW()");
+  if (!result.rows[0]) {
+    throw new Error("Database health check returned no rows");
+  }
+}
