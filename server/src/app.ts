@@ -1,35 +1,32 @@
-/**
- * Express App Factory
- *
- * WHY split app.ts from server.ts:
- * Tests import createApp() without starting a real TCP server.
- */
-
 import express, { Application } from "express";
 import cors from "cors";
 import { config } from "./config/env";
 import { requestLogger } from "./utils/logger";
 import { globalErrorHandler } from "./utils/errors";
+
+// Phase 2
 import superAdminRouter from "./modules/super-admin/routes";
+// Phase 3
+import authRouter from "./modules/auth/routes";
+import usersRouter from "./modules/users/routes";
+import batchesRouter from "./modules/batches/routes";
+import subjectsRouter from "./modules/subjects/routes";
+import classesRouter from "./modules/classes/routes";
+import studentsRouter from "./modules/students/routes";
 
 export function createApp(): Application {
   const app = express();
 
-  // ── Security & Parsing ─────────────────────────────────────────────────
   app.use(
     cors({
       origin: config.ALLOWED_ORIGINS.length > 0 ? config.ALLOWED_ORIGINS : "*",
       credentials: true,
     }),
   );
-
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: false }));
-
-  // ── Structured Logging ─────────────────────────────────────────────────
   app.use(requestLogger);
 
-  // ── Health Check (unauthenticated) ────────────────────────────────────
   app.get("/health", (_req, res) => {
     res.json({
       status: "ok",
@@ -38,17 +35,24 @@ export function createApp(): Application {
     });
   });
 
-  // ── Phase 2: SuperAdmin Routes ─────────────────────────────────────────
+  // Phase 2 — SuperAdmin (no tenantContextMiddleware inside)
   app.use("/api/super-admin", superAdminRouter);
 
-  // Phase 3+: routes added here as phases complete
-  // app.use('/api/auth', authRouter);
-  // app.use('/api/users', tenantContextMiddleware, usersRouter);
-  // app.use('/api/school-periods', tenantContextMiddleware, schoolPeriodsRouter);
-  // app.use('/api/timetable', tenantContextMiddleware, featureGuard('timetable'), timetableRouter);
-  // app.use('/api/attendance', tenantContextMiddleware, featureGuard('attendance'), attendanceRouter);
+  // Phase 3 — Tenant auth + CRUD resources
+  // tenantContextMiddleware is applied inside each router individually
+  // so /api/auth/login stays public
+  app.use("/api/auth", authRouter);
+  app.use("/api/users", usersRouter);
+  app.use("/api/batches", batchesRouter);
+  app.use("/api/subjects", subjectsRouter);
+  app.use("/api/classes", classesRouter);
+  app.use("/api/students", studentsRouter);
 
-  // ── 404 Handler ────────────────────────────────────────────────────────
+  // Phase 4+ — uncomment as phases complete:
+  // app.use('/api/school-periods', schoolPeriodsRouter);
+  // app.use('/api/timetable',  featureGuard('timetable'),  timetableRouter);
+  // app.use('/api/attendance', featureGuard('attendance'), attendanceRouter);
+
   app.use((_req, res) => {
     res.status(404).json({
       error: { code: "NOT_FOUND", message: "Endpoint not found", details: {} },
@@ -56,8 +60,6 @@ export function createApp(): Application {
     });
   });
 
-  // ── Global Error Handler (must be last) ───────────────────────────────
   app.use(globalErrorHandler);
-
   return app;
 }
