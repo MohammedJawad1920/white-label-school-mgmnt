@@ -14,6 +14,8 @@ import subjectsRouter from "./modules/subjects/routes";
 import classesRouter from "./modules/classes/routes";
 import studentsRouter from "./modules/students/routes";
 import schoolPeriodsRouter from "./modules/school-periods/routes";
+import timetableRouter from "./modules/timetable/routes";
+import attendanceRouter from "./modules/attendance/routes";
 
 export function createApp(): Application {
   const app = express();
@@ -49,6 +51,8 @@ export function createApp(): Application {
   app.use("/api/classes", classesRouter);
   app.use("/api/students", studentsRouter);
   app.use("/api/school-periods", schoolPeriodsRouter);
+  app.use("/api/timetable", timetableRouter);
+  app.use("/api/attendance", attendanceRouter);
 
   // Phase 4+ — uncomment as phases complete:
   // app.use('/api/timetable',  featureGuard('timetable'),  timetableRouter);
