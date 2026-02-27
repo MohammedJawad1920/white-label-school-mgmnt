@@ -12,7 +12,7 @@
  */
 
 import { Request, Response } from "express";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { pool } from "../../db/pool";
 import { config } from "../../config/env";
@@ -180,10 +180,8 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
     expiresIn: config.JWT_EXPIRES_IN,
   } as jwt.SignOptions);
 
-  res
-    .status(200)
-    .json({
-      token,
-      user: { id: user.id, roles: user.roles, activeRole: newActiveRole },
-    });
+  res.status(200).json({
+    token,
+    user: { id: user.id, roles: user.roles, activeRole: newActiveRole },
+  });
 }

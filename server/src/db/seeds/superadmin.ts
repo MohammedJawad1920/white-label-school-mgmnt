@@ -16,7 +16,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import { pool } from "../pool";
 import { config } from "../../config/env";
