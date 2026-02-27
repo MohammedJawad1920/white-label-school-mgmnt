@@ -13,8 +13,8 @@ export function sendError(res: Response, opts: AppErrorOptions): void {
       code: opts.code,
       message: opts.message,
       details: opts.details ?? {},
+      timestamp: new Date().toISOString(),
     },
-    timestamp: new Date().toISOString(),
   });
 }
 

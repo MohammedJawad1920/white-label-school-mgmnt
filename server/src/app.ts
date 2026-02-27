@@ -50,6 +50,7 @@ export function createApp(): Application {
   app.use("/api/subjects", subjectsRouter);
   app.use("/api/classes", classesRouter);
   app.use("/api/students", studentsRouter);
+  app.use("/api/students", attendanceRouter);
   app.use("/api/school-periods", schoolPeriodsRouter);
   app.use("/api/timetable", timetableRouter);
   app.use("/api/attendance", attendanceRouter);

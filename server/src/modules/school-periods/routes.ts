@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { tenantContextMiddleware } from "../../middleware/tenantContext";
+import { featureGuard } from "../../middleware/featureGuard";
 import { requireRole } from "../../middleware/requireRole";
 import { asyncHandler } from "../../utils/asyncHandler";
 import {
@@ -11,6 +12,7 @@ import {
 
 const router = Router();
 router.use(tenantContextMiddleware);
+router.use(featureGuard("timetable"));
 
 // Both Teacher and Admin can view periods (needed for timetable display)
 router.get("/", asyncHandler(listPeriods));
