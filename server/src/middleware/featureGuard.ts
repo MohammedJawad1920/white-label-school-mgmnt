@@ -41,8 +41,8 @@ export function featureGuard(featureKey: FeatureKey) {
           code: "FEATURE_DISABLED",
           message: `${featureKey.charAt(0).toUpperCase() + featureKey.slice(1)} feature is not enabled for this tenant`,
           details: { featureKey },
+          timestamp: new Date().toISOString(),
         },
-        timestamp: new Date().toISOString(),
       });
       return;
     }
