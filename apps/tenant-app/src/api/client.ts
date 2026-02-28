@@ -1,13 +1,7 @@
 /**
- * api/client.ts — Axios instance for Tenant App
- *
- * WHY AUTH_EXPIRED custom event (not direct React setState):
- * The axios interceptor lives outside the React tree. It fires a CustomEvent;
- * AuthContext listens and shows the SessionExpiredModal. Fully decoupled.
- *
- * WHY baseURL from import.meta.env:
- * Freeze §1.5 bans hardcoded URLs. Points at Prism mock in dev,
- * real backend in staging/prod via env var swap.
+ * Tenant API client.
+ * WHY 'auth' key (not 'sa_auth'): Freeze §4 localStorage keys — tenant app
+ * uses 'auth', superadmin uses 'sa_auth'. Completely separate.
  */
 import axios, {
   type InternalAxiosRequestConfig,
@@ -21,23 +15,21 @@ export const apiClient = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// Inject Bearer token on every outgoing request
+// Inject Bearer token from localStorage on every request
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const raw = localStorage.getItem(AUTH_KEY);
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as { token?: string };
-      if (parsed.token) {
-        config.headers.Authorization = `Bearer ${parsed.token}`;
-      }
+      if (parsed.token) config.headers.Authorization = `Bearer ${parsed.token}`;
     } catch {
-      // Malformed localStorage — proceed without token; 401 interceptor cleans up
+      /* malformed — proceed without token */
     }
   }
   return config;
 });
 
-// Handle 401 globally — clear auth and notify AuthContext
+// 401 → clear session, fire AUTH_EXPIRED event, SessionExpiredModal catches it
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: unknown) => {

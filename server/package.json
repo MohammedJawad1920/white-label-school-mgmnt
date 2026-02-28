@@ -9,7 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "seed:superadmin": "ts-node src/db/seeds/superadmin.ts",
-    "migrate": "node -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/001_initial_schema.sql', {stdio:'inherit'})\"",
+    "migrate": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/001_initial_schema.sql', {stdio:'inherit', shell:true})\"",
     "mock": "npx @stoplight/prism-cli@5.14.2 mock ./docs/openapi.yaml --port 4010",
     "mock:verbose": "npx @stoplight/prism-cli@5.14.2 mock ./docs/openapi.yaml --port 4010 --errors",
     "test": "jest --runInBand",

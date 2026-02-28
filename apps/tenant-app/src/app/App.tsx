@@ -1,29 +1,17 @@
-/**
- * App.tsx — Root routing tree
- *
- * WHY React.lazy on every protected route:
- * Freeze §FE Phase 8: "all routes lazy-loaded via React.lazy".
- * Each route becomes its own JS chunk. Login page loads in ~20KB.
- * Full admin bundle downloads only when the user navigates there.
- *
- * Retry rules (Freeze §3):
- * - GET: retry 2×, exponential backoff, only on network error or 500
- * - mutations: never retry (non-idempotent)
- */
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/features/auth/AuthContext";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { SessionExpiredModal } from "./SessionExpiredModal";
+import { RoleGate } from "./RoleGate";
 
-// ── Public pages ──────────────────────────────────────────────────────────────
+// ── Lazy-loaded routes ────────────────────────────────────────────────────────
 const LoginPage = lazy(() => import("@/features/auth/LoginPage"));
 const PrivacyPage = lazy(() => import("@/features/static/PrivacyPage"));
 const TermsPage = lazy(() => import("@/features/static/TermsPage"));
-
-// ── Protected pages (lazy per Freeze §FE Phase 8) ─────────────────────────────
 const Layout = lazy(() => import("@/components/Layout"));
+
 const DashboardPage = lazy(() => import("@/features/dashboard/DashboardPage"));
 const TimetablePage = lazy(() => import("@/features/timetable/TimetablePage"));
 const RecordAttendancePage = lazy(
@@ -32,7 +20,7 @@ const RecordAttendancePage = lazy(
 const AttendanceSummaryPage = lazy(
   () => import("@/features/attendance/AttendanceSummaryPage"),
 );
-const StudentAttendanceHistory = lazy(
+const StudentAttendanceHistoryPage = lazy(
   () => import("@/features/attendance/StudentAttendanceHistoryPage"),
 );
 const UsersPage = lazy(() => import("@/features/manage/users/UsersPage"));
@@ -48,19 +36,18 @@ const SchoolPeriodsPage = lazy(
   () => import("@/features/manage/school-periods/SchoolPeriodsPage"),
 );
 
-// ── QueryClient — typed retry callbacks (strict mode) ────────────────────────
+// ── QueryClient — retry rules from Freeze §3 ─────────────────────────────────
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: (failureCount: number, error: unknown): boolean => {
         if (failureCount >= 2) return false;
-        // Only retry network errors (no status) or 500
         const status = (error as { response?: { status?: number } })?.response
           ?.status;
         return status === undefined || status >= 500;
       },
       retryDelay: (attempt: number): number =>
-        Math.min(1000 * 2 ** attempt, 4000), // 1s → 2s
+        Math.min(1000 * 2 ** attempt, 4000),
       staleTime: 2 * 60 * 1000,
     },
     mutations: { retry: false },
@@ -71,9 +58,12 @@ function PageLoader() {
   return (
     <div
       className="flex items-center justify-center min-h-screen"
-      aria-label="Loading"
+      aria-label="Loading page"
     >
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      <div
+        className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"
+        role="status"
+      />
     </div>
   );
 }
@@ -86,12 +76,12 @@ export function App() {
           <SessionExpiredModal />
           <Suspense fallback={<PageLoader />}>
             <Routes>
-              {/* Public */}
+              {/* ── Public routes ─────────────────────────────────────────── */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/privacy" element={<PrivacyPage />} />
               <Route path="/terms" element={<TermsPage />} />
 
-              {/* Protected — wrapped in Layout shell */}
+              {/* ── Protected routes — all wrapped in Layout ──────────────── */}
               <Route element={<ProtectedRoute />}>
                 <Route element={<Layout />}>
                   <Route index element={<Navigate to="/dashboard" replace />} />
@@ -104,23 +94,70 @@ export function App() {
                     element={<RecordAttendancePage />}
                   />
 
-                  {/* Admin only */}
+                  {/* Admin only — inline "Not authorized" for Teacher per Freeze §2 */}
                   <Route
                     path="/attendance/summary"
-                    element={<AttendanceSummaryPage />}
+                    element={
+                      <RoleGate roles={["Admin"]}>
+                        <AttendanceSummaryPage />
+                      </RoleGate>
+                    }
                   />
                   <Route
                     path="/students/:studentId/attendance"
-                    element={<StudentAttendanceHistory />}
+                    element={
+                      <RoleGate roles={["Admin"]}>
+                        <StudentAttendanceHistoryPage />
+                      </RoleGate>
+                    }
                   />
-                  <Route path="/manage/users" element={<UsersPage />} />
-                  <Route path="/manage/students" element={<StudentsPage />} />
-                  <Route path="/manage/classes" element={<ClassesPage />} />
-                  <Route path="/manage/batches" element={<BatchesPage />} />
-                  <Route path="/manage/subjects" element={<SubjectsPage />} />
+                  <Route
+                    path="/manage/users"
+                    element={
+                      <RoleGate roles={["Admin"]}>
+                        <UsersPage />
+                      </RoleGate>
+                    }
+                  />
+                  <Route
+                    path="/manage/students"
+                    element={
+                      <RoleGate roles={["Admin"]}>
+                        <StudentsPage />
+                      </RoleGate>
+                    }
+                  />
+                  <Route
+                    path="/manage/classes"
+                    element={
+                      <RoleGate roles={["Admin"]}>
+                        <ClassesPage />
+                      </RoleGate>
+                    }
+                  />
+                  <Route
+                    path="/manage/batches"
+                    element={
+                      <RoleGate roles={["Admin"]}>
+                        <BatchesPage />
+                      </RoleGate>
+                    }
+                  />
+                  <Route
+                    path="/manage/subjects"
+                    element={
+                      <RoleGate roles={["Admin"]}>
+                        <SubjectsPage />
+                      </RoleGate>
+                    }
+                  />
                   <Route
                     path="/manage/school-periods"
-                    element={<SchoolPeriodsPage />}
+                    element={
+                      <RoleGate roles={["Admin"]}>
+                        <SchoolPeriodsPage />
+                      </RoleGate>
+                    }
                   />
                 </Route>
               </Route>

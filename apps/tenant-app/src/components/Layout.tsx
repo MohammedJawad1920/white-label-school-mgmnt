@@ -1,10 +1,73 @@
+/**
+ * Layout — shell that wraps all protected tenant-app pages.
+ *
+ * Structure:
+ *   <Sidebar />      — desktop left rail (hidden on mobile via CSS)
+ *   <main>           — scrollable page content
+ *     <TopBar />     — mobile header with app name + role badge
+ *     <Outlet />     — current page renders here
+ *   </main>
+ *   <BottomTabBar /> — mobile bottom nav (hidden on desktop via CSS)
+ *
+ * WHY pb-16 on main (mobile):
+ * BottomTabBar is fixed-position and 56px tall. Without bottom padding,
+ * page content would be obscured behind it on mobile.
+ *
+ * WHY TopBar only on mobile:
+ * Desktop has the sidebar which shows user/role info. On mobile the sidebar
+ * is hidden so we need a top bar to show the app name + current role.
+ */
 import { Outlet } from "react-router-dom";
+import { Sidebar } from "./Sidebar";
+import { BottomTabBar } from "./BottomTabBar";
+import { useAuth } from "@/hooks/useAuth";
 
-/** Full sidebar + nav implemented in FE Phase 3. Renders plain wrapper for now. */
+function TopBar() {
+  const { user } = useAuth();
+  return (
+    <header className="md:hidden flex items-center justify-between px-4 h-14 border-b bg-background shrink-0">
+      <span className="text-sm font-semibold">
+        {import.meta.env.VITE_APP_NAME ?? "School App"}
+      </span>
+      {user && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {user.activeRole}
+          </span>
+          <div
+            className="flex items-center justify-center w-7 h-7 rounded-full bg-muted text-xs font-semibold"
+            aria-label={`Signed in as ${user.name}`}
+          >
+            {user.name.slice(0, 2).toUpperCase()}
+          </div>
+        </div>
+      )}
+    </header>
+  );
+}
+
 export default function Layout() {
   return (
-    <div className="min-h-screen bg-background">
-      <Outlet />
+    <div className="flex h-screen overflow-hidden bg-background">
+      {/* Desktop sidebar */}
+      <Sidebar />
+
+      {/* Page area */}
+      <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+        {/* Mobile top bar */}
+        <TopBar />
+
+        {/* Page content — scrollable, padded for mobile bottom bar */}
+        <main
+          className="flex-1 overflow-y-auto pb-16 md:pb-0"
+          id="main-content"
+        >
+          <Outlet />
+        </main>
+      </div>
+
+      {/* Mobile bottom nav */}
+      <BottomTabBar />
     </div>
   );
 }
