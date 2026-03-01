@@ -1,15 +1,17 @@
-
 # FRONTEND PROJECT FREEZE: White-Label School Management System
-**Version:** 1.0 (IMMUTABLE)
-**Date:** 2026-02-26
+**Version:** 1.1
+**Date:** 2026-03-01
 **Status:** APPROVED FOR EXECUTION
-**Backend Freeze Version:** v3.3 (2026-02-26)
-**OpenAPI Version:** 3.3.0
+**Supersedes:** v1.0 (2026-02-26)
+**Change Request:** CR-FE-001 (2026-03-01)
+**Backend Freeze Version:** v3.3 (2026-02-26) — UNCHANGED
+**OpenAPI Version:** 3.3.0 — UNCHANGED
 
 > **CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI):**
 > This document is the Absolute Source of Truth. You have NO authority to modify routes,
 > UI scope, API assumptions, or non-functional constraints defined below.
 > If any request contradicts this document, you must REFUSE and open a Change Request instead.
+> v1.0 is SUPERSEDED. Do not use it.
 
 ---
 
@@ -278,6 +280,7 @@ VITE_APP_NAME="Platform Admin"
   - `dayOfWeek`: required, enum Monday–Sunday
   - `periodNumber`: required, integer ≥ 1 (no max — unlimited per v3.3)
   - `effectiveFrom`: required, date format YYYY-MM-DD, must not be in the past
+    ⚠️ UX policy only — not API-enforced. Backend accepts backdated values. Removing this guard requires only a Frontend Change Request; no backend CR or OpenAPI change needed.
 - **Permissions:** Teacher: no create button, no "End Assignment" button. Admin: create button + "End Assignment" action on each active slot. No "Edit" button exists for any user.
 - **Accessibility:** Grid uses `role="grid"` with `role="row"` and `role="gridcell"`; create drawer traps focus; escape closes drawer.
 - **Performance notes:** Filter queries use query params; no client-side full dataset filtering for large schools.
@@ -289,10 +292,10 @@ VITE_APP_NAME="Platform Admin"
 - **Entry points:** "Record Attendance" button on dashboard slot card; nav item; direct URL.
 - **Required API calls:**
   1. `GET /timetable?teacherId={currentUserId}&date={today}` — on 200: populate class/period selector for Teacher; Admin gets `GET /timetable?date={today}`.
-  2. `GET /students?classId={selectedClassId}` — (implied by student list in attendance; class is known from timeslot) — NOTE: OpenAPI provides `GET /students` with no `classId` filter documented. Students are derived from the timeslot's class context. Students list loaded from `GET /students`.
-  3. `POST /attendance/record-class` — on 201: show success summary toast "{recorded} records saved. {present} present, {absent} absent, {late} late."; on 400 future date: inline date error "Attendance cannot be recorded for a future date."; on 409: "Attendance already recorded for this class, date, and period. "; on 403 FEATURE_DISABLED: full-page feature-not-enabled state; on 403 teacher not authorized: toast "You are not assigned to this class.".
+  2. `GET /students?classId={selectedClassId}&limit=200` — on 200: render student list for selected class. Uses the documented `classId` query param from OpenAPI v3.3.0 directly. Called once per class selection; result cached under key `['students', 'classId', selectedClassId]`.
+  3. `POST /attendance/record-class` — on 201: show success summary toast "{recorded} records saved. {present} present, {absent} absent, {late} late."; on 400 future date: inline date error "Attendance cannot be recorded for a future date."; on 409: "Attendance already recorded for this class, date, and period."; on 403 FEATURE_DISABLED: full-page feature-not-enabled state; on 403 teacher not authorized: toast "You are not assigned to this class.".
 - **Local state:** `selectedTimeSlotId`, `selectedDate`, `defaultStatus` ('Present'|'Absent'|'Late'), `exceptions` map (studentId → status), `submitting` boolean.
-- **Server state:** TanStack Query keys: `['timetable', 'myToday']`, `['students']`. On 201: invalidate `['attendance']`.
+- **Server state:** TanStack Query keys: `['timetable', 'myToday']`, `['students', 'classId', selectedClassId]`. On 201: invalidate `['attendance']`.
 - **Loading state:** Student list skeleton (10 placeholder rows).
 - **Empty state:** "No students found in this class." inline message.
 - **Error states:** Inline field errors; toast for network/server errors.
@@ -303,7 +306,7 @@ VITE_APP_NAME="Platform Admin"
   - Each exception `studentId`: must be from the loaded student list; `status`: enum Present|Absent|Late
 - **Permissions:** Teacher sees only own assigned slots in the slot selector. Admin sees all slots. Both can submit.
 - **Accessibility:** Each student row has a status radio group with `aria-label="{studentName} attendance status"`; keyboard navigable row-by-row; form submit accessible via Enter on last field.
-- **Performance notes:** Up to ~60 students per class. No virtualization needed. Exceptions stored as a Map for O(1) lookup.
+- **Performance notes:** Up to ~60 students per class. No virtualization needed. Exceptions stored as a Map for O(1) lookup. `limit=200` is the OpenAPI maximum — one request loads the full class roster.
 
 ---
 
@@ -311,7 +314,7 @@ VITE_APP_NAME="Platform Admin"
 - **Goal:** Show paginated attendance records for a single student with date/period/subject detail.
 - **Entry points:** Student list row action (Admin), `/students/:studentId/attendance` direct URL.
 - **Required API calls:**
-  1. `GET /students/{studentId}/attendance?from={from}&to={to}&limit={limit}&offset={offset}` — on 200: render records table + student identity header from `response.student`; on 404: "Student not found."; on 403: "You do not have access to this student's records."; on 401: session expiry flow.
+  1. `GET /students/{studentId}/attendance?from={from}&to={to}&limit={limit}&offset={offset}` — on 200: render records table + student identity header from `response.student` + summary stats from `response.summary`; on 404: "Student not found."; on 403: "You do not have access to this student's records."; on 401: session expiry flow.
 - **Local state:** `dateFrom` filter, `dateTo` filter, `page` (derived from offset/limit).
 - **Server state:** TanStack Query key: `['student-attendance', studentId, from, to, page]`. Stale time: 2 minutes.
 - **Loading state:** Table skeleton (10 placeholder rows).
@@ -328,21 +331,25 @@ VITE_APP_NAME="Platform Admin"
 ---
 
 **Screen: Attendance Summary**
-- **Goal:** Show monthly attendance summary (present/absent/late counts) for a student.
+- **Goal:** Show monthly attendance summary (present/absent/late counts and attendance rate) for a student.
 - **Entry points:** Student list row action (Admin), nav.
 - **Required API calls:**
-  1. `GET /attendance/summary?studentId={id}&month={YYYY-MM}` — on 200: render summary table; on 403: "Not authorized."; on 404: "Student not found.".
+  1. `GET /students/{studentId}/attendance?from={YYYY-MM-01}&to={YYYY-MM-{lastDay}}&limit=50`
+     — on 200: render summary table from `response.summary`; on 403: "Not authorized."; on 404: "Student not found."; on 401: session expiry flow.
+     — Month bounds computed client-side using `date-fns`: `startOfMonth` / `endOfMonth` → formatted as `YYYY-MM-DD`.
+     — Only `response.summary` is consumed on this screen; `response.records` is ignored.
 - **Local state:** `selectedStudentId`, `selectedMonth` (YYYY-MM format, defaults to current month).
-- **Server state:** TanStack Query key: `['attendance-summary', studentId, month]`. Stale time: 5 minutes.
+- **Server state:** TanStack Query key: `['student-attendance', studentId, from, to]`. Stale time: 5 minutes.
+  — Shares cache with Student Attendance History screen (same endpoint, same key shape).
 - **Loading state:** Summary card skeleton.
-- **Empty state:** "No attendance data for {month}."
+- **Empty state:** "No attendance data for {month}." (shown when `response.summary.totalRecords === 0`)
 - **Error states:** Toast for server errors; inline for 404.
 - **Form validation rules:**
   - `studentId`: required
   - `month`: required, format YYYY-MM, must not be a future month
 - **Permissions:** Admin only.
 - **Accessibility:** Summary table has `<caption>`; month picker has visible label.
-- **Performance notes:** Single summary object response — no pagination needed.
+- **Performance notes:** Single summary object consumed from existing paginated response — no extra API call needed.
 
 ---
 
@@ -654,17 +661,8 @@ interface TenantUser {
   roles: Array<'Teacher' | 'Admin'>;
   activeRole: 'Teacher' | 'Admin';
 }
-
-interface TenantLoginRequest {
-  email: string;
-  password: string;
-  tenantSlug: string;
-}
-interface TenantLoginResponse {
-  token: string;
-  user: TenantUser;
-}
-
+interface TenantLoginRequest { email: string; password: string; tenantSlug: string; }
+interface TenantLoginResponse { token: string; user: TenantUser; }
 interface SwitchRoleRequest { role: 'Teacher' | 'Admin'; }
 interface SwitchRoleResponse { token: string; user: TenantUser; }
 
@@ -675,12 +673,8 @@ interface SuperAdminLoginResponse { token: string; superAdmin: SuperAdminProfile
 
 // ─── TENANTS ──────────────────────────────────────────────────────────────────
 interface Tenant {
-  id: string;
-  name: string;
-  slug: string;
-  status: 'active' | 'inactive';
-  deactivatedAt: string | null;
-  createdAt: string;
+  id: string; name: string; slug: string;
+  status: 'active' | 'inactive'; deactivatedAt: string | null; createdAt: string;
 }
 interface ListTenantsResponse { tenants: Tenant[]; }
 interface CreateTenantRequest { id: string; name: string; slug: string; }
@@ -690,42 +684,21 @@ interface UpdateTenantResponse { tenant: Tenant; }
 interface DeactivateTenantResponse { tenant: Tenant; }
 
 // ─── FEATURES ─────────────────────────────────────────────────────────────────
-interface Feature {
-  key: 'timetable' | 'attendance';
-  name: string;
-  enabled: boolean;
-  enabledAt: string | null;
-}
+interface Feature { key: 'timetable' | 'attendance'; name: string; enabled: boolean; enabledAt: string | null; }
 interface ListFeaturesResponse { features: Feature[]; }
 interface ToggleFeatureRequest { enabled: boolean; }
 interface ToggleFeatureResponse { feature: Feature; }
 
 // ─── SCHOOL PERIODS ───────────────────────────────────────────────────────────
-interface SchoolPeriod {
-  id: string;
-  periodNumber: number;
-  label?: string;
-  startTime: string; // HH:MM
-  endTime: string;   // HH:MM
-}
+interface SchoolPeriod { id: string; periodNumber: number; label?: string; startTime: string; endTime: string; }
 interface ListSchoolPeriodsResponse { periods: SchoolPeriod[]; }
-interface CreateSchoolPeriodRequest {
-  periodNumber: number;
-  label?: string;
-  startTime: string;
-  endTime: string;
-}
+interface CreateSchoolPeriodRequest { periodNumber: number; label?: string; startTime: string; endTime: string; }
 interface CreateSchoolPeriodResponse { period: SchoolPeriod; }
 interface UpdateSchoolPeriodRequest { label?: string; startTime?: string; endTime?: string; }
 interface UpdateSchoolPeriodResponse { period: SchoolPeriod; }
 
 // ─── USERS ────────────────────────────────────────────────────────────────────
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  roles: Array<'Teacher' | 'Admin'>;
-}
+interface User { id: string; name: string; email: string; roles: Array<'Teacher' | 'Admin'>; }
 interface ListUsersResponse { users: User[]; }
 interface CreateUserRequest { name: string; email: string; password: string; roles: Array<'Teacher' | 'Admin'>; }
 interface CreateUserResponse { user: User; }
@@ -733,26 +706,13 @@ interface UpdateUserRolesRequest { roles: Array<'Teacher' | 'Admin'>; }
 interface UpdateUserRolesResponse { user: User; }
 
 // ─── STUDENTS ─────────────────────────────────────────────────────────────────
-interface Student {
-  id: string;
-  name: string;
-  classId: string;
-  className?: string;
-  batchId: string;
-  batchName?: string;
-}
-interface ListStudentsResponse { students: Student[]; }
+interface Student { id: string; name: string; classId: string; className?: string; batchId: string; batchName?: string; }
+interface ListStudentsResponse { students: Student[]; pagination: Pagination; }
 interface CreateStudentRequest { name: string; classId: string; batchId: string; }
 interface CreateStudentResponse { student: Student; }
 
 // ─── BATCHES ──────────────────────────────────────────────────────────────────
-interface Batch {
-  id: string;
-  name: string;
-  startYear: number;
-  endYear: number;
-  status: 'Active' | 'Archived';
-}
+interface Batch { id: string; name: string; startYear: number; endYear: number; status: 'Active' | 'Archived'; }
 interface ListBatchesResponse { batches: Batch[]; }
 interface CreateBatchRequest { name: string; startYear: number; endYear: number; status: 'Active' | 'Archived'; }
 interface UpdateBatchRequest { name?: string; startYear?: number; endYear?: number; status?: 'Active' | 'Archived'; }
@@ -769,528 +729,346 @@ interface ListClassesResponse { classes: Class[]; }
 interface CreateClassRequest { name: string; batchId: string; }
 interface UpdateClassRequest { name?: string; batchId?: string; }
 
-// ─── TIMETABLE ────────────────────────────────────────────────────────────────
-interface TimeSlot {
-  id: string;
-  classId: string;
-  className?: string;
-  subjectId: string;
-  subjectName?: string;
-  teacherId: string;
-  teacherName?: string;
-  dayOfWeek: 'Monday'|'Tuesday'|'Wednesday'|'Thursday'|'Friday'|'Saturday'|'Sunday';
-  periodNumber: number;
-  label?: string;
-  startTime?: string;
-  endTime?: string;
-  effectiveFrom: string;
-  effectiveTo: string | null;
-}
-interface ListTimetableResponse { timetable: TimeSlot[]; }
-interface CreateTimeSlotRequest {
-  classId: string;
-  subjectId: string;
-  teacherId: string;
-  dayOfWeek: TimeSlot['dayOfWeek'];
-  periodNumber: number;
-  effectiveFrom: string;
-  // NOTE: startTime and endTime are REMOVED in v3.3 — do NOT send them
-}
-interface CreateTimeSlotResponse { timeSlot: TimeSlot; }
-interface EndTimeSlotRequest { effectiveTo: string; }
-interface EndTimeSlotResponse { timeSlot: TimeSlot; }
-
-// ─── ATTENDANCE ───────────────────────────────────────────────────────────────
-interface AttendanceRecord {
-  id: string;
-  date: string;
-  status: 'Present' | 'Absent' | 'Late';
-  timeSlot: { id: string; subjectName?: string; periodNumber: number; dayOfWeek: string; };
-  recordedBy: string;
-  recordedAt: string;
-}
-interface RecordClassAttendanceRequest {
-  timeSlotId: string;
-  date: string;
-  defaultStatus: 'Present' | 'Absent' | 'Late';
-  exceptions: Array<{ studentId: string; status: 'Present' | 'Absent' | 'Late'; }>;
-}
-interface RecordClassAttendanceResponse {
-  recorded: number; present: number; absent: number; late: number;
-  date: string;
-  timeSlot: { id: string; className?: string; subjectName?: string; periodNumber: number; };
-}
-interface StudentAttendanceResponse {
-  student: { id: string; name: string; className?: string; };
-  records: AttendanceRecord[];
-  pagination: { limit: number; offset: number; total: number; };
-}
-interface AttendanceSummaryResponse {
-  studentId: string;
-  month: string;
-  present: number;
-  absent: number;
-  late: number;
-  total: number;
-}
-
-// ─── BULK DELETE ──────────────────────────────────────────────────────────────
+// ─── BULK ─────────────────────────────────────────────────────────────────────
 interface BulkDeleteRequest { ids: string[]; }
 interface BulkDeleteResponse {
   deleted: string[];
   failed: Array<{ id: string; reason: 'NOT_FOUND' | 'HAS_REFERENCES'; message: string; }>;
 }
+
+// ─── PAGINATION ───────────────────────────────────────────────────────────────
+interface Pagination { limit: number; offset: number; total: number; }
+
+// ─── TIMETABLE ────────────────────────────────────────────────────────────────
+interface TimeSlot {
+  id: string; classId: string; className?: string;
+  subjectId: string; subjectName?: string;
+  teacherId: string; teacherName?: string;
+  dayOfWeek: 'Monday'|'Tuesday'|'Wednesday'|'Thursday'|'Friday'|'Saturday'|'Sunday';
+  periodNumber: number; label?: string; startTime?: string; endTime?: string;
+  effectiveFrom: string; effectiveTo: string | null;
+}
+interface ListTimetableResponse { timetable: TimeSlot[]; }
+interface CreateTimeSlotRequest {
+  classId: string; subjectId: string; teacherId: string;
+  dayOfWeek: TimeSlot['dayOfWeek']; periodNumber: number; effectiveFrom: string;
+  // NOTE: startTime and endTime are REMOVED in v3.3 — do NOT send them
+}
+interface CreateTimeSlotResponse { timeSlot: TimeSlot; }
+interface EndTimeSlotRequest { effectiveTo: string; }
+interface EndTimeSlotResponse { timeSlot: { id: string; effectiveTo: string; }; }
+
+// ─── ATTENDANCE ───────────────────────────────────────────────────────────────
+interface AttendanceRecord {
+  id: string; date: string; status: 'Present' | 'Absent' | 'Late';
+  timeSlot: { id: string; subjectName?: string; periodNumber: number; dayOfWeek: string; };
+  recordedBy: string; recordedAt: string;
+}
+
+interface RecordClassAttendanceRequest {
+  timeSlotId: string; date: string; defaultStatus: 'Present' | 'Absent' | 'Late';
+  exceptions?: Array<{ studentId: string; status: 'Present' | 'Absent' | 'Late'; }>;
+}
+interface RecordClassAttendanceResponse {
+  recorded: number; present: number; absent: number; late: number;
+  date: string; timeSlot: { id: string; className: string; subjectName: string; periodNumber: number; };
+}
+
+// ─── ATTENDANCE SUMMARY (CR-FE-001: uses student attendance endpoint) ─────────
+// NOTE: There is NO dedicated /attendance/summary?studentId endpoint in OpenAPI v3.3.0.
+// The Attendance Summary screen reads response.summary from GET /students/{id}/attendance.
+// AttendanceSummaryResponse is REMOVED. Use StudentAttendanceSummary below.
+
+interface StudentAttendanceSummary {
+  totalRecords: number;
+  present: number;
+  absent: number;
+  late: number;
+  attendanceRate: number; // float, e.g. 0.87 = 87%
+}
+
+interface StudentAttendanceResponse {
+  student: Student;
+  records: AttendanceRecord[];
+  summary: StudentAttendanceSummary; // always present per OpenAPI required[] — CR-FE-001
+  pagination: Pagination;
+}
 ```
 
 ---
 
-**Caching & Invalidation Rules (LOCKED):**
+### 3.3 Caching & Invalidation Rules (LOCKED)
 
-| Query Key                   | Stale Time | Invalidated By                                                            |
-| --------------------------- | ---------- | ------------------------------------------------------------------------- |
-| ['timetable', ...filters]   | 5 min      | POST /timetable, PUT /timetable/:id/end, PUT /school-periods/:id mutation |
-| ['school-periods']          | 5 min      | POST/PUT/DELETE /school-periods                                           |
-| ['students']                | 2 min      | POST /students, DELETE /students/:id, DELETE /students/bulk               |
-| ['users', ...]              | 2 min      | POST /users, DELETE /users/:id, DELETE /users/bulk, PUT /users/:id/roles  |
-| ['classes']                 | 2 min      | POST/PUT/DELETE /classes                                                  |
-| ['batches']                 | 5 min      | POST/PUT/DELETE /batches                                                  |
-| ['subjects']                | 5 min      | POST/PUT/DELETE /subjects                                                 |
-| ['student-attendance', ...] | 2 min      | POST /attendance/record-class                                             |
-| ['attendance-summary', ...] | 5 min      | POST /attendance/record-class                                             |
-| ['sa-tenants', ...]         | 1 min      | POST/PUT /super-admin/tenants, deactivate mutation                        |
-| ['sa-features', tenantId]   | 30 sec     | PUT /super-admin/tenants/:id/features/:key                                |
+| Query Key Pattern                            | Stale Time | Invalidated By                                      |
+| -------------------------------------------- | ---------- | --------------------------------------------------- |
+| `['timetable', 'today', isoDate]`              | 5 min      | window focus refetch                                |
+| `['timetable', filters]`                     | 5 min      | POST /timetable, PUT /timetable/{id}/end            |
+| `['school-periods']`                         | 5 min      | POST/PUT/DELETE /school-periods; also clears timetable key |
+| `['student-attendance', id, from, to, page]` | 2 min      | none (read-only)                                    |
+| `['student-attendance', id, from, to]`       | 5 min      | none (read-only) — used by Attendance Summary screen |
+| `['students', 'classId', classId]`            | 2 min      | POST /students, DELETE /students                    |
+| `['students']`                               | 2 min      | POST /students, DELETE /students                    |
+| `['users', roleFilter, searchQuery]`         | 2 min      | POST/PUT/DELETE /users                              |
+| `['classes']`                                | 2 min      | POST/PUT/DELETE /classes                            |
+| `['batches']`                                | 5 min      | POST/PUT/DELETE /batches                            |
+| `['subjects']`                               | 5 min      | POST/PUT/DELETE /subjects                           |
+| `['sa-tenants', statusFilter, searchQuery]`  | 1 min      | POST/PUT /super-admin/tenants                       |
+| `['sa-features', tenantId]`                  | 30 sec     | PUT /super-admin/tenants/{id}/features/{key}        |
 
-**Optimistic updates:** Feature flag toggles on `/tenants/:id/features` only. All other mutations wait for server confirmation before updating UI.
-
----
-
-**Retry Rules (LOCKED):**
-- `GET` requests: retry 2 times, exponential backoff (1s, 2s), only on network error or 500.
-- `POST/PUT/DELETE` mutations: **no automatic retry** (non-idempotent).
-- 401 on any request: clear localStorage (`auth` or `sa_auth`), show explicit modal "Your session has expired, please log in again.", redirect to `/login`.
-- 403 FEATURE_DISABLED: no retry — show full-page feature-not-enabled state permanently.
-- 429: not applicable (no rate limiting in OpenAPI contract). If encountered, show toast "Too many requests. Please wait a moment." — no automatic retry.
-- 500: show toast "Something went wrong. Please try again." with manual retry button (re-triggers the query/mutation).
+**Retry rules (LOCKED):**
+- GET requests: retry 3× with exponential backoff (1s, 2s, 4s)
+- POST/PUT/DELETE mutations: no automatic retry (non-idempotent)
+- 401 response: clear localStorage auth token → redirect to `/login` (no retry)
+- 429 response: show toast "Too many requests. Please wait a moment." — no auto-retry
 
 ---
 
 ## 4. State Management & Data Flow (LOCKED)
 
 **State boundaries:**
+- **Server state:** TanStack Query — all API-fetched data
+- **UI state:** Local component state (`useState`) or React context
+- **Persistent state:** `localStorage`
+  - Key `auth`: `{ token: string, user: TenantUser }` — cleared on logout or 401
+  - Key `sa_auth`: `{ token: string, superAdmin: SuperAdminProfile }` — cleared on SA logout or 401
 
-| Layer            | Tool                             | Scope                                                                       |
-| ---------------- | -------------------------------- | --------------------------------------------------------------------------- |
-| Server state     | TanStack Query v5                | All API data — list caches, mutations, loading/error states                 |
-| Auth state       | React Context (AuthContext)      | Current user, token, activeRole — initialized from localStorage on app boot |
-| UI state         | Local component state (useState) | Drawers, modals, selections, form state                                     |
-| Persistent state | localStorage                     | JWT token + user object only                                                |
-
-**localStorage keys (LOCKED):**
-
-| Key     | Content                                          | Cleared on                                |
-| ------- | ------------------------------------------------ | ----------------------------------------- |
-| auth    | { token: string, user: TenantUser }              | Logout, 401 response, tab close (session) |
-| sa_auth | { token: string, superAdmin: SuperAdminProfile } | SA logout, 401 response                   |
-
-**No other data is persisted to localStorage.** No query cache persistence (no `persistQueryClient`).
-
-**Cross-tab / session behavior:**
-- Token expiry UX: On any 401 response — clear `auth`/`sa_auth` from localStorage, dispatch `AUTH_EXPIRED` event, `AuthContext` catches it, shows modal overlay "Your session has expired, please log in again." with single "Log in" button, then redirects to `/login`.
-- Logout behavior: Call `POST /auth/logout` (fire-and-forget; don't block UI on failure), clear localStorage key, clear TanStack Query cache (`queryClient.clear()`), redirect to `/login`.
-- Multi-tab sync: No. JWT stored in localStorage is readable across tabs, but no cross-tab broadcast for auth state changes. If one tab logs out, the other tabs will hit 401 on the next request and trigger the session expiry modal independently.
-
-**Role switcher flow (LOCKED):**
-1. User selects new role from header dropdown.
-2. `POST /auth/switch-role` called with `{ role: selectedRole }`.
-3. On 200: replace `auth.token` in localStorage with new JWT, update `AuthContext` user with new `activeRole`, re-render navigation (no page reload).
-4. On 400 ROLE_NOT_ASSIGNED: toast "This role is not assigned to your account."
-5. On 403 SINGLE_ROLE_USER: (button never shown — hidden when `user.roles.length < 2`)
+**Cross-tab/session behavior:**
+- Token expiry UX: on any 401 from API client interceptor → clear `auth` from localStorage → redirect to `/login` → show toast "Your session has expired. Please log in again."
+- Logout behavior: clear `auth` key → redirect `/login`; SuperAdmin logout: clear `sa_auth` key → redirect SA `/login`
+- Multi-tab sync: NOT implemented (out of scope — no WebSocket/BroadcastChannel)
 
 ---
 
 ## 5. Design System & UI Constraints
 
-**Design tokens source:** shadcn/ui defaults + Tailwind CSS v3 config. No Figma. Tokens defined in `tailwind.config.ts`.
+**Design tokens source:** No Figma. shadcn/ui defaults + Tailwind CSS v3 utility classes.
 
-**Typography scale (LOCKED):**
-- Base: `16px` (1rem), line-height 1.5
-- Scale: `text-xs` (12px), `text-sm` (14px), `text-base` (16px), `text-lg` (18px), `text-xl` (20px), `text-2xl` (24px)
-- Font: System font stack (`font-sans`) — no external font loading (performance constraint)
+**Typography scale (locked):** Tailwind defaults (`text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl`)
 
-**Spacing scale:** Tailwind default (4px base unit — `p-1`=4px, `p-2`=8px, etc.)
+**Spacing scale (locked):** Tailwind defaults (4px base grid)
 
-**Color system (LOCKED):**
-- Primary: shadcn/ui default slate palette
-- Semantic: `destructive` (red) for delete/error, `muted` for disabled states
-- All text/background combinations must meet WCAG 4.5:1 contrast ratio
-- No custom color overrides without verifying contrast
+**Color system:** shadcn/ui default theme. Contrast ratios must meet WCAG 2.1 AA (4.5:1 text, 3:1 UI components).
 
-**Minimum touch target:** 44×44px on all interactive elements (critical for mobile teachers)
-
-**Component inventory (MVP — all from shadcn/ui unless noted):**
-
-| Component                     | Usage                                            |
-| ----------------------------- | ------------------------------------------------ |
-| Button                        | All CTAs, form submits, actions                  |
-| Input                         | All text/email/password inputs                   |
-| Select                        | Dropdowns (role, status, day, batch)             |
-| Checkbox                      | Bulk select rows                                 |
-| RadioGroup                    | Attendance status per student                    |
-| Dialog                        | Confirmation dialogs (delete, deactivate)        |
-| Sheet (Drawer)                | Create/edit forms slide-in panel                 |
-| Table                         | All list views                                   |
-| Skeleton                      | Loading states on all data views                 |
-| Toast (Sonner)                | Success/error feedback                           |
-| Badge                         | Status indicators (Active/Archived, role tags)   |
-| Switch                        | Feature flag toggles (SuperAdmin portal)         |
-| Tabs                          | Filter tabs where applicable                     |
-| Avatar                        | User initials in header                          |
-| DropdownMenu                  | Role switcher, row action menus                  |
-| Alert                         | Inline error/warning messages                    |
-| Separator                     | Visual dividers                                  |
-| Custom: BottomTabBar          | Mobile navigation (Teacher-focused)              |
-| Custom: Sidebar               | Desktop navigation                               |
-| Custom: FeatureGate           | Wraps feature-gated routes; shows disabled state |
-| Custom: RoleGate              | Wraps role-restricted UI sections                |
-| Custom: SessionExpiredModal   | Full-page overlay on 401                         |
-| Custom: BulkDeleteResultToast | Shows deleted/failed counts after bulk delete    |
+**Component inventory (MVP):**
+- Button (primary, secondary, destructive, ghost)
+- Input, Textarea, Select, Checkbox, RadioGroup
+- Form (react-hook-form wrapper with zod error display)
+- Table (with sortable headers, row checkboxes, bulk action bar)
+- Drawer (create/edit forms — slides from right, focus trap)
+- Dialog (confirmation — deactivate/delete actions)
+- Toast (success, error, warning — top-right, 4s auto-dismiss)
+- Skeleton (table rows, cards, toggles)
+- Badge (status indicators: Active/Archived/inactive)
+- Switch (role="switch" for feature toggles)
+- Pagination (prev/next + page indicator)
+- EmptyState (illustration + message + optional CTA)
+- FullPageError (retry button)
+- FeatureDisabled (full-page gate for 403 FEATURE_DISABLED)
 
 **Responsiveness:**
-- Breakpoints: Tailwind defaults (`sm`: 640px, `md`: 768px, `lg`: 1024px, `xl`: 1280px)
-- Mobile-first: Yes
-- Mobile (< 768px): Bottom tab bar navigation, single-column layouts, full-width drawers
-- Desktop (≥ 768px): Collapsible sidebar navigation, multi-column layouts, right-side drawers
+- Mobile-first (Tailwind `sm:` breakpoint at 640px, `md:` at 768px, `lg:` at 1024px)
+- All tables collapse to card layout on mobile
+- Drawers are full-screen on mobile, 480px panel on desktop
 
 ---
 
-## 6. Accessibility (A11y) Baseline (LOCKED)
+## 6. Accessibility (A11y Baseline — LOCKED)
 
 **Target:** WCAG 2.1 AA
 
 **Mandatory behaviors:**
-- All interactive elements keyboard-navigable (Tab/Shift+Tab/Enter/Space/Escape)
-- Visible focus ring on all focusable elements (Tailwind `focus-visible:ring-2`)
-- All form errors announced via `aria-describedby` linking input to error message
-- Dialog/Drawer: focus trap on open, focus returns to trigger on close, Escape closes
-- Color contrast: text on background ≥ 4.5:1, large text ≥ 3:1
-- All icon-only buttons have `aria-label` describing the action
-- All tables have `<caption>` or `aria-label`
-- `aria-live="polite"` on bulk action count updates and toast region
-- Feature toggle (`Switch`) uses `role="switch"` with `aria-checked`
-- Attendance status radio groups have group label per student name
-- `prefers-reduced-motion`: disable all CSS transitions/animations when set
+- All interactive elements reachable and operable via keyboard (Tab, Enter, Space, Escape, Arrow keys)
+- Visible focus ring on all focusable elements (Tailwind `focus-visible:ring`)
+- All form fields have associated `<label>` via `htmlFor` or `aria-label`
+- All form errors announced via `aria-describedby` pointing to error message element
+- All dialogs/drawers trap focus; Escape closes them
+- Toast notifications use `role="status"` or `aria-live="polite"` for non-critical; `aria-live="assertive"` for errors
+- Color contrast ≥ 4.5:1 for text, ≥ 3:1 for UI components and focus indicators
+- No information conveyed by color alone
+- All images/icons that convey meaning have `alt` text or `aria-label`; decorative icons have `aria-hidden="true"`
+- Tables have `<caption>`; complex tables have `scope` on headers
+
+**Automated checks:** axe-core integrated in Vitest component tests. All 13 screens must pass with 0 violations.
 
 ---
 
 ## 7. Performance Budgets (LOCKED)
 
-| Metric            | Target                      |
-| ----------------- | --------------------------- |
-| LCP               | ≤ 2.5s on 4G                |
-| INP               | ≤ 200ms                     |
-| CLS               | < 0.1                       |
-| Initial JS bundle | ≤ 200KB gzipped             |
-| TTI               | ≤ 3.5s on mid-range Android |
+**Targets:**
+
+| Metric           | Target      |
+| ---------------- | ----------- |
+| LCP              | ≤ 2500ms    |
+| INP              | ≤ 200ms     |
+| CLS              | ≤ 0.1       |
+| Initial JS bundle | ≤ 200KB gzip |
+| Route chunk max  | ≤ 50KB gzip  |
 
 **Techniques (LOCKED):**
-- Code splitting: Yes — all routes lazy-loaded via `React.lazy` + `Suspense`
-- Image optimization: N/A — icon-only UI, no photographs, inline SVG only
-- Virtualized lists: Yes — student list in Record Attendance if > 200 rows (use `@tanstack/react-virtual`)
-- No external font loading (system font stack only)
-- No analytics scripts
-- Tailwind CSS purged at build time (no unused styles)
-- `vite-plugin-pwa` generates service worker for offline shell + asset caching
-
-**PWA config (LOCKED):**
-- App installable on Android home screen
-- Offline shell: login page + "You are offline" state for protected routes
-- Cache strategy: network-first for API calls, cache-first for static assets
-- App manifest: `name`, `short_name`, `icons` (192px + 512px SVG), `theme_color`, `display: standalone`
+- Route-level code splitting via React Router lazy + Suspense
+- No virtualization needed for current data sizes (max 60 students, 50 timetable slots, 15 periods)
+- Virtualize student table only if > 200 rows rendered (use `@tanstack/react-virtual`)
+- Image optimization: N/A (no user images in scope)
+- PWA: service worker caches app shell only (no API response caching via SW)
 
 ---
 
-## 8. Security & Privacy (Frontend)
+## 8. Security & Privacy (Frontend — LOCKED)
 
 **Threat model assumptions:**
-- Primary threat: XSS via injected content
-- No server-side rendering — no server-side cookie theft vector
-- No third-party scripts (no analytics, no CDN-loaded libraries)
+- XSS defense: React JSX escaping is sufficient; no `dangerouslySetInnerHTML` anywhere (enforced via banned pattern)
+- CSRF: N/A — Bearer JWT in Authorization header, not cookies
+- Token storage: JWT stored in `localStorage`. Acceptable risk for this threat model (no XSS vectors from banned patterns). No refresh token — session ends on expiry.
+- PII handling: `email`, `name` fields rendered in UI but never logged or stored beyond `localStorage auth` key. `localStorage` cleared on logout.
+- No analytics, no telemetry, no third-party scripts (out of scope)
 
-**XSS defense baseline:**
-- No `dangerouslySetInnerHTML` anywhere in codebase (lint rule enforced)
-- All user-supplied content rendered as text nodes (React default escaping)
-- Content Security Policy headers via Cloudflare Pages `_headers` file:
-  ```
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' VITE_API_BASE_URL;
-  ```
-
-**CSRF:** Not applicable — Bearer token in header (not cookie). No CSRF token needed.
-
-**Token storage rules:**
-- JWT stored in `localStorage` under keys `auth` and `sa_auth` only
-- Token never logged, never sent to any third-party endpoint
-- Token never stored in `sessionStorage`, URL params, or component state
-
-**PII handling rules (DPDPA 2023):**
-- Student names, teacher names, email addresses are PII — never logged to console in production builds
-- `VITE_APP_ENV=production` disables all `console.log` via Vite `esbuild.drop: ['console']`
-- No PII in URL params (use POST body or query params for IDs only, not names)
-- Privacy Policy page documents: data collected (name, email, attendance records), purpose (school management), retention (indefinite per school admin), user rights (access, correction, deletion via school admin), contact for data requests
-
-**No cookie consent banner** required (no cookies used in the frontend).
+**DPDPA 2023 compliance (India):**
+- Privacy Policy screen is mandatory (public, linked in footer)
+- Terms of Service screen is mandatory (public, linked in footer)
+- No consent banner required (no cookies beyond session, no tracking)
 
 ---
 
-## 9. Observability (Frontend)
+## 9. Observability (Frontend — LOCKED)
 
-**Logging/telemetry:** None. No Sentry, no Mixpanel, no GA, no Amplitude.
+**Logging/telemetry:** NONE. No Sentry, no Mixpanel, no GA. Explicitly out of scope.
 
-**What is explicitly NOT tracked:** All user actions, page views, errors, performance metrics. No telemetry of any kind.
-
-**Error reporting:** Console errors only in development (`VITE_APP_ENV=development`). All `console.*` dropped in production build via `esbuild.drop: ['console']`.
-
-**Future:** Sentry can be added via Change Request when school count exceeds 10 tenants and debugging becomes necessary. Requires DPDPA-compliant PII scrubbing config before enabling.
+**Error reporting:** Console errors in development only (`VITE_APP_ENV === 'development'`). No remote error reporting.
 
 ---
 
-## 10. Testing Strategy (Frontend)
+## 10. Testing Strategy (LOCKED)
 
-**Test layers (LOCKED):**
+**Test layers:**
 
-| Layer             | Tool                                                          | Scope                                                                                                                       |
-| ----------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Unit              | Vitest                                                        | Pure utility functions, zod schemas, date helpers, role/feature guard logic                                                 |
-| Component         | Vitest + React Testing Library                                | All form components, auth guards, bulk delete modal, role switcher                                                          |
-| Integration       | Vitest + MSW (Mock Service Worker)                            | Full screen flows against mocked API (not Prism — MSW for test isolation)                                                   |
-| E2E               | Playwright                                                    | Critical paths only: login → dashboard, record attendance, create timetable slot, SuperAdmin create tenant + toggle feature |
-| Visual regression | None (out of scope for MVP)                                   |                                                                                                                             |
-| A11y              | axe-core (via @axe-core/react in dev + axe-playwright in E2E) | All 13 screens                                                                                                              |
+| Layer              | Scope                                                      | Tool                     |
+| ------------------ | ---------------------------------------------------------- | ------------------------ |
+| Unit               | Utility functions, zod schemas, date helpers               | Vitest                   |
+| Component          | All screens: loading/empty/error states, form validation   | Vitest + React Testing Library |
+| Integration        | Full user flows against Prism mock server                  | Playwright               |
+| A11y               | All 13 screens — 0 axe-core violations required            | axe-core (Vitest plugin) |
+| Visual regression  | No (out of scope)                                          | —                        |
 
 **Contract alignment checks (REQUIRED):**
-- All integration tests run against MSW handlers derived from OpenAPI v3.3.0 schemas
-- A dedicated test file `api-contract.test.ts` asserts that every `fetch`/`axios` call in `/src/api/` maps to a valid operationId in `openapi.yaml`
-- If any API call/field used in UI is missing from OpenAPI → test fails → backend Change Request required before merge
+- All API calls in component tests use MSW handlers typed against `src/api/` interfaces
+- Any field or endpoint not present in OpenAPI v3.3.0 must cause test failure at review
+- Prism mock used for Playwright E2E — no real backend needed for CI
 
 **MVP test checklist:**
-- Auth: tenant login (success, 401, 403 inactive, 404 slug not found), SA login (success, 401), role switch (success, 403 single role), session expiry modal trigger
-- Dashboard: timetable loads, feature-disabled state, empty state
-- Record attendance: full submission flow, future date guard, duplicate 409, teacher-not-assigned 403
-- Timetable: create slot (success, PERIOD_NOT_CONFIGURED 400, 409 conflict), end assignment, feature-disabled state
-- School periods: create (success, 409 duplicate, 400 time invalid), edit (immutable periodNumber), delete (success, 409 HAS_REFERENCES)
-- Bulk delete: partial success display (failed rows highlighted), 100-item max
-- SuperAdmin: create tenant (success, 409), deactivate (success, 409 already inactive), feature toggle (success, FEATURE_DEPENDENCY 400 with revert)
-- A11y: axe-core zero violations on all 13 screens
+- [ ] Auth flows: login (success, 401, 403 TENANT_INACTIVE, 404), logout, role switch
+- [ ] Dashboard: slot list, empty state, feature-disabled state
+- [ ] Timetable: grid render, create slot (success + 400 + 409), end assignment
+- [ ] Record Attendance: slot selection, student load via `classId` filter, submit (success + 409 + 403)
+- [ ] Student Attendance History: pagination, date filters, 404 state
+- [ ] Attendance Summary: month selection, summary display, empty month state
+- [ ] All CRUD screens: create (success + 400 + 409), delete (success + 409), bulk delete (partial failure)
+- [ ] All error states: 401 expiry redirect, 403 role guard, 500 retry
+- [ ] A11y: axe-core pass on all 13 screens
 
 ---
 
 ## 11. Project Structure (Frontend skeleton)
 
 ```
-/apps
-  /tenant-app                   ← Vite project for school-facing app
-    .env.example
-    package.json
-    tsconfig.json
-    vite.config.ts
-    /public
-      manifest.webmanifest
-      icon-192.svg
-      icon-512.svg
-    /src
-      main.tsx
-      /app
-        App.tsx                 ← Router root, AuthProvider, QueryClientProvider
-        ProtectedRoute.tsx      ← JWT check + redirect
-        RoleGate.tsx            ← Role-based render guard
-        FeatureGate.tsx         ← Feature-flag render guard
-      /api
-        client.ts               ← axios instance, interceptors (401 handler, token inject)
-        auth.ts                 ← tenantLogin, logout, switchRole
-        timetable.ts            ← listTimetable, createTimeSlot, endTimeSlot
-        attendance.ts           ← recordClassAttendance, getStudentAttendance, getSummary
-        users.ts                ← listUsers, createUser, updateUserRoles, deleteUser, bulkDeleteUsers
-        students.ts             ← listStudents, createStudent, deleteStudent, bulkDeleteStudents
-        classes.ts              ← listClasses, createClass, updateClass, deleteClass, bulkDeleteClasses
-        batches.ts              ← listBatches, createBatch, updateBatch, deleteBatch, bulkDeleteBatches
-        subjects.ts             ← listSubjects, createSubject, updateSubject, deleteSubject, bulkDeleteSubjects
-        schoolPeriods.ts        ← listPeriods, createPeriod, updatePeriod, deletePeriod
-        features.ts             ← getTenantFeatures
-      /components
-        /ui                     ← shadcn/ui components (do not modify originals)
-        Layout.tsx              ← Sidebar + BottomTabBar + header shell
-        Sidebar.tsx
-        BottomTabBar.tsx
-        SessionExpiredModal.tsx
-        BulkDeleteResultToast.tsx
-        PageError.tsx
-        FeatureDisabledPage.tsx
-      /features
-        /auth
-          LoginPage.tsx
-          AuthContext.tsx
-        /dashboard
-          DashboardPage.tsx
-        /timetable
-          TimetablePage.tsx
-          CreateSlotDrawer.tsx
-          EndSlotDialog.tsx
-        /attendance
-          RecordAttendancePage.tsx
-          StudentAttendanceHistoryPage.tsx
-          AttendanceSummaryPage.tsx
-        /manage
-          /users
-            UsersPage.tsx
-            CreateUserDrawer.tsx
-            EditRolesDrawer.tsx
-          /students
-            StudentsPage.tsx
-            CreateStudentDrawer.tsx
-          /classes
-            ClassesPage.tsx
-            ClassDrawer.tsx
-          /batches
-            BatchesPage.tsx
-            BatchDrawer.tsx
-          /subjects
-            SubjectsPage.tsx
-            SubjectDrawer.tsx
-          /school-periods
-            SchoolPeriodsPage.tsx
-            PeriodDrawer.tsx
-          CrudListShell.tsx      ← Shared list + bulk select + toolbar
-          BulkDeleteModal.tsx
-        /static
-          PrivacyPage.tsx
-          TermsPage.tsx
-      /hooks
-        useAuth.ts
-        useBulkSelect.ts
-        useFeatureFlag.ts
-      /types
-        api.ts                  ← All TypeScript interfaces from section 3.2
-      /utils
-        dates.ts                ← date-fns wrappers (IST display, YYYY-MM-DD formatting)
-        roles.ts                ← hasRole(), isMultiRole() helpers
-        errors.ts               ← parseApiError(), getErrorMessage()
-
-  /superadmin-app               ← Separate Vite project for SuperAdmin portal
-    .env.example
-    package.json
-    tsconfig.json
-    vite.config.ts
-    /src
-      main.tsx
-      /app
-        App.tsx
-        SAProtectedRoute.tsx
-      /api
-        client.ts               ← separate axios instance with sa_auth token
-        superAdminAuth.ts
-        tenants.ts
-        saFeatures.ts
-      /features
-        /auth
-          SALoginPage.tsx
-          SAAuthContext.tsx
-        /tenants
-          TenantsPage.tsx
-          CreateTenantDrawer.tsx
-          EditTenantDrawer.tsx
-          DeactivateDialog.tsx
-        /features
-          TenantFeaturesPage.tsx
-      /types
-        api.ts
-      /utils
-        errors.ts
+/
+├── apps/
+│   ├── tenant/               # Tenant app (Vite project)
+│   │   ├── src/
+│   │   │   ├── api/          # Typed API client (axios instance + endpoint functions)
+│   │   │   ├── components/   # Shared UI components (Button, Table, Drawer, Toast…)
+│   │   │   ├── features/     # Screen-level feature modules (dashboard/, timetable/, …)
+│   │   │   ├── hooks/        # Shared hooks (useAuth, usePagination…)
+│   │   │   ├── routes/       # React Router config + ProtectedRoute + RoleGuard
+│   │   │   ├── styles/       # Tailwind base + shadcn theme
+│   │   │   ├── types/        # Global TypeScript types (mirrors Section 3.2)
+│   │   │   └── utils/        # Date helpers (date-fns wrappers), formatters
+│   │   ├── .env.example
+│   │   ├── vite.config.ts
+│   │   └── tsconfig.json
+│   └── superadmin/           # SuperAdmin portal (separate Vite project)
+│       └── src/              # Same structure as tenant app, SA-specific features only
+├── docs/
+│   └── openapi.yaml          # OpenAPI v3.3.0 — source of truth for mock + contract tests
+└── package.json              # Monorepo root (pnpm workspaces recommended)
 ```
 
-**Naming convention:** PascalCase for components/pages, camelCase for hooks/utils/api functions, kebab-case for file names where multiple words.
-**Import alias:** `@/` → `/src/` in both apps.
+**Naming conventions:**
+- Files: `kebab-case` (e.g., `attendance-summary.tsx`)
+- Components: `PascalCase`
+- Hooks: `camelCase` prefixed with `use`
+- API functions: `camelCase` (e.g., `getStudentAttendance`, `recordClassAttendance`)
+- Import alias: `@/` maps to `src/` in each app
 
 ---
 
-## 12. Deployment, Rollback, Environments
+## 12. Deployment, Rollback & Environments (LOCKED)
 
-**Hosting:** Cloudflare Pages
-- Tenant app: `app.yourdomain.com` → Cloudflare Pages project `school-app`
-- SuperAdmin portal: `admin.yourdomain.com` → Cloudflare Pages project `school-admin`
+**Hosting:** Cloudflare Pages (both tenant app and SuperAdmin portal as separate projects)
 
-**Build commands (LOCKED):**
+**Build command (locked):**
 ```bash
-# Tenant app
-cd apps/tenant-app && npm run build
-# Output: apps/tenant-app/dist
-
-# SuperAdmin portal
-cd apps/superadmin-app && npm run build
-# Output: apps/superadmin-app/dist
+pnpm --filter tenant build    # tenant app
+pnpm --filter superadmin build  # SuperAdmin portal
 ```
 
 **Environment mapping:**
+| `VITE_APP_ENV` | API target               | Purpose              |
+| -------------- | ------------------------ | -------------------- |
+| development    | localhost:3000/api       | Local dev            |
+| development    | localhost:4010/api       | Local mock (Prism)   |
+| staging        | staging API URL          | Integration testing  |
+| production     | production API URL       | Live                 |
 
-| Env        | VITE_APP_ENV | VITE_API_BASE_URL                                              |
-| ---------- | ------------ | -------------------------------------------------------------- |
-| Local dev  | development  | http://localhost:3000/api or http://localhost:4010/api (Prism) |
-| Staging    | staging      | https://api-staging.yourdomain.com/api                         |
-| Production | production   | https://api.yourdomain.com/api                                 |
-
-**Cloudflare Pages `_headers` file (LOCKED):**
-```
-/*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.yourdomain.com;
-  X-Frame-Options: DENY
-  X-Content-Type-Options: nosniff
-  Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
-```
-
-**Rollback strategy:** Cloudflare Pages maintains deployment history. Rollback = select previous successful deployment in Cloudflare dashboard and re-deploy. CDN cache invalidated automatically on new deployment. No manual cache purge needed.
+**Rollback strategy:** Cloudflare Pages instant rollback to previous deployment via dashboard or `wrangler pages deployment rollback`. No cache invalidation step required (assets are content-hashed).
 
 ---
 
 ## 13. Forbidden Changes (Scope Lock)
 
 **BANNED without a new Freeze version:**
-- Add any route or screen not listed in Section 2
-- Change routing mode (SPA is locked)
-- Change state management library (TanStack Query + React Context is locked)
-- Change auth mode (JWT + localStorage is locked)
-- Add i18n or multi-language support
-- Add analytics or telemetry of any kind
-- Add real-time/WebSocket features
-- Change API base URL format or auth header scheme
-- Add or call any endpoint not present in OpenAPI v3.3.0
-- Change the Cloudflare Pages deployment target
-- Add Redux, Zustand, or any global state store
-- Add SSR or Next.js migration
-- Add `dangerouslySetInnerHTML`
-- Remove WCAG 2.1 AA compliance requirement
-- Add custom branding/theming UI
+- Add routes/screens
+- Change routing mode (SPA → SSR/SSG)
+- Change state management library
+- Change auth mode (JWT → sessions)
+- Add i18n
+- Add offline/PWA API caching
+- Change API assumptions derived from OpenAPI endpoints/fields/status codes/error shapes
+- Add analytics or telemetry
+- Add any third-party auth provider
 
-If requested: create Change Request → assess scope/timeline/risk → approve/reject.
+If requested → create Change Request → re-price → approve/reject.
 
 ---
 
 ## 14. Change Control
 
 **Change Request Format:**
-- Requested change:
-- Reason:
-- Scope impact: (screens added/modified/removed)
-- Timeline impact: (+N weeks)
-- Risk impact:
-- OpenAPI dependency: unchanged / requires new OpenAPI version (state version)
-- Backend Freeze dependency: unchanged / requires new Backend Freeze version (state version)
-- Decision: Approved / Rejected
-- New Frontend Freeze version: v1.1 / v2.0
+- CR Number
+- Requested change (precise delta)
+- Reason
+- Scope impact
+- Timeline impact
+- Cost impact
+- Risk impact
+- Backend Freeze dependency: unchanged | updated (version)
+- OpenAPI dependency: unchanged | updated (version/tag)
+- Decision: Approved | Rejected
+- New Freeze version
 
-**Rule:** Any UI need not supported by OpenAPI v3.3.0 MUST be raised as a backend Change Request first. Frontend Change Request cannot be approved until backend Change Request is approved and new OpenAPI is attached.
+**Billing rule:** Self-funded project — no billing. CR approval by sole developer.
+
+**Response SLA:** Immediate (solo project).
 
 ---
 
 ## 15. Version History
 
-- **v1.0 (2026-02-26):** Initial frontend freeze approved for execution. Covers 13 screens across tenant app + SuperAdmin portal. Aligned to Backend Freeze v3.3 and OpenAPI v3.3.0.
-```
+| Version | Date       | Description                                                                                                                                                                                                                                            | Approved By     |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- |
+| v1.0    | 2026-02-26 | Initial frontend freeze approved for execution.                                                                                                                                                                                                        | Solo developer  |
+| v1.1    | 2026-03-01 | CR-FE-001: (1) Attendance Summary screen re-pointed to GET /students/{id}/attendance with month bounds — GET /attendance/summary?studentId is not in OpenAPI v3.3.0. (2) StudentAttendanceResponse.summary field added (was missing; required in OpenAPI). (3) Record Attendance classId filter note corrected — OpenAPI documents classId param on GET /students; query key scoped to classId. (4) effectiveFrom past-date validation annotated as UX policy only. Backend Freeze v3.3 unchanged. OpenAPI v3.3.0 unchanged. | Solo developer  |
+
+---
+
+*END OF FRONTEND PROJECT FREEZE v1.1 — White-Label School Management System*
+*This document supersedes v1.0. Archive v1.0 as: white_label_frontend_architecture_freeze_v1.0_SUPERSEDED.txt*

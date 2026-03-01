@@ -13,6 +13,7 @@ import batchesRouter from "./modules/batches/routes";
 import subjectsRouter from "./modules/subjects/routes";
 import classesRouter from "./modules/classes/routes";
 import studentsRouter from "./modules/students/routes";
+import featuresRouter from "./modules/features/routes";
 import schoolPeriodsRouter from "./modules/school-periods/routes";
 import timetableRouter from "./modules/timetable/routes";
 import attendanceRouter, {
@@ -53,6 +54,7 @@ export function createApp(): Application {
   app.use("/api/classes", classesRouter);
   app.use("/api/students", studentsRouter);
   app.use("/api/students", studentAttendanceRouter);
+  app.use("/api/features", featuresRouter);
   app.use("/api/school-periods", schoolPeriodsRouter);
   app.use("/api/timetable", timetableRouter);
   app.use("/api/attendance", attendanceRouter);
