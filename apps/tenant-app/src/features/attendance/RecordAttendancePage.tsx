@@ -192,7 +192,7 @@ export default function RecordAttendancePage() {
 
   // ── Slot list query ───────────────────────────────────────────────────────
   const slotsQ = useQuery({
-    queryKey: ["timetable", "myToday", todayISO(), user?.id],
+    queryKey: ["timetable", "myToday", todayISO(), user?.activeRole, user?.id],
     queryFn: () =>
       timetableApi.list({
         date: todayISO(),

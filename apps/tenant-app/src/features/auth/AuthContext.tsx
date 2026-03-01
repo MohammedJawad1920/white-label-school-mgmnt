@@ -56,7 +56,19 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 function readStorage(): AuthStorage | null {
   try {
     const raw = localStorage.getItem(AUTH_KEY);
-    return raw ? (JSON.parse(raw) as AuthStorage) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as AuthStorage;
+    // Validate required TenantUser fields — reject corrupted data
+    if (
+      !parsed.token ||
+      !parsed.user?.id ||
+      !parsed.user?.name ||
+      !parsed.user?.email
+    ) {
+      localStorage.removeItem(AUTH_KEY);
+      return null;
+    }
+    return parsed;
   } catch {
     return null; // malformed — treat as logged out
   }
@@ -94,6 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (req: SwitchRoleRequest) => {
       const res = await authApi.switchRole(req);
       login(res.token, res.user); // atomically replaces JWT + user
+      // Signal cache invalidation — listeners (App.tsx) clear TanStack Query cache
+      window.dispatchEvent(new CustomEvent("ROLE_SWITCHED"));
     },
     [login],
   );

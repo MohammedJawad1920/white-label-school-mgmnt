@@ -36,9 +36,9 @@ function TopBar() {
           </span>
           <div
             className="flex items-center justify-center w-7 h-7 rounded-full bg-muted text-xs font-semibold"
-            aria-label={`Signed in as ${user.name}`}
+            aria-label={`Signed in as ${user.name ?? "User"}`}
           >
-            {user.name.slice(0, 2).toUpperCase()}
+            {user.name?.slice(0, 2).toUpperCase() ?? "??"}
           </div>
         </div>
       )}

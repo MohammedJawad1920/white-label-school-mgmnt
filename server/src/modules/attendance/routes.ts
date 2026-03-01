@@ -1,10 +1,9 @@
 /**
  * Attendance Routes
  *
- * NOTE: getStudentAttendance is mounted here even though its path is
- * /students/:studentId/attendance — we mount this router at /api in app.ts
- * with a broader prefix so the full path resolves correctly.
- * See app.ts comment for mount strategy.
+ * Two routers exported:
+ *  - default: /record-class + /summary — mounted at /api/attendance
+ *  - studentAttendanceRouter: /:studentId/attendance — mounted at /api/students
  */
 import { Router } from "express";
 import { tenantContextMiddleware } from "../../middleware/tenantContext";
@@ -17,6 +16,7 @@ import {
   getAttendanceSummary,
 } from "./controller";
 
+// ---- Main attendance router (mounted at /api/attendance) ----
 const router = Router();
 router.use(tenantContextMiddleware);
 router.use(featureGuard("attendance"));
@@ -29,8 +29,16 @@ router.get(
   asyncHandler(getAttendanceSummary),
 );
 
-// Student history — path: /students/:studentId/attendance
-// This route is mounted separately in app.ts under /api/students
-router.get("/:studentId/attendance", asyncHandler(getStudentAttendance));
+// ---- Student-attendance router (mounted at /api/students) ----
+const studentAttendanceRouter = Router();
+studentAttendanceRouter.use(tenantContextMiddleware);
+studentAttendanceRouter.use(featureGuard("attendance"));
 
+// GET /api/students/:studentId/attendance
+studentAttendanceRouter.get(
+  "/:studentId/attendance",
+  asyncHandler(getStudentAttendance),
+);
+
+export { studentAttendanceRouter };
 export default router;

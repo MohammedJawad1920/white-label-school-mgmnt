@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import React, { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/features/auth/AuthContext";
@@ -69,6 +69,15 @@ function PageLoader() {
 }
 
 export function App() {
+  // Clear all cached queries when active role changes so pages refetch with new JWT
+  React.useEffect(() => {
+    function handleRoleSwitch() {
+      queryClient.removeQueries();
+    }
+    window.addEventListener("ROLE_SWITCHED", handleRoleSwitch);
+    return () => window.removeEventListener("ROLE_SWITCHED", handleRoleSwitch);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

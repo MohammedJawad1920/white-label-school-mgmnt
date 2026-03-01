@@ -168,9 +168,8 @@ CREATE INDEX idx_school_periods_tenant ON school_periods(tenant_id);
 
 -- =====================================================
 -- TABLE 9: TIMESLOTS (Immutable Timetable Versioning)
--- v3.3: Removed start_time/end_time columns (derived from school_periods JOIN).
---       Removed CHECK period_number <= 10 (unbounded per v3.3).
---       Soft-delete added (deleted_at).
+-- v3.3: Removed CHECK constraint upper bound on period_number
+-- v3.3: start_time/end_time kept for backward compat but derived from school_periods at read
 -- =====================================================
 CREATE TABLE timeslots (
   id             VARCHAR(50)  PRIMARY KEY,
@@ -181,19 +180,20 @@ CREATE TABLE timeslots (
   day_of_week    VARCHAR(20)  NOT NULL
                    CHECK(day_of_week IN ('Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday')),
   period_number  INTEGER      NOT NULL CHECK(period_number >= 1),
-  -- No start_time / end_time here — derived via JOIN with school_periods on period_number
+  start_time     TIME,
+  end_time       TIME,
   effective_from DATE         NOT NULL,
-  effective_to   DATE         DEFAULT NULL,
+  effective_to   DATE,
   deleted_at     TIMESTAMPTZ  DEFAULT NULL,
   created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_timeslots_tenant_id  ON timeslots(tenant_id);
-CREATE INDEX idx_timeslots_class_id   ON timeslots(class_id);
-CREATE INDEX idx_timeslots_teacher_id ON timeslots(teacher_id);
-CREATE INDEX idx_timeslots_dates      ON timeslots(effective_from, effective_to);
--- Only one active (not ended) slot per class+day+period per tenant
+CREATE INDEX idx_timeslots_tenant_id        ON timeslots(tenant_id);
+CREATE INDEX idx_timeslots_class_id         ON timeslots(class_id);
+CREATE INDEX idx_timeslots_teacher_id       ON timeslots(teacher_id);
+CREATE INDEX idx_timeslots_effective_dates  ON timeslots(effective_from, effective_to);
+CREATE INDEX idx_timeslots_deleted          ON timeslots(tenant_id, deleted_at) WHERE deleted_at IS NULL;
 CREATE UNIQUE INDEX idx_timeslots_active_unique
   ON timeslots(tenant_id, class_id, day_of_week, period_number)
   WHERE effective_to IS NULL AND deleted_at IS NULL;

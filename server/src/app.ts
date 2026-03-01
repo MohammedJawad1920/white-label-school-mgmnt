@@ -15,7 +15,9 @@ import classesRouter from "./modules/classes/routes";
 import studentsRouter from "./modules/students/routes";
 import schoolPeriodsRouter from "./modules/school-periods/routes";
 import timetableRouter from "./modules/timetable/routes";
-import attendanceRouter from "./modules/attendance/routes";
+import attendanceRouter, {
+  studentAttendanceRouter,
+} from "./modules/attendance/routes";
 
 export function createApp(): Application {
   const app = express();
@@ -50,7 +52,7 @@ export function createApp(): Application {
   app.use("/api/subjects", subjectsRouter);
   app.use("/api/classes", classesRouter);
   app.use("/api/students", studentsRouter);
-  app.use("/api/students", attendanceRouter);
+  app.use("/api/students", studentAttendanceRouter);
   app.use("/api/school-periods", schoolPeriodsRouter);
   app.use("/api/timetable", timetableRouter);
   app.use("/api/attendance", attendanceRouter);

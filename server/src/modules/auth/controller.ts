@@ -182,6 +182,6 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
 
   res.status(200).json({
     token,
-    user: { id: user.id, roles: user.roles, activeRole: newActiveRole },
+    user: formatUser(user, newActiveRole),
   });
 }

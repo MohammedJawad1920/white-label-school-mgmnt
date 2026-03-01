@@ -316,7 +316,7 @@ export function Sidebar() {
               className="flex items-center justify-center w-7 h-7 rounded-full bg-muted text-xs font-semibold shrink-0"
               aria-hidden="true"
             >
-              {user.name.slice(0, 2).toUpperCase()}
+              {user.name?.slice(0, 2).toUpperCase() ?? "??"}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium truncate">{user.name}</p>
