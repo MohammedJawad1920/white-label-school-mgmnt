@@ -212,10 +212,14 @@ export async function getStudentAttendance(
   const limit = Math.min(parseInt(limitStr ?? "50", 10), 200);
   const offset = Math.max(parseInt(offsetStr ?? "0", 10), 0);
 
-  // Verify student belongs to this tenant
-  const studentResult = await pool.query<StudentRow>(
-    `SELECT id, tenant_id, name, class_id, batch_id, deleted_at, created_at, updated_at
-     FROM students WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+  // Verify student belongs to this tenant + JOIN class for className (Freeze §3.5)
+  const studentResult = await pool.query<StudentRow & { class_name: string }>(
+    `SELECT st.id, st.tenant_id, st.name, st.class_id, st.batch_id,
+            st.deleted_at, st.created_at, st.updated_at,
+            c.name AS class_name
+     FROM students st
+     JOIN classes c ON c.id = st.class_id
+     WHERE st.id = $1 AND st.tenant_id = $2 AND st.deleted_at IS NULL`,
     [studentId, tenantId],
   );
   if ((studentResult.rowCount ?? 0) === 0) {
@@ -302,8 +306,7 @@ export async function getStudentAttendance(
     student: {
       id: student.id,
       name: student.name,
-      classId: student.class_id,
-      batchId: student.batch_id,
+      className: student.class_name,
     },
     records: recordsResult.rows.map((r) => ({
       id: r.id,

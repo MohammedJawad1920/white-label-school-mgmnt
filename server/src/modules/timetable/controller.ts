@@ -167,6 +167,18 @@ export async function createTimeslot(
     effectiveFrom?: string;
   };
 
+  // ── v3.3 BREAKING: Reject removed fields ────────────────────────
+  // Freeze §7 Phase 5: "rejects request if startTime/endTime sent in body → 400"
+  const body = req.body as Record<string, unknown>;
+  if (body.startTime !== undefined || body.endTime !== undefined) {
+    send400(
+      res,
+      "startTime and endTime are no longer accepted. Period times are derived from school_periods configuration.",
+      "VALIDATION_ERROR",
+    );
+    return;
+  }
+
   // ── Validation ────────────────────────────────────────────────────
   if (!classId || !subjectId || !teacherId || !dayOfWeek || !effectiveFrom) {
     send400(

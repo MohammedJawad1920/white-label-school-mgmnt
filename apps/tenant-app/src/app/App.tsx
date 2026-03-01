@@ -5,6 +5,7 @@ import { AuthProvider } from "@/features/auth/AuthContext";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { SessionExpiredModal } from "./SessionExpiredModal";
 import { RoleGate } from "./RoleGate";
+import { FeatureGate } from "./FeatureGate";
 
 // ── Lazy-loaded routes ────────────────────────────────────────────────────────
 const LoginPage = lazy(() => import("@/features/auth/LoginPage"));
@@ -95,12 +96,30 @@ export function App() {
                 <Route element={<Layout />}>
                   <Route index element={<Navigate to="/dashboard" replace />} />
 
-                  {/* Teacher + Admin */}
-                  <Route path="/dashboard" element={<DashboardPage />} />
-                  <Route path="/timetable" element={<TimetablePage />} />
+                  {/* Teacher + Admin — timetable feature-gated */}
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <FeatureGate featureKey="timetable">
+                        <DashboardPage />
+                      </FeatureGate>
+                    }
+                  />
+                  <Route
+                    path="/timetable"
+                    element={
+                      <FeatureGate featureKey="timetable">
+                        <TimetablePage />
+                      </FeatureGate>
+                    }
+                  />
                   <Route
                     path="/attendance/record"
-                    element={<RecordAttendancePage />}
+                    element={
+                      <FeatureGate featureKey="attendance">
+                        <RecordAttendancePage />
+                      </FeatureGate>
+                    }
                   />
 
                   {/* Admin only — inline "Not authorized" for Teacher per Freeze §2 */}
@@ -108,7 +127,9 @@ export function App() {
                     path="/attendance/summary"
                     element={
                       <RoleGate roles={["Admin"]}>
-                        <AttendanceSummaryPage />
+                        <FeatureGate featureKey="attendance">
+                          <AttendanceSummaryPage />
+                        </FeatureGate>
                       </RoleGate>
                     }
                   />
@@ -116,7 +137,9 @@ export function App() {
                     path="/students/:studentId/attendance"
                     element={
                       <RoleGate roles={["Admin"]}>
-                        <StudentAttendanceHistoryPage />
+                        <FeatureGate featureKey="attendance">
+                          <StudentAttendanceHistoryPage />
+                        </FeatureGate>
                       </RoleGate>
                     }
                   />
@@ -164,7 +187,9 @@ export function App() {
                     path="/manage/school-periods"
                     element={
                       <RoleGate roles={["Admin"]}>
-                        <SchoolPeriodsPage />
+                        <FeatureGate featureKey="timetable">
+                          <SchoolPeriodsPage />
+                        </FeatureGate>
                       </RoleGate>
                     }
                   />
