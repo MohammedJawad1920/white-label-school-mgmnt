@@ -270,24 +270,34 @@ export interface StudentAttendanceResponse {
   };
   pagination: { limit: number; offset: number; total: number };
 }
+export interface AttendanceSummaryByStudent {
+  studentId: string;
+  studentName: string;
+  present: number;
+  absent: number;
+  late: number;
+  attendanceRate: number;
+}
+
 export interface AttendanceSummaryResponse {
-  class: { id: string | null; name: string; studentCount: number };
-  period: { from: string; to: string; days: number };
-  summary: {
+  class?: {
+    id: string;
+    name: string;
+    studentCount: number;
+  };
+  period?: {
+    from: string;
+    to: string;
+    days: number;
+  };
+  summary?: {
     totalRecords: number;
     present: number;
     absent: number;
     late: number;
     attendanceRate: number;
   };
-  byStudent: Array<{
-    studentId: string;
-    studentName: string;
-    present: number;
-    absent: number;
-    late: number;
-    attendanceRate: number;
-  }>;
+  byStudent?: AttendanceSummaryByStudent[];
 }
 
 // ─── FEATURES ────────────────────────────────────────────────────────────────
