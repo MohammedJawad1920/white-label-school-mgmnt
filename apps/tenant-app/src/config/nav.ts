@@ -9,6 +9,7 @@
  *   Teacher: dashboard, timetable, attendance/record only
  *   Admin:   all routes including manage/* and attendance summary
  */
+
 export interface NavItem {
   label: string;
   href: string;
@@ -22,7 +23,16 @@ export interface NavItem {
     | "attendance"
     | "summary"
     | "manage"
-    | "periods";
+    | "periods"
+    | "users"
+    | "students"
+    | "classes"
+    | "batches"
+    | "subjects";
+  /** if true, renders as an indented sub-item under a group */
+  isSubItem?: boolean;
+  /** group header label — renders a non-clickable divider above this item */
+  groupLabel?: string;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -47,21 +57,52 @@ export const NAV_ITEMS: NavItem[] = [
   {
     label: "Attendance Summary",
     href: "/attendance/summary",
-    roles: ["Admin"], // Teacher: hidden per Freeze
+    roles: ["Admin"],
     icon: "summary",
   },
+  // ── Manage group ─────────────────────────────────────────────────────────────
   {
-    label: "Manage",
+    label: "Users",
     href: "/manage/users",
-    roles: ["Admin"], // Teacher: hidden per Freeze
-    matchPrefix: true,
-    icon: "manage",
+    roles: ["Admin"],
+    icon: "users",
+    groupLabel: "Manage", // renders a section header above this item
+    isSubItem: true,
+  },
+  {
+    label: "Students",
+    href: "/manage/students",
+    roles: ["Admin"],
+    icon: "students",
+    isSubItem: true,
+  },
+  {
+    label: "Classes",
+    href: "/manage/classes",
+    roles: ["Admin"],
+    icon: "classes",
+    isSubItem: true,
+  },
+  {
+    label: "Batches",
+    href: "/manage/batches",
+    roles: ["Admin"],
+    icon: "batches",
+    isSubItem: true,
+  },
+  {
+    label: "Subjects",
+    href: "/manage/subjects",
+    roles: ["Admin"],
+    icon: "subjects",
+    isSubItem: true,
   },
   {
     label: "School Periods",
     href: "/manage/school-periods",
-    roles: ["Admin"], // Teacher: hidden per Freeze
+    roles: ["Admin"],
     icon: "periods",
+    isSubItem: true,
   },
 ];
 
