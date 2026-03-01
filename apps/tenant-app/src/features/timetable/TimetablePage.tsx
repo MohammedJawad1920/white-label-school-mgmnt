@@ -1,11 +1,449 @@
-/** TimetablePage — placeholder. Full implementation in later FE phase. */
-export default function TimetablePage() {
+/**
+ * TimetablePage — Freeze §Screen: Timetable
+ *
+ * Queries:
+ *   ['timetable', filters]  — GET /timetable?status=Active&...filters
+ *   ['school-periods']      — GET /school-periods (for grid row headers)
+ *   Both: stale 5 min
+ *
+ * Role rules (Freeze §Screen: Timetable permissions):
+ *   Teacher: read-only — no Create button, no "End Assignment" button
+ *   Admin:   Create button (opens CreateSlotDrawer) + "End Assignment" per slot
+ *
+ * Grid layout:
+ *   Rows    = school periods (sorted by periodNumber)
+ *   Columns = days of week (Mon–Sun, filtered by active day filter)
+ *
+ * WHY role="grid" with role="row"/"gridcell":
+ * Freeze §6 Accessibility: "Grid uses role='grid' with role='row' and
+ * role='gridcell'". This gives screen readers proper table semantics without
+ * using <table> (which is hard to make responsive).
+ */
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
+import { timetableApi } from "@/api/timetable";
+import { schoolPeriodsApi } from "@/api/schoolPeriods";
+import { classesApi } from "@/api/classes";
+import { usersApi } from "@/api/users";
+import { parseApiError } from "@/utils/errors";
+import { CreateSlotDrawer } from "./CreateSlotDrawer";
+import { EndSlotDialog } from "./EndSlotDialog";
+import type { TimeSlot } from "@/types/api";
+
+const DAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+] as const;
+type Day = (typeof DAYS)[number];
+
+// ── Skeletons ─────────────────────────────────────────────────────────────────
+function GridSkeleton() {
   return (
-    <div className="p-6">
-      <h1 className="text-xl font-semibold">TimetablePage</h1>
-      <p className="text-sm text-muted-foreground mt-1">
-        Coming in next phase.
+    <div
+      className="animate-pulse space-y-2"
+      aria-label="Loading timetable"
+      aria-busy="true"
+    >
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="flex gap-2">
+          <div className="h-16 w-20 bg-muted rounded shrink-0" />
+          {DAYS.slice(0, 5).map((d) => (
+            <div key={d} className="h-16 flex-1 bg-muted rounded" />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Feature disabled ──────────────────────────────────────────────────────────
+function FeatureDisabledState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+      <svg
+        className="h-12 w-12 text-muted-foreground/40 mb-4"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        aria-hidden="true"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.5}
+          d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+        />
+      </svg>
+      <p className="text-base font-medium">
+        Timetable feature not enabled for your school.
       </p>
+      <p className="text-sm text-muted-foreground mt-1">
+        Contact your platform administrator to enable it.
+      </p>
+    </div>
+  );
+}
+
+// ── Slot cell ─────────────────────────────────────────────────────────────────
+interface SlotCellProps {
+  slot: TimeSlot;
+  isAdmin: boolean;
+  onEnd: (slot: TimeSlot) => void;
+}
+
+function SlotCell({ slot, isAdmin, onEnd }: SlotCellProps) {
+  return (
+    <div className="rounded border bg-primary/5 p-2 text-xs space-y-1 h-full">
+      <p className="font-medium truncate">{slot.className}</p>
+      <p className="text-muted-foreground truncate">{slot.subjectName}</p>
+      <p className="text-muted-foreground truncate">{slot.teacherName}</p>
+      {isAdmin && (
+        <button
+          onClick={() => onEnd(slot)}
+          aria-label={`End assignment: ${slot.className} ${slot.subjectName} Period ${slot.periodNumber}`}
+          className="mt-1 w-full rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive hover:bg-destructive/20 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive"
+        >
+          End
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function TimetablePage() {
+  const { user } = useAuth();
+  const isAdmin = user?.activeRole === "Admin";
+
+  // ── Filters (local UI state) ───────────────────────────────────────────────
+  const [filterDay, setFilterDay] = useState<Day | "">("");
+  const [filterClassId, setFilterClassId] = useState("");
+  const [filterTeacher, setFilterTeacher] = useState("");
+
+  // ── Drawer / Dialog state ──────────────────────────────────────────────────
+  const [createOpen, setCreateOpen] = useState(false);
+  const [endSlot, setEndSlot] = useState<TimeSlot | null>(null);
+
+  // ── Queries ────────────────────────────────────────────────────────────────
+  const filters = {
+    status: "Active" as const,
+    dayOfWeek: filterDay || undefined,
+    classId: filterClassId || undefined,
+    teacherId: filterTeacher || undefined,
+  };
+
+  const timetableQ = useQuery({
+    queryKey: ["timetable", filters],
+    queryFn: () => timetableApi.list(filters),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const periodsQ = useQuery({
+    queryKey: ["school-periods"],
+    queryFn: () => schoolPeriodsApi.list(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const classesQ = useQuery({
+    queryKey: ["classes"],
+    queryFn: () => classesApi.list(),
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const teachersQ = useQuery({
+    queryKey: ["users", "Teacher", ""],
+    queryFn: () => usersApi.list({ role: "Teacher" }),
+    staleTime: 2 * 60 * 1000,
+  });
+
+  // ── Feature-disabled check ─────────────────────────────────────────────────
+  const apiError = timetableQ.isError ? parseApiError(timetableQ.error) : null;
+  if (apiError?.code === "FEATURE_DISABLED")
+    return (
+      <div className="p-6">
+        <FeatureDisabledState />
+      </div>
+    );
+
+  // ── Build grid ─────────────────────────────────────────────────────────────
+  const slots = timetableQ.data?.timetable ?? [];
+  const periods = [...(periodsQ.data?.periods ?? [])].sort(
+    (a, b) => a.periodNumber - b.periodNumber,
+  );
+  const activeDays = filterDay ? [filterDay] : DAYS;
+
+  // Map: periodNumber → dayOfWeek → slots[]
+  const grid: Record<number, Record<string, TimeSlot[]>> = {};
+  for (const slot of slots) {
+    if (!grid[slot.periodNumber]) grid[slot.periodNumber] = {};
+    if (!grid[slot.periodNumber]![slot.dayOfWeek])
+      grid[slot.periodNumber]![slot.dayOfWeek] = [];
+    grid[slot.periodNumber]![slot.dayOfWeek]!.push(slot);
+  }
+
+  const isEmpty =
+    !timetableQ.isLoading && !timetableQ.isError && slots.length === 0;
+
+  return (
+    <div className="p-4 md:p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
+        <div>
+          <h1 className="text-xl font-semibold">Timetable</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Active slot assignments
+          </p>
+        </div>
+        {isAdmin && (
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            Add Slot
+          </button>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 mb-5">
+        <select
+          value={filterDay}
+          onChange={(e) => setFilterDay(e.target.value as Day | "")}
+          aria-label="Filter by day"
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="">All Days</option>
+          {DAYS.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={filterClassId}
+          onChange={(e) => setFilterClassId(e.target.value)}
+          aria-label="Filter by class"
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="">All Classes</option>
+          {classesQ.data?.classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={filterTeacher}
+          onChange={(e) => setFilterTeacher(e.target.value)}
+          aria-label="Filter by teacher"
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="">All Teachers</option>
+          {teachersQ.data?.users.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+
+        {(filterDay || filterClassId || filterTeacher) && (
+          <button
+            onClick={() => {
+              setFilterDay("");
+              setFilterClassId("");
+              setFilterTeacher("");
+            }}
+            className="rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
+      {/* Loading */}
+      {timetableQ.isLoading && <GridSkeleton />}
+
+      {/* Error (non-feature) */}
+      {timetableQ.isError && apiError?.code !== "FEATURE_DISABLED" && (
+        <div
+          className="rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive"
+          role="alert"
+        >
+          Failed to load timetable.{" "}
+          <button
+            onClick={() => void timetableQ.refetch()}
+            className="underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* School periods warning */}
+      {periodsQ.isError && (
+        <div
+          className="mb-4 rounded-md bg-yellow-50 border border-yellow-200 px-3 py-2 text-xs text-yellow-800"
+          role="alert"
+        >
+          School periods not configured. Period row headers may be missing.
+        </div>
+      )}
+
+      {/* Empty state */}
+      {isEmpty && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <p className="text-sm text-muted-foreground">
+            No timetable entries found. Use filters to adjust
+            {isAdmin ? " or create a new entry." : "."}
+          </p>
+        </div>
+      )}
+
+      {/* Grid — scrollable horizontally on mobile */}
+      {!timetableQ.isLoading && !timetableQ.isError && slots.length > 0 && (
+        <div className="overflow-x-auto -mx-4 md:mx-0 rounded-lg border">
+          <div
+            role="grid"
+            aria-label="Timetable grid"
+            style={{ minWidth: `${activeDays.length * 140 + 80}px` }}
+          >
+            {/* Column headers */}
+            <div role="row" className="flex bg-muted/50 border-b">
+              <div
+                role="columnheader"
+                className="w-20 shrink-0 px-2 py-2.5 text-xs font-semibold text-muted-foreground"
+              >
+                Period
+              </div>
+              {activeDays.map((day) => (
+                <div
+                  key={day}
+                  role="columnheader"
+                  className="flex-1 min-w-[120px] px-2 py-2.5 text-xs font-semibold text-center border-l"
+                >
+                  {day.slice(0, 3)}
+                </div>
+              ))}
+            </div>
+
+            {/* Period rows */}
+            {periods.length > 0 ? (
+              periods.map((period) => (
+                <div
+                  key={period.id}
+                  role="row"
+                  className="flex border-b last:border-b-0 min-h-[72px]"
+                >
+                  {/* Period header cell */}
+                  <div
+                    role="rowheader"
+                    className="w-20 shrink-0 flex flex-col justify-center px-2 py-2 bg-muted/20 border-r"
+                  >
+                    <span className="text-xs font-semibold">
+                      P{period.periodNumber}
+                    </span>
+                    {period.label && (
+                      <span className="text-xs text-muted-foreground truncate">
+                        {period.label}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground">
+                      {period.startTime}–{period.endTime}
+                    </span>
+                  </div>
+
+                  {/* Day cells */}
+                  {activeDays.map((day) => {
+                    const cellSlots = grid[period.periodNumber]?.[day] ?? [];
+                    return (
+                      <div
+                        key={day}
+                        role="gridcell"
+                        className="flex-1 min-w-[120px] p-1.5 border-l space-y-1"
+                        aria-label={`${day} Period ${period.periodNumber}`}
+                      >
+                        {cellSlots.map((slot) => (
+                          <SlotCell
+                            key={slot.id}
+                            slot={slot}
+                            isAdmin={isAdmin}
+                            onEnd={setEndSlot}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))
+            ) : (
+              // No periods configured — show flat list grouped by day
+              <div role="row" className="flex border-b p-3">
+                <div role="gridcell" className="text-xs text-muted-foreground">
+                  School periods not configured — showing all {slots.length}{" "}
+                  slot(s) without period rows.
+                  <div className="mt-2 space-y-1">
+                    {slots.map((slot) => (
+                      <div
+                        key={slot.id}
+                        className="flex items-center justify-between rounded border px-2 py-1.5"
+                      >
+                        <span>
+                          {slot.dayOfWeek} P{slot.periodNumber} ·{" "}
+                          {slot.className} · {slot.subjectName}
+                        </span>
+                        {isAdmin && (
+                          <button
+                            onClick={() => setEndSlot(slot)}
+                            className="ml-2 text-xs text-destructive underline"
+                            aria-label={`End: ${slot.className} P${slot.periodNumber}`}
+                          >
+                            End
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Create slot drawer — Admin only */}
+      {isAdmin && (
+        <CreateSlotDrawer
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
+
+      {/* End slot dialog — Admin only */}
+      {isAdmin && (
+        <EndSlotDialog slot={endSlot} onClose={() => setEndSlot(null)} />
+      )}
     </div>
   );
 }

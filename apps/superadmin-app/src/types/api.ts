@@ -1,3 +1,9 @@
+/**
+ * types/api.ts — SuperAdmin app types.
+ * All types match OpenAPI v3.3.0 exactly.
+ * Tenant.status: 'active'|'inactive' (lowercase per OpenAPI enum)
+ */
+
 // ─── ERROR ───────────────────────────────────────────────────────────────────
 export interface ApiError {
   error: {
@@ -23,31 +29,32 @@ export interface SALoginResponse {
   superAdmin: SuperAdmin;
 }
 
-// ─── TENANTS ──────────────────────────────────────────────────────────────────
+// ─── TENANTS ─────────────────────────────────────────────────────────────────
+// status is lowercase per OpenAPI schema enum: [active, inactive]
 export interface Tenant {
   id: string;
   name: string;
   slug: string;
-  status: "Active" | "Inactive";
+  status: "active" | "inactive";
+  deactivatedAt: string | null;
   createdAt: string;
-  schoolPeriodsConfigured: boolean;
 }
 export interface ListTenantsResponse {
   tenants: Tenant[];
 }
+// POST /super-admin/tenants — only id, name, slug per OpenAPI
 export interface CreateTenantRequest {
+  id: string;
   name: string;
   slug: string;
-  adminEmail: string;
-  adminPassword: string;
-  adminName: string;
 }
 export interface CreateTenantResponse {
   tenant: Tenant;
 }
+// PUT /super-admin/tenants/:id — name and/or slug
 export interface UpdateTenantRequest {
   name?: string;
-  status?: "Active" | "Inactive";
+  slug?: string;
 }
 export interface UpdateTenantResponse {
   tenant: Tenant;
