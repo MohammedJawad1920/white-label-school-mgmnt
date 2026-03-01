@@ -20,10 +20,7 @@ import { send403 } from "../../utils/errors";
 // GET /api/features
 // ═══════════════════════════════════════════════════════════════════
 
-export async function listFeatures(
-  req: Request,
-  res: Response,
-): Promise<void> {
+export async function listFeatures(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;
 
   const result = await pool.query<
