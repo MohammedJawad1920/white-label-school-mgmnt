@@ -29,8 +29,8 @@ export function requireRole(...roles: UserRole[]) {
           code: "FORBIDDEN",
           message: `This action requires one of these roles: ${roles.join(", ")}`,
           details: {},
+          timestamp: new Date().toISOString(),
         },
-        timestamp: new Date().toISOString(),
       });
       return;
     }

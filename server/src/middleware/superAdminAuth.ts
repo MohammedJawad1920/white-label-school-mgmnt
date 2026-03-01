@@ -32,8 +32,8 @@ export function superAdminAuthMiddleware(
         code: "UNAUTHORIZED",
         message: "Missing or malformed Authorization header",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -52,8 +52,8 @@ export function superAdminAuthMiddleware(
         code: "TOKEN_INVALID",
         message: "JWT is invalid or expired",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -66,8 +66,8 @@ export function superAdminAuthMiddleware(
         code: "FORBIDDEN",
         message: "This endpoint requires SuperAdmin credentials",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }

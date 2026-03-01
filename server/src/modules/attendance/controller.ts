@@ -104,8 +104,8 @@ export async function recordClassAttendance(
         code: "TIMESLOT_ENDED",
         message: "Cannot record attendance for an ended timeslot",
         details: { effectiveTo: timeslot.effective_to },
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -124,8 +124,8 @@ export async function recordClassAttendance(
         code: "NO_STUDENTS",
         message: "No students found in this class",
         details: { classId: timeslot.class_id },
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -164,8 +164,8 @@ export async function recordClassAttendance(
           message:
             "Attendance has already been recorded for this class on this date",
           details: { timeSlotId, date },
+          timestamp: new Date().toISOString(),
         },
-        timestamp: new Date().toISOString(),
       });
       return;
     }

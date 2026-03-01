@@ -457,8 +457,8 @@ export async function toggleTenantFeature(
           code: "FEATURE_DEPENDENCY",
           message: "Attendance requires Timetable to be enabled first",
           details: { required: "timetable", requested: "attendance" },
+          timestamp: new Date().toISOString(),
         },
-        timestamp: new Date().toISOString(),
       });
       return;
     }

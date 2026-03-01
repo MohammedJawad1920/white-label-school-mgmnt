@@ -107,8 +107,8 @@ export async function deleteSubject(
         code: "HAS_REFERENCES",
         message: "Cannot delete: subject has active timeslot assignments",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }

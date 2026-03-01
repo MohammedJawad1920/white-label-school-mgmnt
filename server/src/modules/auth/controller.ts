@@ -66,8 +66,8 @@ export async function tenantLogin(req: Request, res: Response): Promise<void> {
         code: "TENANT_INACTIVE",
         message: "Tenant is inactive",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -127,8 +127,8 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
         code: "ROLE_NOT_ASSIGNED",
         message: "Requested role is not assigned to this user",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -152,8 +152,8 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
         code: "SINGLE_ROLE_USER",
         message: "User has only one role; switching not applicable",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -163,8 +163,8 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
         code: "ROLE_NOT_ASSIGNED",
         message: "Requested role is not assigned to this user",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }

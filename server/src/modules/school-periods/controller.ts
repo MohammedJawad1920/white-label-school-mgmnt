@@ -125,8 +125,8 @@ export async function createPeriod(req: Request, res: Response): Promise<void> {
         code: "PERIOD_TIME_INVALID",
         message: "startTime must be before endTime",
         details: { startTime, endTime },
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -154,8 +154,8 @@ export async function createPeriod(req: Request, res: Response): Promise<void> {
           code: "DUPLICATE_PERIOD_NUMBER",
           message: `Period number ${periodNum} already exists for this school`,
           details: { periodNumber: periodNum },
+          timestamp: new Date().toISOString(),
         },
-        timestamp: new Date().toISOString(),
       });
       return;
     }
@@ -211,8 +211,8 @@ export async function updatePeriod(req: Request, res: Response): Promise<void> {
         code: "PERIOD_TIME_INVALID",
         message: "startTime must be before endTime",
         details: { startTime: newStart, endTime: newEnd },
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -289,8 +289,8 @@ export async function deletePeriod(req: Request, res: Response): Promise<void> {
         code: "HAS_REFERENCES",
         message: `Cannot delete: active timeslots are assigned to period ${periodNumber}`,
         details: { periodNumber },
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }

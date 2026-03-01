@@ -131,8 +131,8 @@ export async function deleteStudent(
         code: "HAS_REFERENCES",
         message: "Cannot delete: student has attendance records",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }

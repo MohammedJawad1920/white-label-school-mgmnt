@@ -65,8 +65,12 @@ export function createApp(): Application {
 
   app.use((_req, res) => {
     res.status(404).json({
-      error: { code: "NOT_FOUND", message: "Endpoint not found", details: {} },
-      timestamp: new Date().toISOString(),
+      error: {
+        code: "NOT_FOUND",
+        message: "Endpoint not found",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
     });
   });
 

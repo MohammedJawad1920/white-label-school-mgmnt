@@ -267,7 +267,7 @@ export interface BulkDeleteRequest {
 
 export interface BulkDeleteResult {
   deleted: string[];
-  failed: Array<{ id: string; reason: string }>;
+  failed: Array<{ id: string; reason: string; message: string }>;
 }
 
 // ─── Pagination ──────────────────────────────────────────────────────────────

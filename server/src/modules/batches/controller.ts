@@ -117,8 +117,8 @@ export async function deleteBatch(req: Request, res: Response): Promise<void> {
         code: "HAS_REFERENCES",
         message: "Cannot delete: classes are assigned to this batch",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }

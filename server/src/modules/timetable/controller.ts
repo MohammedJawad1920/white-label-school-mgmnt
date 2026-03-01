@@ -229,8 +229,8 @@ export async function createTimeslot(
         code: "PERIOD_NOT_CONFIGURED",
         message: `Period ${periodNum} is not configured for this school`,
         details: { periodNumber: periodNum },
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -272,8 +272,8 @@ export async function createTimeslot(
         code: "INVALID_TEACHER",
         message: "The specified user does not have the Teacher role",
         details: { teacherId },
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -310,8 +310,8 @@ export async function createTimeslot(
           message:
             "This period slot is already occupied for the given class and day",
           details: { classId, dayOfWeek, periodNumber: periodNum },
+          timestamp: new Date().toISOString(),
         },
-        timestamp: new Date().toISOString(),
       });
       return;
     }
@@ -363,8 +363,8 @@ export async function endTimeslot(req: Request, res: Response): Promise<void> {
         code: "ALREADY_ENDED",
         message: "This timeslot has already been ended",
         details: { effectiveTo: existing.rows[0]!.effective_to },
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }

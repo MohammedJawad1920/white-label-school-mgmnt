@@ -44,7 +44,7 @@ export async function bulkSoftDelete(
     );
 
     if ((existing.rowCount ?? 0) === 0) {
-      failed.push({ id, reason: "NOT_FOUND" });
+      failed.push({ id, reason: "NOT_FOUND", message: "Record not found" });
       continue;
     }
 
@@ -52,7 +52,7 @@ export async function bulkSoftDelete(
     if (refCheck) {
       const reason = await refCheck(id, tenantId, pool);
       if (reason) {
-        failed.push({ id, reason: "HAS_REFERENCES" });
+        failed.push({ id, reason: "HAS_REFERENCES", message: reason });
         continue;
       }
     }

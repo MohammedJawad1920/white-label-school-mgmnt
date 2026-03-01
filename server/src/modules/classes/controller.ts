@@ -101,8 +101,8 @@ export async function deleteClass(req: Request, res: Response): Promise<void> {
         code: "HAS_REFERENCES",
         message: "Cannot delete: students are enrolled in this class",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }

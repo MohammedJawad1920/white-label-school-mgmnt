@@ -37,8 +37,8 @@ export async function tenantContextMiddleware(
         code: "UNAUTHORIZED",
         message: "Missing or malformed Authorization header",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -57,8 +57,8 @@ export async function tenantContextMiddleware(
         code: "TOKEN_INVALID",
         message: "JWT is invalid or expired",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -72,8 +72,8 @@ export async function tenantContextMiddleware(
         code: "FORBIDDEN",
         message: "SuperAdmin JWT cannot be used on tenant routes",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -96,8 +96,8 @@ export async function tenantContextMiddleware(
         code: "TENANT_NOT_FOUND",
         message: "Tenant does not exist",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -108,8 +108,8 @@ export async function tenantContextMiddleware(
         code: "TENANT_INACTIVE",
         message: "This school account has been deactivated",
         details: {},
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
     });
     return;
   }
