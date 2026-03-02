@@ -31,7 +31,9 @@ async function run(): Promise<void> {
      VALUES ($1, $2, $3, $4, $5, '["Admin"]'::jsonb, NOW(), NOW())`,
     [userId, tenantId, "Test Admin", "admin@test.com", passwordHash],
   );
-  console.log(`[reset-tenants] Created admin user "Test Admin" <admin@test.com>`);
+  console.log(
+    `[reset-tenants] Created admin user "Test Admin" <admin@test.com>`,
+  );
 
   await pool.end();
   console.log("[reset-tenants] Done.");
