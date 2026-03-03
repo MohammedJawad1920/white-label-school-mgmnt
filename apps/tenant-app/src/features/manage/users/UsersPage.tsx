@@ -32,19 +32,19 @@ import {
 import { cn } from "@/utils/cn";
 import type { User } from "@/types/api";
 
-type Role = "Teacher" | "Admin";
+type Role = "Teacher" | "Admin" | "Student";
 
 const createSchema = z.object({
   name: z.string().min(1, "Required").max(255),
   email: z.string().email("Valid email required"),
   password: z.string().min(8, "Minimum 8 characters"),
   roles: z
-    .array(z.enum(["Teacher", "Admin"]))
+    .array(z.enum(["Teacher", "Admin", "Student"]))
     .min(1, "At least one role required"),
 });
 type CreateFormValues = z.infer<typeof createSchema>;
 
-const ROLES: Role[] = ["Teacher", "Admin"];
+const ROLES: Role[] = ["Teacher", "Admin", "Student"];
 
 // ── Create user form ──────────────────────────────────────────────────────────
 function CreateUserForm({
@@ -292,7 +292,15 @@ export default function UsersPage() {
     },
     onError: (e) => {
       const { code, message } = parseApiError(e);
-      setDrawerError(code === "NOT_FOUND" ? "User not found." : message);
+      if (code === "NOT_FOUND") {
+        setDrawerError("User not found.");
+      } else if (code === "LASTADMIN") {
+        setDrawerError(
+          "Cannot remove Admin role — this user is the last admin of this tenant.",
+        );
+      } else {
+        setDrawerError(message);
+      }
     },
   });
 
@@ -363,6 +371,7 @@ export default function UsersPage() {
           <option value="">All Roles</option>
           <option value="Teacher">Teacher</option>
           <option value="Admin">Admin</option>
+          <option value="Student">Student</option>
         </select>
       </div>
 

@@ -1,12 +1,14 @@
 openapi: "3.1.0"
 info:
   title: White-Label School Management System
-  version: "3.3.0"
+  version: "3.4.0"
   description: >
     Multi-tenant school management API. Supports SuperAdmin (platform-level)
-    and tenant-scoped Admin/Teacher roles.
-    v3.3.0: Dynamic per-tenant period configuration via /school-periods endpoints.
-    Breaking: POST /timetable no longer accepts startTime/endTime fields.
+    and tenant-scoped Admin/Teacher/Student roles.
+    v3.4.0: Student role added; attendance correction (PUT /attendance/{recordId});
+    link-student-account (PUT /students/{studentId}/link-account);
+    reactivate tenant (PUT /super-admin/tenants/{tenantId}/reactivate);
+    createTenant now requires an admin block.
 
 servers:
   - url: http://localhost:3000/api
@@ -61,11 +63,11 @@ components:
           type: array
           items:
             type: string
-            enum: [Teacher, Admin]
+            enum: [Teacher, Admin, Student]
           minItems: 1
         activeRole:
           type: string
-          enum: [Teacher, Admin]
+          enum: [Teacher, Admin, Student]
 
     SuperAdminProfile:
       type: object
@@ -131,7 +133,7 @@ components:
           type: array
           items:
             type: string
-            enum: [Teacher, Admin]
+            enum: [Teacher, Admin, Student]
           minItems: 1
 
     Student:
@@ -142,6 +144,10 @@ components:
           type: string
         name:
           type: string
+        userId:
+          type: string
+          nullable: true
+          description: Linked user account ID (v3.4 CR-08); null if not yet linked
         classId:
           type: string
         className:
@@ -276,7 +282,8 @@ components:
 
     AttendanceRecord:
       type: object
-      required: [id, date, status, timeSlot, recordedBy, recordedAt]
+      required:
+        [id, date, status, originalStatus, timeSlot, recordedBy, recordedAt]
       properties:
         id:
           type: string
@@ -286,6 +293,20 @@ components:
         status:
           type: string
           enum: [Present, Absent, Late]
+          description: Effective status — equals correctedStatus if a correction exists, else originalStatus
+        originalStatus:
+          type: string
+          enum: [Present, Absent, Late]
+          description: Immutable status written at record-time; never mutated after insert (v3.4)
+        correctedBy:
+          type: string
+          nullable: true
+          description: User ID of the corrector; null if never corrected (v3.4)
+        correctedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO timestamp of last correction; null if never corrected (v3.4)
         timeSlot:
           type: object
           properties:
@@ -498,7 +519,7 @@ paths:
               properties:
                 role:
                   type: string
-                  enum: [Teacher, Admin]
+                  enum: [Teacher, Admin, Student]
             examples:
               switch_to_teacher:
                 value:
@@ -661,7 +682,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [id, name, slug]
+              required: [id, name, slug, admin]
               properties:
                 id:
                   type: string
@@ -673,23 +694,56 @@ paths:
                   type: string
                   maxLength: 100
                   pattern: "^[a-z0-9-]+$"
+                admin:
+                  type: object
+                  required: [name, email, password]
+                  description: Initial Admin user for this tenant (v3.4 CR-06)
+                  properties:
+                    name:
+                      type: string
+                      maxLength: 255
+                    email:
+                      type: string
+                      format: email
+                    password:
+                      type: string
+                      minLength: 8
             examples:
               success:
                 value:
                   id: T002
                   name: New School
                   slug: newschool
+                  admin:
+                    name: School Admin
+                    email: admin@newschool.com
+                    password: securepass123
       responses:
         "201":
-          description: Tenant created with 8 default periods
+          description: Tenant created with initial Admin user and 8 default periods
           content:
             application/json:
               schema:
                 type: object
-                required: [tenant]
+                required: [tenant, admin]
                 properties:
                   tenant:
                     $ref: "#/components/schemas/Tenant"
+                  admin:
+                    type: object
+                    required: [id, name, email, roles]
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      email:
+                        type: string
+                        format: email
+                      roles:
+                        type: array
+                        items:
+                          type: string
               examples:
                 success:
                   value:
@@ -700,6 +754,11 @@ paths:
                       status: active
                       deactivatedAt: null
                       createdAt: "2026-02-26T07:00:00Z"
+                    admin:
+                      id: U-abc123
+                      name: School Admin
+                      email: admin@newschool.com
+                      roles: [Admin]
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -707,7 +766,26 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "409":
-          $ref: "#/components/responses/Conflict"
+          description: Duplicate tenant ID/slug or admin email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                admin_email_taken:
+                  summary: Admin email already exists in this tenant
+                  value:
+                    error:
+                      code: ADMIN_EMAIL_TAKEN
+                      message: Admin email already exists in this tenant
+                      timestamp: "2026-02-26T07:00:00Z"
+                slug_conflict:
+                  summary: Tenant ID or slug already taken
+                  value:
+                    error:
+                      code: CONFLICT
+                      message: Tenant ID or slug already exists
+                      timestamp: "2026-02-26T07:00:00Z"
 
   /super-admin/tenants/{tenantId}:
     put:
@@ -805,6 +883,54 @@ paths:
                 error:
                   code: ALREADY_INACTIVE
                   message: Tenant is already inactive
+                  timestamp: "2026-02-26T07:00:00Z"
+
+  # v3.4 CR-07: Reactivate tenant
+  /super-admin/tenants/{tenantId}/reactivate:
+    put:
+      summary: Reactivate an inactive tenant
+      operationId: reactivateTenant
+      tags: [SuperAdmin]
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tenant reactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tenant]
+                properties:
+                  tenant:
+                    $ref: "#/components/schemas/Tenant"
+              examples:
+                success:
+                  value:
+                    tenant:
+                      id: T001
+                      status: active
+                      deactivatedAt: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Tenant already active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: ALREADY_ACTIVE
+                  message: Tenant is already active
                   timestamp: "2026-02-26T07:00:00Z"
 
   /super-admin/tenants/{tenantId}/features:
@@ -1422,7 +1548,7 @@ paths:
                   type: array
                   items:
                     type: string
-                    enum: [Teacher, Admin]
+                    enum: [Teacher, Admin, Student]
                   minItems: 1
                   uniqueItems: true
             examples:
@@ -1453,18 +1579,20 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Not Admin, or caller targeting own id
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Cannot remove own Admin role — last admin in tenant
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 error:
-                  code: SELF_ROLE_CHANGE_FORBIDDEN
-                  message: Admin cannot modify their own roles
+                  code: LASTADMIN
+                  message: "Cannot remove Admin role: you are the last admin of this tenant"
                   timestamp: "2026-02-26T07:00:00Z"
-        "404":
-          $ref: "#/components/responses/NotFound"
 
   # ─────────────────────────────────────────
   # STUDENTS
@@ -1606,6 +1734,67 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  # v3.4 CR-08: Link a student record to a user account
+  /students/{studentId}/link-account:
+    put:
+      summary: Link student record to a user account
+      operationId: linkStudentAccount
+      tags: [Students]
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  type: string
+                  description: ID of the User to link to this student record
+            examples:
+              success:
+                value:
+                  userId: U-abc123
+      responses:
+        "200":
+          description: Student linked to user account
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [student]
+                properties:
+                  student:
+                    $ref: "#/components/schemas/Student"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Student already linked or user already linked to another student
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                already_linked:
+                  summary: Student already has a linked account
+                  value:
+                    error:
+                      code: USER_ALREADY_LINKED
+                      message: This student already has a linked user account
+                      timestamp: "2026-02-26T07:00:00Z"
+
   /students/{studentId}/attendance:
     get:
       summary: Get student attendance history
@@ -1674,7 +1863,26 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          description: Forbidden — Students can only access their own attendance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                student_access_denied:
+                  summary: Student trying to access another student's attendance
+                  value:
+                    error:
+                      code: STUDENT_ACCESS_DENIED
+                      message: Students can only access their own attendance
+                      timestamp: "2026-02-26T07:00:00Z"
+                forbidden_generic:
+                  summary: Insufficient role
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: Insufficient permissions
+                      timestamp: "2026-02-26T07:00:00Z"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -2100,6 +2308,100 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  # v3.4 CR-09: Correct an attendance record
+  /attendance/{recordId}:
+    put:
+      summary: Correct an attendance record status
+      operationId: correctAttendance
+      tags: [Attendance]
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [Present, Absent, Late]
+                  description: New corrected status value
+            examples:
+              correct_to_present:
+                value:
+                  status: Present
+      responses:
+        "200":
+          description: Attendance record corrected
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [record]
+                properties:
+                  record:
+                    $ref: "#/components/schemas/AttendanceRecord"
+              examples:
+                success:
+                  value:
+                    record:
+                      id: AR-xyz
+                      studentId: S001
+                      timeslotId: TS001
+                      date: "2026-03-01"
+                      status: Present
+                      originalStatus: Absent
+                      correctedBy: U123
+                      correctedAt: "2026-03-02T10:00:00Z"
+                      recordedBy: U123
+                      recordedAt: "2026-03-01T08:00:00Z"
+        "400":
+          description: Validation error or future-date guard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                future_date:
+                  summary: Cannot correct future attendance
+                  value:
+                    error:
+                      code: FUTURE_DATE
+                      message: Cannot correct attendance for a future date
+                      timestamp: "2026-02-26T07:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Teacher does not own this class
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Teachers can only correct attendance for their own classes
+                  timestamp: "2026-02-26T07:00:00Z"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Status already set to that value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: SAME_STATUS
+                  message: Status is already set to that value
+                  timestamp: "2026-02-26T07:00:00Z"
 
   # ─────────────────────────────────────────
   # CLASSES

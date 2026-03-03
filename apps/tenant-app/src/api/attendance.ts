@@ -4,6 +4,8 @@ import type {
   RecordClassAttendanceResponse,
   StudentAttendanceResponse,
   AttendanceSummaryResponse,
+  CorrectAttendanceRequest,
+  CorrectAttendanceResponse,
 } from "@/types/api";
 
 export interface StudentAttendanceFilters {
@@ -37,5 +39,10 @@ export const attendanceApi = {
       .get<AttendanceSummaryResponse>("/attendance/summary", {
         params: filters,
       })
+      .then((r) => r.data),
+  // v3.4 CR-09: correct a single attendance record
+  correctRecord: (recordId: string, data: CorrectAttendanceRequest) =>
+    apiClient
+      .put<CorrectAttendanceResponse>(`/attendance/${recordId}`, data)
       .then((r) => r.data),
 };

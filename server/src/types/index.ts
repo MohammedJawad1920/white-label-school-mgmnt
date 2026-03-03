@@ -1,5 +1,5 @@
 // =====================================================
-// FREEZE v3.3 — Canonical Type Definitions (§3.2)
+// FREEZE v3.4 — Canonical Type Definitions (§3.2)
 // All application code must import from here.
 // =====================================================
 
@@ -74,6 +74,7 @@ export interface StudentRow {
   name: string;
   class_id: string;
   batch_id: string;
+  user_id: string | null; // v3.4: nullable FK → users.id
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -111,9 +112,13 @@ export interface AttendanceRecordRow {
   student_id: string;
   timeslot_id: string;
   date: string; // DATE as ISO string
-  status: AttendanceStatus;
+  status: AttendanceStatus; // v3.4: NEVER mutated after insert (original status)
   recorded_by: string;
   recorded_at: Date;
+  // v3.4: correction audit trail
+  corrected_status: AttendanceStatus | null;
+  corrected_by: string | null;
+  corrected_at: Date | null;
 }
 
 export interface FeatureRow {
@@ -134,7 +139,7 @@ export interface TenantFeatureRow {
 
 // ─── Domain Enums / Unions ───────────────────────────────────────────────────
 
-export type UserRole = "Teacher" | "Admin";
+export type UserRole = "Teacher" | "Admin" | "Student"; // v3.4: Student added
 
 export type DayOfWeek =
   | "Monday"
@@ -160,7 +165,7 @@ export interface TenantJwtPayload {
   userId: string;
   tenantId: string;
   roles: UserRole[];
-  activeRole: UserRole;
+  activeRole: UserRole; // v3.4: enum includes Student
   iat?: number;
   exp?: number;
 }
@@ -243,12 +248,15 @@ export interface ApiAttendanceRecord {
   studentName: string;
   timeslotId: string;
   date: string;
-  status: AttendanceStatus;
+  originalStatus: AttendanceStatus; // v3.4: original recorded value, never changes
+  status: AttendanceStatus; // v3.4: effective = correctedStatus ?? originalStatus
+  correctedBy: string | null; // v3.4
+  correctedAt: string | null; // v3.4
   recordedBy: string;
   recordedAt: string;
 }
 
-// ─── Standard Error Shape (matches OpenAPI v3.3.0) ──────────────────────────
+// ─── Standard Error Shape (matches OpenAPI v3.4.0) ──────────────────────────
 
 export interface ApiError {
   error: {

@@ -1,24 +1,22 @@
 import type { ReactNode } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import type { UserRole } from "@/types/api";
 
 interface RoleGateProps {
-  roles: Array<"Teacher" | "Admin">;
+  roles: Array<UserRole>;
   children: ReactNode;
   fallback?: ReactNode;
 }
 
 /**
- * WHY inline "Not authorized" (not redirect):
- * Freeze §2: role-unauthorized users see an inline message.
- * Redirecting would break browser history for multi-role users.
- *
- * WHY check roles[] array (not activeRole):
- * activeRole is a UI hint only. A Teacher/Admin with activeRole=Teacher
- * can still access Admin routes — backend enforces real access control.
+ * WHY check activeRole (not roles[] array) — FE-006:
+ * Sidebar visibility and page access should gate on the role the user is
+ * currently acting as, not merely whether they hold the role at all.
+ * Backend enforces real access control; we gate UI by active context.
  */
 export function RoleGate({ roles, children, fallback }: RoleGateProps) {
   const { user } = useAuth();
-  const authorized = user !== null && roles.some((r) => user.roles.includes(r));
+  const authorized = user !== null && roles.some((r) => user.activeRole === r);
 
   if (!authorized) {
     return (
@@ -30,10 +28,10 @@ export function RoleGate({ roles, children, fallback }: RoleGateProps) {
           >
             <div>
               <p className="text-lg font-semibold text-muted-foreground">
-                Not authorized
+                Not authorized for current role
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                You don't have permission to access this page.
+                Switch to Admin to access this page.
               </p>
             </div>
           </div>

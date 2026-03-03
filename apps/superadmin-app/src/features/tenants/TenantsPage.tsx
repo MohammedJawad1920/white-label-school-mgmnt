@@ -5,9 +5,10 @@
  *   ['sa-tenants', statusFilter, searchQuery]  stale: 1 min
  *
  * Mutations:
- *   POST   /super-admin/tenants          → create
- *   PUT    /super-admin/tenants/:id      → update name/slug
- *   PUT    /super-admin/tenants/:id/deactivate → deactivate
+ *   POST   /super-admin/tenants                    → create (v3.4: includes admin block)
+ *   PUT    /super-admin/tenants/:id                → update name/slug
+ *   PUT    /super-admin/tenants/:id/deactivate     → deactivate
+ *   PUT    /super-admin/tenants/:id/reactivate     → reactivate (v3.4 CR-07)
  *
  * All mutations invalidate ['sa-tenants'].
  *
@@ -39,6 +40,12 @@ const createSchema = z.object({
     .min(1, "Slug is required")
     .max(100)
     .regex(/^[a-z0-9-]+$/, "Lowercase letters, numbers and dash only"),
+  // v3.4 CR-06: first admin account
+  admin: z.object({
+    name: z.string().min(1, "Required").max(255),
+    email: z.string().email("Valid email required"),
+    password: z.string().min(8, "Minimum 8 characters"),
+  }),
 });
 const updateSchema = z.object({
   name: z.string().max(255).optional().or(z.literal("")),
@@ -114,6 +121,10 @@ function CreateDrawer({ open, onClose }: CreateDrawerProps) {
       const { code, message } = parseApiError(err);
       if (code === "CONFLICT" || code === "DUPLICATE") {
         setError("root", { message: "Tenant ID or slug already exists." });
+      } else if (code === "ADMIN_EMAIL_TAKEN") {
+        setError("root", {
+          message: "Admin email already exists. Use a different email.",
+        });
       } else {
         setError("root", { message });
       }
@@ -285,6 +296,78 @@ function CreateDrawer({ open, onClose }: CreateDrawerProps) {
                   Used in login URL. Lowercase letters, numbers, dash.
                 </p>
               )}
+            </div>
+
+            {/* Section 2 — First Admin Account (v3.4 CR-06) */}
+            <div className="pt-2 border-t">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                First Admin Account
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label
+                    htmlFor="admin-name"
+                    className="block text-sm font-medium mb-1.5"
+                  >
+                    Admin Full Name
+                  </label>
+                  <input
+                    id="admin-name"
+                    type="text"
+                    placeholder="e.g. Jane Smith"
+                    aria-invalid={errors.admin?.name ? true : undefined}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
+                    {...register("admin.name")}
+                  />
+                  {errors.admin?.name && (
+                    <p role="alert" className="mt-1 text-xs text-destructive">
+                      {errors.admin.name.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label
+                    htmlFor="admin-email"
+                    className="block text-sm font-medium mb-1.5"
+                  >
+                    Admin Email
+                  </label>
+                  <input
+                    id="admin-email"
+                    type="email"
+                    placeholder="e.g. jane@school.edu"
+                    aria-invalid={errors.admin?.email ? true : undefined}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
+                    {...register("admin.email")}
+                  />
+                  {errors.admin?.email && (
+                    <p role="alert" className="mt-1 text-xs text-destructive">
+                      {errors.admin.email.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label
+                    htmlFor="admin-password"
+                    className="block text-sm font-medium mb-1.5"
+                  >
+                    Admin Password
+                  </label>
+                  <input
+                    id="admin-password"
+                    type="password"
+                    placeholder="Minimum 8 characters"
+                    aria-invalid={errors.admin?.password ? true : undefined}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
+                    {...register("admin.password")}
+                  />
+                  {errors.admin?.password && (
+                    <p role="alert" className="mt-1 text-xs text-destructive">
+                      {errors.admin.password.message}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="rounded-md bg-muted/60 border px-3 py-2.5 text-xs text-muted-foreground">
@@ -598,12 +681,106 @@ function DeactivateDialog({ tenant, onClose }: DeactivateDialogProps) {
   );
 }
 
+// ── Reactivate confirm dialog (v3.4 CR-07) ───────────────────────────────────
+interface ReactivateDialogProps {
+  tenant: Tenant | null;
+  onClose: () => void;
+}
+function ReactivateDialog({ tenant, onClose }: ReactivateDialogProps) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => tenantsApi.reactivate(tenant!.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["sa-tenants"] });
+      onClose();
+    },
+    onError: (err) => {
+      const { code, message } = parseApiError(err);
+      if (code === "ALREADY_ACTIVE") setError("Tenant is already active.");
+      else setError(message);
+    },
+  });
+
+  if (!tenant) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reactivate-title"
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
+    >
+      <div className="bg-background rounded-lg shadow-xl w-full max-w-sm border">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 id="reactivate-title" className="text-base font-semibold">
+            Reactivate Tenant
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+          <p className="text-sm">
+            Are you sure you want to reactivate <strong>{tenant.name}</strong>?
+            Users of this tenant will be able to log in again.
+          </p>
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 p-4 border-t">
+          <button
+            onClick={onClose}
+            disabled={mutation.isPending}
+            className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              setError(null);
+              mutation.mutate();
+            }}
+            disabled={mutation.isPending}
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          >
+            {mutation.isPending ? "Reactivating…" : "Reactivate"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function TenantsPage() {
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
   const [editTenant, setEditTenant] = useState<Tenant | null>(null);
   const [deactivateTenant, setDeactivateTenant] = useState<Tenant | null>(null);
+  const [reactivateTenant, setReactivateTenant] = useState<Tenant | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"active" | "inactive" | "">(
     "",
@@ -739,14 +916,22 @@ export default function TenantsPage() {
                 >
                   Edit
                 </button>
-                {/* Deactivate hidden if already inactive — Freeze §Screen */}
-                {tenant.status === "active" && (
+                {/* Deactivate/Reactivate toggle based on status — Freeze §Screen + v3.4 CR-07 */}
+                {tenant.status === "active" ? (
                   <button
                     onClick={() => setDeactivateTenant(tenant)}
                     className="rounded-md px-2.5 py-1 text-xs font-medium text-destructive border border-destructive/30 hover:bg-destructive/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label={`Deactivate ${tenant.name}`}
                   >
                     Deactivate
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setReactivateTenant(tenant)}
+                    className="rounded-md px-2.5 py-1 text-xs font-medium text-primary border border-primary/30 hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`Reactivate ${tenant.name}`}
+                  >
+                    Reactivate
                   </button>
                 )}
               </div>
@@ -759,6 +944,10 @@ export default function TenantsPage() {
       <DeactivateDialog
         tenant={deactivateTenant}
         onClose={() => setDeactivateTenant(null)}
+      />
+      <ReactivateDialog
+        tenant={reactivateTenant}
+        onClose={() => setReactivateTenant(null)}
       />
     </div>
   );

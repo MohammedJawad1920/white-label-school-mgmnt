@@ -15,6 +15,10 @@ export interface ListTenantsParams {
   search?: string;
 }
 
+interface ReactivateResponse {
+  tenant: { id: string; status: string; deactivatedAt: string | null };
+}
+
 export const tenantsApi = {
   list: (params: ListTenantsParams = {}) =>
     saApiClient
@@ -34,6 +38,12 @@ export const tenantsApi = {
   deactivate: (tenantId: string) =>
     saApiClient
       .put<UpdateTenantResponse>(`/super-admin/tenants/${tenantId}/deactivate`)
+      .then((r) => r.data),
+
+  // v3.4 CR-07: reactivate an inactive tenant
+  reactivate: (tenantId: string) =>
+    saApiClient
+      .put<ReactivateResponse>(`/super-admin/tenants/${tenantId}/reactivate`)
       .then((r) => r.data),
 
   listFeatures: (tenantId: string) =>

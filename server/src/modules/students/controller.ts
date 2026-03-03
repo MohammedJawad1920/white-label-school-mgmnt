@@ -5,21 +5,27 @@
  * WHY: A student belongs to a batch (academic year). Their class must be
  * from that same batch. Mismatches would corrupt attendance aggregation.
  * Validated on create (no PUT /students/:id in OpenAPI contract).
+ *
+ * v3.4 CR-08:
+ * - students.user_id nullable FK → users.id (1-to-1, unique partial index)
+ * - PUT /:studentId/link-account (Admin only)
+ * - fmt() exposes userId in response
  */
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { pool } from "../../db/pool";
-import { send400, send404 } from "../../utils/errors";
+import { send400, send404, send409 } from "../../utils/errors";
 import { bulkSoftDelete } from "../../utils/bulkDelete";
 import { StudentRow, BulkDeleteRequest } from "../../types";
 
-function fmt(s: StudentRow) {
+function fmt(s: StudentRow & { class_name?: string; batch_name?: string }) {
   return {
     id: s.id,
     tenantId: s.tenant_id,
     name: s.name,
     classId: s.class_id,
     batchId: s.batch_id,
+    userId: s.user_id ?? null, // v3.4
     createdAt: s.created_at.toISOString(),
     updatedAt: s.updated_at.toISOString(),
   };
@@ -43,7 +49,8 @@ export async function listStudents(req: Request, res: Response): Promise<void> {
     params.push(batchId);
   }
   const result = await pool.query<StudentRow>(
-    `SELECT id, tenant_id, name, class_id, batch_id, deleted_at, created_at, updated_at
+    `SELECT id, tenant_id, name, class_id, batch_id, user_id,
+            deleted_at, created_at, updated_at
      FROM students WHERE ${conditions.join(" AND ")} ORDER BY name ASC`,
     params,
   );
@@ -101,10 +108,83 @@ export async function createStudent(
   const result = await pool.query<StudentRow>(
     `INSERT INTO students (id, tenant_id, name, class_id, batch_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-     RETURNING id, tenant_id, name, class_id, batch_id, deleted_at, created_at, updated_at`,
+     RETURNING id, tenant_id, name, class_id, batch_id, user_id,
+               deleted_at, created_at, updated_at`,
     [id, tenantId, name.trim(), classId, batchId],
   );
   res.status(201).json({ student: fmt(result.rows[0]!) });
+}
+
+// PUT /api/students/:studentId/link-account  (v3.4 CR-08, Admin only)
+export async function linkStudentAccount(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const tenantId = req.tenantId!;
+  const { studentId } = req.params as { studentId: string };
+  const { userId } = req.body as { userId?: string };
+
+  if (!userId || typeof userId !== "string" || userId.trim() === "") {
+    send400(res, "userId is required");
+    return;
+  }
+
+  // Verify student exists in this tenant
+  const studentResult = await pool.query<StudentRow>(
+    `SELECT id, tenant_id, name, class_id, batch_id, user_id,
+            deleted_at, created_at, updated_at
+     FROM students WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+    [studentId, tenantId],
+  );
+  if ((studentResult.rowCount ?? 0) === 0) {
+    send404(res, "Student not found");
+    return;
+  }
+  const student = studentResult.rows[0]!;
+
+  // Verify target user exists in this tenant and is not deleted
+  const userResult = await pool.query<{ id: string }>(
+    "SELECT id FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [userId.trim(), tenantId],
+  );
+  if ((userResult.rowCount ?? 0) === 0) {
+    send404(res, "User not found");
+    return;
+  }
+
+  // Guard: student already linked to this or another user
+  if (student.user_id !== null) {
+    send409(
+      res,
+      "This student is already linked to a user account",
+      "USER_ALREADY_LINKED",
+    );
+    return;
+  }
+
+  // Guard: target userId already linked to a different student (partial unique index)
+  const alreadyLinked = await pool.query<{ id: string }>(
+    "SELECT id FROM students WHERE user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [userId.trim(), tenantId],
+  );
+  if ((alreadyLinked.rowCount ?? 0) > 0) {
+    send409(
+      res,
+      "This user is already linked to another student record",
+      "USER_ALREADY_LINKED",
+    );
+    return;
+  }
+
+  const updated = await pool.query<StudentRow>(
+    `UPDATE students SET user_id = $1, updated_at = NOW()
+     WHERE id = $2 AND tenant_id = $3
+     RETURNING id, tenant_id, name, class_id, batch_id, user_id,
+               deleted_at, created_at, updated_at`,
+    [userId.trim(), studentId, tenantId],
+  );
+
+  res.status(200).json({ student: fmt(updated.rows[0]!) });
 }
 
 export async function deleteStudent(

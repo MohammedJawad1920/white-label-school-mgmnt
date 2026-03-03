@@ -1,7 +1,7 @@
 {
   "name": "white-label-school-mgmt-server",
-  "version": "3.3.0",
-  "description": "White-Label School Management System — Backend v3.3",
+  "version": "3.4.0",
+  "description": "White-Label School Management System — Backend v3.4",
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "seed:superadmin": "ts-node src/db/seeds/superadmin.ts",
     "migrate": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/001_initial_schema.sql', {stdio:'inherit', shell:true})\"",
+    "migrate:002": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/002_add_student_user_id.sql', {stdio:'inherit', shell:true})\"",
+    "migrate:003": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/003_add_attendance_corrections.sql', {stdio:'inherit', shell:true})\"",
     "mock": "npx @stoplight/prism-cli@5.14.2 mock ./docs/openapi.yaml --port 4010",
     "mock:verbose": "npx @stoplight/prism-cli@5.14.2 mock ./docs/openapi.yaml --port 4010 --errors",
     "test": "jest --runInBand",

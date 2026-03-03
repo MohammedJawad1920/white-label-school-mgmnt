@@ -166,6 +166,10 @@ export default function StudentsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [drawerError, setDrawerError] = useState<string | null>(null);
+  // v3.4 CR-08: link student to user account
+  const [linkStudent, setLinkStudent] = useState<Student | null>(null);
+  const [linkUserId, setLinkUserId] = useState("");
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   const { data: studentsData, isLoading } = useQuery({
     queryKey: ["students"],
@@ -228,6 +232,21 @@ export default function StudentsPage() {
       setSelectedIds(new Set());
     },
     onError: (e) => setDeleteError(parseApiError(e).message),
+  });
+
+  const linkMut = useMutation({
+    mutationFn: () =>
+      studentsApi.linkAccount(linkStudent!.id, { userId: linkUserId }),
+    onSuccess: async () => {
+      await invalidate();
+      setLinkStudent(null);
+      setLinkUserId("");
+      setLinkError(null);
+    },
+    onError: (e) => {
+      const { code, message } = parseApiError(e);
+      setLinkError(code === "NOT_FOUND" ? "User not found." : message);
+    },
   });
 
   function toggleSelect(id: string, checked: boolean) {
@@ -332,6 +351,14 @@ export default function StudentsPage() {
                   <div className="flex justify-end gap-1.5">
                     <ActionBtn
                       onClick={() => {
+                        setLinkUserId("");
+                        setLinkError(null);
+                        setLinkStudent(student);
+                      }}
+                      label={`Link account for ${student.name}`}
+                    />
+                    <ActionBtn
+                      onClick={() => {
                         setDeleteError(null);
                         deleteMut.mutate(student.id);
                       }}
@@ -371,6 +398,61 @@ export default function StudentsPage() {
           classes={classes}
           batches={batches}
         />
+      </Drawer>
+
+      {/* Link Account drawer — v3.4 CR-08 */}
+      <Drawer
+        open={!!linkStudent}
+        title="Link User Account"
+        onClose={() => setLinkStudent(null)}
+        footer={null}
+      >
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {linkError && <RootError message={linkError} />}
+            <p className="text-sm text-muted-foreground">
+              Link <strong>{linkStudent?.name}</strong> to an existing user
+              account. The user will be able to view their own attendance
+              history.
+            </p>
+            <FormField
+              id="link-user-id"
+              label="User ID"
+              hint="The ID of the user account to associate with this student."
+            >
+              <input
+                id="link-user-id"
+                type="text"
+                value={linkUserId}
+                onChange={(e) => setLinkUserId(e.target.value)}
+                className={inputCls(false)}
+                placeholder="Enter user ID"
+                autoComplete="off"
+              />
+            </FormField>
+          </div>
+          <div className="border-t p-4 shrink-0 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setLinkStudent(null)}
+              disabled={linkMut.isPending}
+              className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLinkError(null);
+                linkMut.mutate();
+              }}
+              disabled={linkMut.isPending || !linkUserId.trim()}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
+              {linkMut.isPending ? "Linking…" : "Link Account"}
+            </button>
+          </div>
+        </div>
       </Drawer>
     </div>
   );

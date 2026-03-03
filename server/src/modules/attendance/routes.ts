@@ -14,6 +14,7 @@ import {
   recordClassAttendance,
   getStudentAttendance,
   getAttendanceSummary,
+  correctAttendance,
 } from "./controller";
 
 // ---- Main attendance router (mounted at /api/attendance) ----
@@ -28,15 +29,22 @@ router.get(
   requireRole("Admin"),
   asyncHandler(getAttendanceSummary),
 );
+// PUT /api/attendance/:recordId — correct a single record (v3.4 CR-09)
+router.put(
+  "/:recordId",
+  requireRole("Teacher", "Admin"),
+  asyncHandler(correctAttendance),
+);
 
 // ---- Student-attendance router (mounted at /api/students) ----
 const studentAttendanceRouter = Router();
 studentAttendanceRouter.use(tenantContextMiddleware);
 studentAttendanceRouter.use(featureGuard("attendance"));
 
-// GET /api/students/:studentId/attendance
+// GET /api/students/:studentId/attendance — Students may view own record
 studentAttendanceRouter.get(
   "/:studentId/attendance",
+  requireRole("Teacher", "Admin", "Student"),
   asyncHandler(getStudentAttendance),
 );
 

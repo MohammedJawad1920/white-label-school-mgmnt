@@ -20,8 +20,13 @@
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { pool, withTransaction } from "../../db/pool";
-import { send400, send404 } from "../../utils/errors";
-import { AttendanceStatus, StudentRow, TimeslotRow } from "../../types";
+import { send400, send403, send404, send409 } from "../../utils/errors";
+import {
+  AttendanceRecordRow,
+  AttendanceStatus,
+  StudentRow,
+  TimeslotRow,
+} from "../../types";
 
 // ═══════════════════════════════════════════════════════════════════
 // POST /api/attendance/record-class
@@ -215,6 +220,7 @@ export async function getStudentAttendance(
   // Verify student belongs to this tenant + JOIN class for className (Freeze §3.5)
   const studentResult = await pool.query<StudentRow & { class_name: string }>(
     `SELECT st.id, st.tenant_id, st.name, st.class_id, st.batch_id,
+            st.user_id,
             st.deleted_at, st.created_at, st.updated_at,
             c.name AS class_name
      FROM students st
@@ -227,6 +233,17 @@ export async function getStudentAttendance(
     return;
   }
   const student = studentResult.rows[0]!;
+
+  // ── CR-08: Student self-access guard ──────────────────────────────
+  // Students may only view their own attendance record.
+  if (req.userRoles?.includes("Student") && student.user_id !== req.userId) {
+    send403(
+      res,
+      "Students can only access their own attendance",
+      "STUDENT_ACCESS_DENIED",
+    );
+    return;
+  }
 
   // Build attendance query
   const conditions = ["ar.student_id = $1", "ar.tenant_id = $2"];
@@ -255,6 +272,9 @@ export async function getStudentAttendance(
     id: string;
     date: string;
     status: AttendanceStatus;
+    corrected_status: AttendanceStatus | null;
+    corrected_by: string | null;
+    corrected_at: Date | null;
     recorded_by: string;
     recorded_at: Date;
     ts_id: string;
@@ -263,7 +283,9 @@ export async function getStudentAttendance(
     day_of_week: string;
   }>(
     `SELECT
-       ar.id, ar.date, ar.status, ar.recorded_by, ar.recorded_at,
+       ar.id, ar.date, ar.status,
+       ar.corrected_status, ar.corrected_by, ar.corrected_at,
+       ar.recorded_by, ar.recorded_at,
        t.id  AS ts_id,
        s.name AS subject_name,
        t.period_number,
@@ -311,7 +333,11 @@ export async function getStudentAttendance(
     records: recordsResult.rows.map((r) => ({
       id: r.id,
       date: String(r.date).slice(0, 10),
-      status: r.status,
+      // v3.4 CR-09: effective status = corrected_status ?? original status
+      status: r.corrected_status ?? r.status,
+      originalStatus: r.status,
+      correctedBy: r.corrected_by ?? null,
+      correctedAt: r.corrected_at?.toISOString() ?? null,
       timeSlot: {
         id: r.ts_id,
         subjectName: r.subject_name,
@@ -477,5 +503,116 @@ export async function getAttendanceSummary(
         attendanceRate: total > 0 ? Math.round((p / total) * 10000) / 100 : 0,
       };
     }),
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PUT /api/attendance/:recordId   (v3.4 CR-09)
+// ═══════════════════════════════════════════════════════════════════
+// Teacher (own class) or Admin can correct an attendance status.
+// Writes to corrected_status/corrected_by/corrected_at; original status
+// (status column) is immutable after insert (Freeze §3.4 invariant).
+
+export async function correctAttendance(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const tenantId = req.tenantId!;
+  const callerId = req.userId!;
+  const { recordId } = req.params as { recordId: string };
+  const { status } = req.body as { status?: string };
+
+  const validStatuses: AttendanceStatus[] = ["Present", "Absent", "Late"];
+  if (!status || !validStatuses.includes(status as AttendanceStatus)) {
+    send400(res, `status must be one of: ${validStatuses.join(", ")}`);
+    return;
+  }
+
+  // Fetch record + timeslot (need teacher_id for access check)
+  const recordResult = await pool.query<
+    AttendanceRecordRow & { teacher_id: string; record_date: string }
+  >(
+    `SELECT ar.id, ar.tenant_id, ar.student_id, ar.timeslot_id,
+            ar.date AS record_date,
+            ar.status, ar.corrected_status, ar.corrected_by, ar.corrected_at,
+            ar.recorded_by, ar.recorded_at,
+            t.teacher_id
+     FROM attendance_records ar
+     JOIN timeslots t ON t.id = ar.timeslot_id
+     WHERE ar.id = $1 AND ar.tenant_id = $2`,
+    [recordId, tenantId],
+  );
+
+  if ((recordResult.rowCount ?? 0) === 0) {
+    send404(res, "Attendance record not found");
+    return;
+  }
+
+  const record = recordResult.rows[0]!;
+
+  // ── FUTURE_DATE guard ─────────────────────────────────────────────
+  // Cannot correct an attendance record for a future date.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const recordDate = new Date(record.record_date);
+  recordDate.setHours(0, 0, 0, 0);
+  if (recordDate > today) {
+    send400(res, "Cannot correct attendance for a future date", "FUTURE_DATE");
+    return;
+  }
+
+  // ── SAME_STATUS guard ─────────────────────────────────────────────
+  const effectiveStatus = record.corrected_status ?? record.status;
+  if (status === effectiveStatus) {
+    send409(res, "Status is already set to that value", "SAME_STATUS");
+    return;
+  }
+
+  // ── Teacher own-class access check ───────────────────────────────
+  // Teachers may only correct attendance for timeslots they own.
+  // Admins have no such restriction.
+  const callerRoles = req.userRoles ?? [];
+  if (callerRoles.includes("Teacher") && !callerRoles.includes("Admin")) {
+    if (record.teacher_id !== callerId) {
+      send403(
+        res,
+        "Teachers can only correct attendance for their own classes",
+        "FORBIDDEN",
+      );
+      return;
+    }
+  }
+
+  // ── Apply correction ──────────────────────────────────────────────
+  const updated = await pool.query<
+    AttendanceRecordRow & { record_date: string }
+  >(
+    `UPDATE attendance_records
+     SET corrected_status = $1, corrected_by = $2, corrected_at = NOW()
+     WHERE id = $3 AND tenant_id = $4
+     RETURNING id, tenant_id, student_id, timeslot_id,
+               date AS record_date,
+               status, corrected_status, corrected_by, corrected_at,
+               recorded_by, recorded_at`,
+    [status, callerId, recordId, tenantId],
+  );
+
+  const r = updated.rows[0]!;
+  res.status(200).json({
+    record: {
+      id: r.id,
+      studentId: r.student_id,
+      timeslotId: r.timeslot_id,
+      date: String(r.record_date).slice(0, 10),
+      status: r.corrected_status ?? r.status, // effective
+      originalStatus: r.status,
+      correctedBy: r.corrected_by ?? null,
+      correctedAt: r.corrected_at?.toISOString() ?? null,
+      recordedBy: r.recorded_by,
+      recordedAt:
+        r.recorded_at instanceof Date
+          ? r.recorded_at.toISOString()
+          : String(r.recorded_at),
+    },
   });
 }

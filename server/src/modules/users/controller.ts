@@ -22,7 +22,7 @@
 import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
-import { pool } from "../../db/pool";
+import { pool, withTransaction } from "../../db/pool";
 import { config } from "../../config/env";
 import { send400, send403, send404, send409 } from "../../utils/errors";
 import { bulkSoftDelete } from "../../utils/bulkDelete";
@@ -49,7 +49,7 @@ export async function listUsers(req: Request, res: Response): Promise<void> {
   const params: unknown[] = [tenantId];
   let idx = 2;
 
-  if (role && (role === "Teacher" || role === "Admin")) {
+  if (role && (role === "Teacher" || role === "Admin" || role === "Student")) {
     conditions.push(`roles @> $${idx++}::jsonb`);
     params.push(JSON.stringify([role]));
   }
@@ -91,7 +91,7 @@ export async function createUser(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const validRoles: UserRole[] = ["Teacher", "Admin"];
+  const validRoles: UserRole[] = ["Teacher", "Admin", "Student"]; // v3.4
   const sanitizedRoles: UserRole[] = [
     ...new Set(
       (roles as string[]).filter((r) => validRoles.includes(r as UserRole)),
@@ -99,7 +99,10 @@ export async function createUser(req: Request, res: Response): Promise<void> {
   ] as UserRole[];
 
   if (sanitizedRoles.length === 0) {
-    send400(res, "roles must contain at least one valid role: Teacher, Admin");
+    send400(
+      res,
+      "roles must contain at least one valid role: Teacher, Admin, Student",
+    );
     return;
   }
 
@@ -135,6 +138,8 @@ export async function createUser(req: Request, res: Response): Promise<void> {
 }
 
 // PUT /api/users/:id/roles
+// v3.4 CR-10: SELF_TARGET guard removed — Admin may target themselves.
+// LASTADMIN guard added: cannot remove own Admin role if last admin in tenant.
 export async function updateUserRoles(
   req: Request,
   res: Response,
@@ -144,19 +149,12 @@ export async function updateUserRoles(
   const { id } = req.params as { id: string };
   const { roles } = req.body as { roles?: unknown };
 
-  // ── SELF-TARGET GUARD (Freeze §3) ─────────────────────────────────
-  // An Admin cannot update their own roles.
-  if (id === callerId) {
-    send403(res, "You cannot update your own roles", "SELF_TARGET");
-    return;
-  }
-
   if (!Array.isArray(roles) || roles.length === 0) {
     send400(res, "roles must be a non-empty array");
     return;
   }
 
-  const validRoles: UserRole[] = ["Teacher", "Admin"];
+  const validRoles: UserRole[] = ["Teacher", "Admin", "Student"]; // v3.4 CR-10
   const sanitizedRoles: UserRole[] = [
     ...new Set(
       (roles as string[]).filter((r) => validRoles.includes(r as UserRole)),
@@ -164,8 +162,31 @@ export async function updateUserRoles(
   ] as UserRole[];
 
   if (sanitizedRoles.length === 0) {
-    send400(res, "roles must contain at least one valid role: Teacher, Admin");
+    send400(
+      res,
+      "roles must contain at least one valid role: Teacher, Admin, Student",
+    );
     return;
+  }
+
+  // ── LASTADMIN guard (v3.4 CR-10) ──────────────────────────────────
+  // Block if the caller targets themselves AND removes their own Admin role
+  // while being the only active Admin left in this tenant.
+  if (id === callerId && !sanitizedRoles.includes("Admin")) {
+    const countResult = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM users
+       WHERE tenant_id = $1 AND roles @> '["Admin"]'::jsonb AND deleted_at IS NULL`,
+      [tenantId],
+    );
+    const adminCount = parseInt(countResult.rows[0]?.count ?? "0", 10);
+    if (adminCount <= 1) {
+      send409(
+        res,
+        "Cannot remove Admin role: you are the last admin of this tenant",
+        "LASTADMIN",
+      );
+      return;
+    }
   }
 
   const result = await pool.query<UserRow>(
@@ -184,6 +205,7 @@ export async function updateUserRoles(
 }
 
 // DELETE /api/users/:id
+// v3.4 CR-08: uses withTransaction to null students.user_id atomically
 export async function deleteUser(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;
   const { id } = req.params as { id: string };
@@ -212,10 +234,19 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  await pool.query(
-    "UPDATE users SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND tenant_id = $2",
-    [id, tenantId],
-  );
+  // WHY withTransaction: Freeze v3.4 invariant — when a user is soft-deleted,
+  // students.user_id referencing that user must be set to NULL atomically.
+  await withTransaction(async (client) => {
+    await client.query(
+      "UPDATE students SET user_id = NULL, updated_at = NOW() WHERE user_id = $1 AND tenant_id = $2",
+      [id, tenantId],
+    );
+    await client.query(
+      "UPDATE users SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND tenant_id = $2",
+      [id, tenantId],
+    );
+  });
+
   res.status(204).send();
 }
 
@@ -247,9 +278,15 @@ export async function bulkDeleteUsers(
        WHERE teacher_id = $1 AND tenant_id = $2 AND effective_to IS NULL AND deleted_at IS NULL`,
         [id, tid],
       );
-      return parseInt(check.rows[0]?.count ?? "0", 10) > 0
-        ? "Cannot delete: user has active timeslot assignments or attendance records"
-        : null;
+      if (parseInt(check.rows[0]?.count ?? "0", 10) > 0) {
+        return "Cannot delete: user has active timeslot assignments or attendance records";
+      }
+      // v3.4 CR-08: null out students.user_id before soft-deleting
+      await p.query(
+        "UPDATE students SET user_id = NULL, updated_at = NOW() WHERE user_id = $1 AND tenant_id = $2",
+        [id, tid],
+      );
+      return null;
     },
   );
 

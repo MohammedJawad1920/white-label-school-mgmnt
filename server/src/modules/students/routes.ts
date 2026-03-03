@@ -7,15 +7,22 @@ import {
   createStudent,
   deleteStudent,
   bulkDeleteStudents,
+  linkStudentAccount,
 } from "./controller";
 
 const router = Router();
 router.use(tenantContextMiddleware);
 
-// NOTE: No PUT /:id — there is no PUT /students/:id in the OpenAPI contract
+// NOTE: /bulk MUST precede /:id to avoid route shadowing
 router.delete("/bulk", requireRole("Admin"), asyncHandler(bulkDeleteStudents));
 router.get("/", asyncHandler(listStudents));
 router.post("/", requireRole("Admin"), asyncHandler(createStudent));
+// v3.4 CR-08: link-account must precede /:id
+router.put(
+  "/:studentId/link-account",
+  requireRole("Admin"),
+  asyncHandler(linkStudentAccount),
+);
 router.delete("/:id", requireRole("Admin"), asyncHandler(deleteStudent));
 
 export default router;

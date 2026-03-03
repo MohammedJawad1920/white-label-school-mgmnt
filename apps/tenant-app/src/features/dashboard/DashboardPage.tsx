@@ -208,6 +208,44 @@ export default function DashboardPage() {
     );
   }
 
+  // Student view — FE-006: placeholder until student-facing screens are built
+  if (user?.activeRole === "Student") {
+    return (
+      <div className="p-4 md:p-6 max-w-3xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold">Dashboard</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {todayDayOfWeek()}, {TODAY}
+            {user && <span className="ml-2">· {user.name}</span>}
+          </p>
+        </div>
+        <div className="flex flex-col items-center justify-center py-16 px-4 text-center rounded-lg border bg-muted/30">
+          <svg
+            className="h-12 w-12 text-muted-foreground/40 mb-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              d="M12 14l9-5-9-5-9 5 9 5zm0 7v-7m0 0l-9-5m9 5l9-5"
+            />
+          </svg>
+          <p className="text-base font-medium text-muted-foreground">
+            Welcome, {user.name}
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Contact your admin for your attendance records and timetable
+            details.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Filter slots by role — Freeze §Screen: Dashboard permissions
   const allSlots = data?.timetable ?? [];
   const slots =

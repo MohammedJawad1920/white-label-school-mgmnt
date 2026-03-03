@@ -1,8 +1,14 @@
 /**
  * types/api.ts — LOCKED per Frontend Freeze §3.2
- * All interfaces match OpenAPI v3.3.0 exactly.
+ * All interfaces match OpenAPI v3.4.0 exactly.
  * timestamp is INSIDE error.{} per OpenAPI ErrorResponse schema.
  * Never define API shapes in component files — always import from here.
+ *
+ * v3.4 changes:
+ * - Role enum: Teacher | Admin | Student
+ * - Student gains userId (nullable)
+ * - AttendanceRecord gains originalStatus, correctedBy, correctedAt
+ * - New: CorrectAttendanceRequest/Response, LinkStudentAccountRequest/Response
  */
 
 // ─── ERROR ───────────────────────────────────────────────────────────────────
@@ -16,13 +22,15 @@ export interface ApiError {
 }
 
 // ─── AUTH ────────────────────────────────────────────────────────────────────
+export type UserRole = "Teacher" | "Admin" | "Student"; // v3.4
+
 export interface TenantUser {
   id: string;
   tenantId: string;
   name: string;
   email: string;
-  roles: Array<"Teacher" | "Admin">;
-  activeRole: "Teacher" | "Admin";
+  roles: Array<UserRole>;
+  activeRole: UserRole;
 }
 export interface TenantLoginRequest {
   email: string;
@@ -34,7 +42,7 @@ export interface TenantLoginResponse {
   user: TenantUser;
 }
 export interface SwitchRoleRequest {
-  role: "Teacher" | "Admin";
+  role: UserRole;
 }
 export interface SwitchRoleResponse {
   token: string;
@@ -75,7 +83,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  roles: Array<"Teacher" | "Admin">;
+  roles: Array<UserRole>;
 }
 export interface ListUsersResponse {
   users: User[];
@@ -84,13 +92,13 @@ export interface CreateUserRequest {
   name: string;
   email: string;
   password: string;
-  roles: Array<"Teacher" | "Admin">;
+  roles: Array<UserRole>;
 }
 export interface CreateUserResponse {
   user: User;
 }
 export interface UpdateUserRolesRequest {
-  roles: Array<"Teacher" | "Admin">;
+  roles: Array<UserRole>;
 }
 export interface UpdateUserRolesResponse {
   user: User;
@@ -100,10 +108,19 @@ export interface UpdateUserRolesResponse {
 export interface Student {
   id: string;
   name: string;
+  userId?: string | null; // v3.4 CR-08: linked user account
   classId: string;
   className?: string;
   batchId: string;
   batchName?: string;
+}
+
+// v3.4 CR-08: link a student record to a user account
+export interface LinkStudentAccountRequest {
+  userId: string;
+}
+export interface LinkStudentAccountResponse {
+  student: Student;
 }
 export interface ListStudentsResponse {
   students: Student[];
@@ -229,7 +246,14 @@ export interface EndTimeSlotResponse {
 export interface AttendanceRecord {
   id: string;
   date: string;
+  /** Effective status = correctedStatus ?? originalStatus (v3.4) */
   status: AttendanceStatus;
+  /** Immutable status written at record-time (v3.4) */
+  originalStatus: AttendanceStatus;
+  /** User ID of corrector; null if never corrected (v3.4) */
+  correctedBy: string | null;
+  /** ISO timestamp of last correction; null if never corrected (v3.4) */
+  correctedAt: string | null;
   timeSlot: {
     id: string;
     subjectName?: string;
@@ -238,6 +262,14 @@ export interface AttendanceRecord {
   };
   recordedBy: string;
   recordedAt: string;
+}
+
+// v3.4 CR-09: correct an attendance record status
+export interface CorrectAttendanceRequest {
+  status: AttendanceStatus;
+}
+export interface CorrectAttendanceResponse {
+  record: AttendanceRecord & { studentId: string; timeslotId: string };
 }
 export interface RecordClassAttendanceRequest {
   timeSlotId: string;

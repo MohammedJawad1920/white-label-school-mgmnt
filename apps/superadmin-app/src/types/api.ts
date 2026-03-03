@@ -42,14 +42,25 @@ export interface Tenant {
 export interface ListTenantsResponse {
   tenants: Tenant[];
 }
-// POST /super-admin/tenants — only id, name, slug per OpenAPI
+// POST /super-admin/tenants — v3.4 CR-06: admin block required
 export interface CreateTenantRequest {
   id: string;
   name: string;
   slug: string;
+  admin: {
+    name: string;
+    email: string;
+    password: string;
+  };
 }
 export interface CreateTenantResponse {
   tenant: Tenant;
+  admin: {
+    id: string;
+    name: string;
+    email: string;
+    roles: string[];
+  };
 }
 // PUT /super-admin/tenants/:id — name and/or slug
 export interface UpdateTenantRequest {

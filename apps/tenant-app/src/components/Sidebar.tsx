@@ -227,9 +227,9 @@ export function Sidebar() {
     navigate("/login", { replace: true });
   }
 
-  // Filter nav items to those the current role can see
+  // Filter nav items to those the user's current activeRole can see (FE-006)
   const visibleItems = NAV_ITEMS.filter(
-    (item) => !user || item.roles.some((r) => user.roles.includes(r)),
+    (item) => !user || item.roles.includes(user.activeRole),
   );
 
   function isActive(item: NavItem): boolean {

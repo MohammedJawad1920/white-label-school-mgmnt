@@ -15,6 +15,7 @@ import {
   createTenant,
   updateTenant,
   deactivateTenant,
+  reactivateTenant,
   getTenantFeatures,
   toggleTenantFeature,
 } from "./controller";
@@ -30,8 +31,10 @@ router.use(superAdminAuthMiddleware);
 // ── Tenant Management ─────────────────────────────────────────────
 router.get("/tenants", asyncHandler(listTenants));
 router.post("/tenants", asyncHandler(createTenant));
-router.put("/tenants/:tenantId", asyncHandler(updateTenant));
+// Specific sub-path PUTs MUST precede the generic /:tenantId PUT (Express top-to-bottom)
 router.put("/tenants/:tenantId/deactivate", asyncHandler(deactivateTenant));
+router.put("/tenants/:tenantId/reactivate", asyncHandler(reactivateTenant)); // v3.4 CR-07
+router.put("/tenants/:tenantId", asyncHandler(updateTenant));
 
 // ── Feature Management ────────────────────────────────────────────
 router.get("/tenants/:tenantId/features", asyncHandler(getTenantFeatures));

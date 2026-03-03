@@ -14,10 +14,12 @@
  */
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
 import { attendanceApi } from "@/api/attendance";
 import { parseApiError } from "@/utils/errors";
 import { formatDisplayDate, todayISO } from "@/utils/dates";
+import type { AttendanceRecord } from "@/types/api";
 
 const PAGE_LIMIT = 50;
 
@@ -89,10 +91,17 @@ function Pagination({ page, total, limit, onChange }: PaginationProps) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function StudentAttendanceHistoryPage() {
   const { studentId } = useParams<{ studentId: string }>();
+  const qc = useQueryClient();
+  const { user } = useAuth();
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
+  // v3.4 CR-09: attendance correction
+  const [correctingRecord, setCorrectingRecord] =
+    useState<AttendanceRecord | null>(null);
+  const [correctStatus, setCorrectStatus] = useState<string>("");
+  const [correctError, setCorrectError] = useState<string | null>(null);
 
   const offset = (page - 1) * PAGE_LIMIT;
 
@@ -129,6 +138,29 @@ export default function StudentAttendanceHistoryPage() {
     | undefined;
   const pagination = data?.pagination;
   const total = pagination?.total ?? 0;
+
+  // Correction access: Admin/Teacher can correct records
+  const canCorrect =
+    user?.activeRole === "Admin" || user?.activeRole === "Teacher";
+  const colCount = canCorrect ? 5 : 4;
+
+  const correctMut = useMutation({
+    mutationFn: () =>
+      attendanceApi.correctRecord(correctingRecord!.id, {
+        status: correctStatus as "Present" | "Absent" | "Late",
+      }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({
+        queryKey: ["student-attendance", studentId],
+      });
+      setCorrectingRecord(null);
+      setCorrectError(null);
+    },
+    onError: (e) => {
+      const { message } = parseApiError(e);
+      setCorrectError(message);
+    },
+  });
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto">
@@ -268,12 +300,20 @@ export default function StudentAttendanceHistoryPage() {
                   >
                     Status
                   </th>
+                  {canCorrect && (
+                    <th
+                      scope="col"
+                      className="px-4 py-2.5 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide"
+                    >
+                      Actions
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {isLoading && (
                   <tr>
-                    <td colSpan={4} className="p-0">
+                    <td colSpan={colCount} className="p-0">
                       <TableSkeleton />
                     </td>
                   </tr>
@@ -282,7 +322,7 @@ export default function StudentAttendanceHistoryPage() {
                 {!isLoading && records.length === 0 && (
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={colCount}
                       className="px-4 py-12 text-center text-sm text-muted-foreground"
                     >
                       No attendance records found for this period.
@@ -311,7 +351,29 @@ export default function StudentAttendanceHistoryPage() {
                         >
                           {record.status}
                         </span>
+                        {record.correctedAt && (
+                          <span className="block text-xs text-muted-foreground mt-0.5">
+                            corrected · was {record.originalStatus}
+                          </span>
+                        )}
                       </td>
+                      {canCorrect && (
+                        <td className="px-4 py-2.5 text-right">
+                          <button
+                            onClick={() => {
+                              setCorrectStatus(record.status);
+                              setCorrectError(null);
+                              setCorrectingRecord(
+                                record as unknown as AttendanceRecord,
+                              );
+                            }}
+                            className="rounded-md px-2.5 py-1 text-xs font-medium border hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            aria-label={`Correct attendance record for ${formatDisplayDate(record.date)}`}
+                          >
+                            Correct
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
               </tbody>
@@ -325,6 +387,93 @@ export default function StudentAttendanceHistoryPage() {
             />
           </div>
         </>
+      )}
+
+      {/* Correction dialog — v3.4 CR-09 */}
+      {correctingRecord && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="correct-att-title"
+          onKeyDown={(e) => e.key === "Escape" && setCorrectingRecord(null)}
+        >
+          <div className="bg-background rounded-lg shadow-xl w-full max-w-sm border">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 id="correct-att-title" className="text-base font-semibold">
+                Correct Attendance
+              </h2>
+              <button
+                onClick={() => setCorrectingRecord(null)}
+                aria-label="Close"
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {formatDisplayDate(correctingRecord.date)} — current:{" "}
+                <strong>{correctingRecord.status}</strong>
+              </p>
+              <div>
+                <label
+                  htmlFor="correct-status"
+                  className="block text-sm font-medium mb-1.5"
+                >
+                  New Status
+                </label>
+                <select
+                  id="correct-status"
+                  value={correctStatus}
+                  onChange={(e) => setCorrectStatus(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="Present">Present</option>
+                  <option value="Absent">Absent</option>
+                  <option value="Late">Late</option>
+                </select>
+              </div>
+              {correctError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {correctError}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t">
+              <button
+                onClick={() => setCorrectingRecord(null)}
+                disabled={correctMut.isPending}
+                className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setCorrectError(null);
+                  correctMut.mutate();
+                }}
+                disabled={correctMut.isPending}
+                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                {correctMut.isPending ? "Saving…" : "Save Correction"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

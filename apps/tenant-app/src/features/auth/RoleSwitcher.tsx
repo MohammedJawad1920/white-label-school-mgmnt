@@ -1,103 +1,170 @@
 /**
- * RoleSwitcher — Freeze §User Story 9: switch active role in-session.
+ * RoleSwitcher — FE-005: dropdown supporting all roles.
  *
- * Freeze rules:
+ * Freeze rules (FE-005):
  * - Only shown when user.roles.length > 1
  * - Calls POST /auth/switch-role → receives new JWT
  * - AuthContext.switchRole() atomically replaces token + user in state + localStorage
  * - NO page reload — role-gated components re-render immediately
+ * - Renders available roles as dropdown items; active role shows checkmark
+ * - Loading state: dropdown items disabled, spinner on trigger button
+ * - Error state: inline message "Failed to switch role. Please try again."
  *
- * WHY this is a component (not inline in Layout):
- * It needs access to useAuth + its own loading state. Keeping it isolated
- * means Layout doesn't grow complex — just renders <RoleSwitcher />.
+ * WHY custom dropdown (no @radix-ui/react-dropdown-menu installed):
+ * Implemented with useState + click-outside ref to stay dependency-free.
  */
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { isMultiRole } from "@/utils/roles";
-import { getErrorMessage } from "@/utils/errors";
+import type { UserRole } from "@/types/api";
 
 interface RoleSwitcherProps {
-  /** compact = icon+text in sidebar; full = dropdown style in header */
+  /** compact = sidebar button; full = header dropdown */
   variant?: "compact" | "full";
 }
 
 export function RoleSwitcher({ variant = "compact" }: RoleSwitcherProps) {
   const { user, switchRole } = useAuth();
-  const [switching, setSwitching] = useState(false);
+  const [switching, setSwitching] = useState<UserRole | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Only render if the user has multiple roles
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
   if (!user || !isMultiRole(user)) return null;
 
-  const nextRole = user.activeRole === "Admin" ? "Teacher" : "Admin";
+  const isLoading = switching !== null;
 
-  async function handleSwitch() {
-    setSwitching(true);
+  async function handleSwitch(role: UserRole) {
+    if (role === user!.activeRole || isLoading) return;
+    setSwitching(role);
     setError(null);
+    setOpen(false);
     try {
-      await switchRole({ role: nextRole });
-      // No navigation needed — AuthContext re-renders everything
-    } catch (err) {
-      setError(getErrorMessage(err));
+      await switchRole({ role });
+    } catch {
+      setError("Failed to switch role. Please try again.");
     } finally {
-      setSwitching(false);
+      setSwitching(null);
     }
   }
 
+  // ── Dropdown items ─────────────────────────────────────────────────────────
+  const dropdownItems = (
+    <div
+      role="listbox"
+      aria-label="Switch role"
+      className="absolute z-50 rounded-md border bg-background shadow-lg py-1 min-w-[8rem]"
+    >
+      {user.roles.map((role) => {
+        const isActive = role === user.activeRole;
+        return (
+          <button
+            key={role}
+            role="option"
+            aria-selected={isActive}
+            disabled={isLoading}
+            onClick={() => handleSwitch(role)}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:bg-muted"
+          >
+            {isActive ? (
+              <svg
+                className="h-3.5 w-3.5 text-primary shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            ) : (
+              <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            )}
+            <span className={isActive ? "font-medium" : ""}>{role}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const spinnerSvg = (
+    <svg
+      className="h-3.5 w-3.5 animate-spin"
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+      />
+    </svg>
+  );
+
+  const chevronSvg = (
+    <svg
+      className="h-3 w-3 text-muted-foreground ml-auto"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M19 9l-7 7-7-7"
+      />
+    </svg>
+  );
+
   if (variant === "full") {
     return (
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted text-sm">
-          <span className="text-muted-foreground">Active role:</span>
-          <span className="font-medium">{user.activeRole}</span>
-        </div>
+      <div ref={containerRef} className="relative">
         <button
-          onClick={handleSwitch}
-          disabled={switching}
-          aria-label={`Switch to ${nextRole} role`}
-          className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+          onClick={() => setOpen((p) => !p)}
+          disabled={isLoading}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          className="flex items-center gap-2 px-3 py-2 rounded-md text-sm border hover:bg-muted transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {switching ? (
-            <svg
-              className="h-4 w-4 animate-spin"
-              fill="none"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-              />
-            </svg>
-          ) : (
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
-              />
-            </svg>
-          )}
-          Switch to {nextRole}
+          {isLoading ? spinnerSvg : null}
+          <span>{user.activeRole}</span>
+          {chevronSvg}
         </button>
+        {open && (
+          <div className="absolute right-0 mt-1 w-44">{dropdownItems}</div>
+        )}
         {error && (
-          <p role="alert" className="text-xs text-destructive px-3">
+          <p role="alert" className="text-xs text-destructive mt-1">
             {error}
           </p>
         )}
@@ -105,55 +172,27 @@ export function RoleSwitcher({ variant = "compact" }: RoleSwitcherProps) {
     );
   }
 
-  // compact variant — single icon button for sidebar
+  // compact variant — used in sidebar
   return (
-    <div className="flex flex-col gap-1">
+    <div ref={containerRef} className="relative flex flex-col gap-1">
       <button
-        onClick={handleSwitch}
-        disabled={switching}
-        aria-label={`Switch to ${nextRole} role`}
-        title={`Switch to ${nextRole}`}
-        className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium border border-border hover:bg-muted transition-colors disabled:opacity-50 disabled:pointer-events-none"
+        onClick={() => setOpen((p) => !p)}
+        disabled={isLoading}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="Switch active role"
+        title="Switch role"
+        className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium border border-border hover:bg-muted transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {switching ? (
-          <svg
-            className="h-3.5 w-3.5 animate-spin"
-            fill="none"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
-        ) : (
-          <svg
-            className="h-3.5 w-3.5"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
-            />
-          </svg>
-        )}
-        {user.activeRole} → {nextRole}
+        {isLoading ? spinnerSvg : null}
+        <span>{user.activeRole}</span>
+        {chevronSvg}
       </button>
+      {open && (
+        <div className="absolute bottom-full mb-1 left-0 w-full">
+          {dropdownItems}
+        </div>
+      )}
       {error && (
         <p role="alert" className="text-xs text-destructive">
           {error}

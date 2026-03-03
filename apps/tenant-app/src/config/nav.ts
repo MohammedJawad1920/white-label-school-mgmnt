@@ -5,16 +5,17 @@
  * Both components share the same items array. If a route is added/removed,
  * one edit here propagates to desktop sidebar AND mobile tab bar automatically.
  *
- * Freeze §User Roles — visibility rules:
- *   Teacher: dashboard, timetable, attendance/record only
- *   Admin:   all routes including manage/* and attendance summary
+ * Freeze §User Roles — visibility rules (FE-006: derived from activeRole):
+ *   Teacher:  dashboard, timetable, attendance/record
+ *   Admin:    all routes including manage/* and attendance summary
+ *   Student:  dashboard, timetable (read-only)
  */
 
 export interface NavItem {
   label: string;
   href: string;
-  /** roles that can see this item. empty = all authenticated roles */
-  roles: Array<"Teacher" | "Admin">;
+  /** roles whose activeRole matches can see this item */
+  roles: Array<"Teacher" | "Admin" | "Student">;
   /** matches child paths too (e.g. /manage matches /manage/users) */
   matchPrefix?: boolean;
   icon:
@@ -39,13 +40,13 @@ export const NAV_ITEMS: NavItem[] = [
   {
     label: "Dashboard",
     href: "/dashboard",
-    roles: ["Teacher", "Admin"],
+    roles: ["Teacher", "Admin", "Student"],
     icon: "dashboard",
   },
   {
     label: "Timetable",
     href: "/timetable",
-    roles: ["Teacher", "Admin"],
+    roles: ["Teacher", "Admin", "Student"],
     icon: "timetable",
   },
   {
@@ -106,9 +107,9 @@ export const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-/** Bottom tab bar shows only Teacher-relevant primary actions (max 4 tabs) */
+/** Bottom tab bar shows only Teacher/Student-relevant primary actions (max 4 tabs) */
 export const BOTTOM_TAB_ITEMS: NavItem[] = NAV_ITEMS.filter(
   (item) =>
-    item.roles.includes("Teacher") &&
+    (item.roles.includes("Teacher") || item.roles.includes("Student")) &&
     ["dashboard", "timetable", "attendance"].includes(item.icon),
 );

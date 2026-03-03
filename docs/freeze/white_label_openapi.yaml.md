@@ -1,23 +1,18 @@
-# ARTIFACT 1: openapi.yaml (v3.3.0)
-# CR-05: Dynamic Per-Tenant Period Configuration (Breaking)
-# Breaking changes from v3.2.0:
-#   - SchoolPeriod schema added
-#   - TimeSlot.periodNumber: maximum:10 REMOVED
-#   - TimeSlot.startTime/endTime: now required (not nullable) in response — derived from school_periods
-#   - TimeSlot.label: new field added (from school_periods)
-#   - POST /timetable: startTime and endTime removed from request body
-#   - POST /timetable: new 400 error PERIOD_NOT_CONFIGURED
-#   - /school-periods: 4 new endpoints added
-
-openapi: "3.1.0"
+openapi: 3.1.0
 info:
   title: White-Label School Management System
-  version: "3.3.0"
+  version: 3.4.0
   description: >
     Multi-tenant school management API. Supports SuperAdmin (platform-level)
-    and tenant-scoped Admin/Teacher roles.
-    v3.3.0: Dynamic per-tenant period configuration via /school-periods endpoints.
-    Breaking: POST /timetable no longer accepts startTime/endTime fields.
+    and tenant-scoped Admin / Teacher / Student roles.
+    v3.4.0 changes:
+      - POST /super-admin/tenants requires admin block (BREAKING)
+      - PUT /super-admin/tenants/{id}/reactivate (NEW)
+      - Role enum expanded to include Student (BREAKING)
+      - students.user_id linkage + PUT /students/{id}/link-account (NEW)
+      - PUT /attendance/{recordId} correction endpoint (NEW)
+      - AttendanceRecord schema extended with originalStatus/correctedBy/correctedAt (BREAKING)
+      - PUT /users/{id}/roles: SELFROLECHANGEFORBIDDEN removed, LASTADMIN added (BREAKING)
 
 servers:
   - url: http://localhost:3000/api
@@ -34,6 +29,7 @@ components:
       bearerFormat: JWT
 
   schemas:
+
     ErrorResponse:
       type: object
       required: [error]
@@ -72,11 +68,11 @@ components:
           type: array
           items:
             type: string
-            enum: [Teacher, Admin]
+            enum: [Teacher, Admin, Student]
           minItems: 1
         activeRole:
           type: string
-          enum: [Teacher, Admin]
+          enum: [Teacher, Admin, Student]
 
     SuperAdminProfile:
       type: object
@@ -142,7 +138,7 @@ components:
           type: array
           items:
             type: string
-            enum: [Teacher, Admin]
+            enum: [Teacher, Admin, Student]
           minItems: 1
 
     Student:
@@ -161,6 +157,12 @@ components:
           type: string
         batchName:
           type: string
+        userId:
+          type: string
+          nullable: true
+          description: >
+            Linked user account id. Null if student has no login account.
+            Set via PUT /students/{id}/link-account.
 
     Batch:
       type: object
@@ -203,7 +205,6 @@ components:
         batchName:
           type: string
 
-    # v3.3: NEW schema
     SchoolPeriod:
       type: object
       required: [id, periodNumber, startTime, endTime]
@@ -225,10 +226,6 @@ components:
           pattern: '^\d{2}:\d{2}$'
           example: "08:45"
 
-    # v3.3 CHANGES:
-    #   - periodNumber: maximum:10 REMOVED (now unlimited, lower-bound only)
-    #   - startTime/endTime: nullable:true REMOVED — always present in response (derived from school_periods)
-    #   - label: NEW field derived from school_periods
     TimeSlot:
       type: object
       required: [id, classId, subjectId, teacherId, dayOfWeek, periodNumber, effectiveFrom]
@@ -253,20 +250,19 @@ components:
         periodNumber:
           type: integer
           minimum: 1
-          # maximum: 10 REMOVED in v3.3 — period count is now per-tenant and unlimited
         label:
           type: string
-          description: Period label derived from school_periods at query time
-          example: "Period 3"
+          description: Period label derived from schoolperiods at query time
+          example: Period 3
         startTime:
           type: string
           pattern: '^\d{2}:\d{2}$'
-          description: Derived from school_periods at query time (not stored in timeslots)
+          description: Derived from schoolperiods at query time, not stored in timeslots
           example: "09:40"
         endTime:
           type: string
           pattern: '^\d{2}:\d{2}$'
-          description: Derived from school_periods at query time (not stored in timeslots)
+          description: Derived from schoolperiods at query time, not stored in timeslots
           example: "10:25"
         effectiveFrom:
           type: string
@@ -285,9 +281,25 @@ components:
         date:
           type: string
           format: date
+        originalStatus:
+          type: string
+          enum: [Present, Absent, Late]
+          description: >
+            The status as originally recorded. Never mutated after insert.
         status:
           type: string
           enum: [Present, Absent, Late]
+          description: >
+            The effective status. Equals correctedStatus if a correction
+            exists, otherwise equals originalStatus.
+        correctedBy:
+          type: string
+          nullable: true
+          description: userId of the user who last corrected this record
+        correctedAt:
+          type: string
+          format: date-time
+          nullable: true
         timeSlot:
           type: object
           properties:
@@ -361,7 +373,7 @@ components:
             error:
               code: UNAUTHORIZED
               message: Missing or invalid token
-              timestamp: "2026-02-26T01:00:00Z"
+              timestamp: "2026-03-02T01:00:00Z"
 
     Forbidden:
       description: Insufficient permissions
@@ -373,7 +385,7 @@ components:
             error:
               code: FORBIDDEN
               message: Insufficient permissions
-              timestamp: "2026-02-26T01:00:00Z"
+              timestamp: "2026-03-02T01:00:00Z"
 
     NotFound:
       description: Resource not found
@@ -398,9 +410,9 @@ components:
 
 paths:
 
-  # ─────────────────────────────────────────
-  # AUTH — TENANT
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
+  # AUTH
+  # ─────────────────────────────────────────────
 
   /auth/login:
     post:
@@ -428,13 +440,12 @@ paths:
                   maxLength: 100
             examples:
               success:
-                summary: Valid login
                 value:
                   email: admin@school1.com
                   password: password123
                   tenantSlug: school1
       responses:
-        "200":
+        '200':
           description: Login successful
           content:
             application/json:
@@ -457,11 +468,11 @@ paths:
                       email: admin@school1.com
                       roles: [Admin]
                       activeRole: Admin
-        "400":
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           description: Tenant is inactive
           content:
             application/json:
@@ -471,8 +482,8 @@ paths:
                 error:
                   code: TENANT_INACTIVE
                   message: Tenant is inactive
-                  timestamp: "2026-02-26T01:00:00Z"
-        "404":
+                  timestamp: "2026-03-02T01:00:00Z"
+        '404':
           $ref: '#/components/responses/NotFound'
 
   /auth/logout:
@@ -481,9 +492,9 @@ paths:
       operationId: tenantLogout
       tags: [Auth]
       responses:
-        "204":
+        '204':
           description: Logged out
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
 
   /auth/switch-role:
@@ -501,13 +512,16 @@ paths:
               properties:
                 role:
                   type: string
-                  enum: [Teacher, Admin]
+                  enum: [Teacher, Admin, Student]
             examples:
-              switch_to_teacher:
+              switchToTeacher:
                 value:
                   role: Teacher
+              switchToStudent:
+                value:
+                  role: Student
       responses:
-        "200":
+        '200':
           description: Role switched, new JWT issued
           content:
             application/json:
@@ -527,7 +541,7 @@ paths:
                       id: U123
                       roles: [Admin, Teacher]
                       activeRole: Teacher
-        "400":
+        '400':
           description: Role not assigned to user
           content:
             application/json:
@@ -537,10 +551,10 @@ paths:
                 error:
                   code: ROLE_NOT_ASSIGNED
                   message: Requested role is not assigned to this user
-                  timestamp: "2026-02-26T01:00:00Z"
-        "401":
+                  timestamp: "2026-03-02T01:00:00Z"
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           description: User has only one role
           content:
             application/json:
@@ -549,12 +563,12 @@ paths:
               example:
                 error:
                   code: SINGLE_ROLE_USER
-                  message: User has only one role; switching not applicable
-                  timestamp: "2026-02-26T01:00:00Z"
+                  message: User has only one role, switching not applicable
+                  timestamp: "2026-03-02T01:00:00Z"
 
-  # ─────────────────────────────────────────
-  # AUTH — SUPER ADMIN
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
+  # SUPER ADMIN AUTH
+  # ─────────────────────────────────────────────
 
   /super-admin/auth/login:
     post:
@@ -582,7 +596,7 @@ paths:
                   email: platform@admin.com
                   password: supersecret123
       responses:
-        "200":
+        '200':
           description: SuperAdmin authenticated
           content:
             application/json:
@@ -602,14 +616,14 @@ paths:
                       id: SA001
                       name: Platform Admin
                       email: platform@admin.com
-        "400":
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
 
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   # SUPER ADMIN — TENANTS
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
 
   /super-admin/tenants:
     get:
@@ -627,7 +641,7 @@ paths:
           schema:
             type: string
       responses:
-        "200":
+        '200':
           description: Tenant list
           content:
             application/json:
@@ -649,13 +663,15 @@ paths:
                         status: active
                         deactivatedAt: null
                         createdAt: "2026-01-01T00:00:00Z"
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
     post:
-      summary: Create new tenant (v3.3 — seeds 8 default school_periods atomically)
+      summary: >
+        Create new tenant — v3.4 BREAKING: admin block required.
+        Atomically seeds tenant + 8 default schoolperiods + first Admin user.
       operationId: createTenant
       tags: [SuperAdmin]
       requestBody:
@@ -664,11 +680,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [id, name, slug]
+              required: [id, name, slug, admin]
               properties:
                 id:
                   type: string
                   maxLength: 50
+                  pattern: '^[a-z0-9-]+$'
                 name:
                   type: string
                   maxLength: 255
@@ -676,23 +693,62 @@ paths:
                   type: string
                   maxLength: 100
                   pattern: '^[a-z0-9-]+$'
+                admin:
+                  type: object
+                  required: [name, email, password]
+                  properties:
+                    name:
+                      type: string
+                      maxLength: 255
+                    email:
+                      type: string
+                      format: email
+                    password:
+                      type: string
+                      minLength: 8
             examples:
               success:
+                summary: Create tenant with first admin
+                value:
+                  id: T002
+                  name: New School
+                  slug: newschool
+                  admin:
+                    name: School Admin
+                    email: admin@newschool.com
+                    password: securepass1
+              errorMissingAdmin:
+                summary: Missing admin block
                 value:
                   id: T002
                   name: New School
                   slug: newschool
       responses:
-        "201":
-          description: Tenant created with 8 default periods
+        '201':
+          description: Tenant created with 8 default periods and first Admin user
           content:
             application/json:
               schema:
                 type: object
-                required: [tenant]
+                required: [tenant, admin]
                 properties:
                   tenant:
                     $ref: '#/components/schemas/Tenant'
+                  admin:
+                    type: object
+                    required: [id, name, email, roles]
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      email:
+                        type: string
+                        format: email
+                      roles:
+                        type: array
+                        items:
+                          type: string
               examples:
                 success:
                   value:
@@ -702,15 +758,56 @@ paths:
                       slug: newschool
                       status: active
                       deactivatedAt: null
-                      createdAt: "2026-02-26T07:00:00Z"
-        "400":
-          $ref: '#/components/responses/BadRequest'
-        "401":
+                      createdAt: "2026-03-02T07:00:00Z"
+                    admin:
+                      id: U001
+                      name: School Admin
+                      email: admin@newschool.com
+                      roles: [Admin]
+        '400':
+          description: Validation failure or missing admin block
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingAdmin:
+                  summary: admin block missing
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: admin block is required
+                      timestamp: "2026-03-02T07:00:00Z"
+                weakPassword:
+                  summary: admin password too short
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: admin.password must be at least 8 characters
+                      timestamp: "2026-03-02T07:00:00Z"
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "409":
-          $ref: '#/components/responses/Conflict'
+        '409':
+          description: Tenant id/slug conflict or admin email taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                slugConflict:
+                  value:
+                    error:
+                      code: CONFLICT
+                      message: Tenant id or slug already exists
+                      timestamp: "2026-03-02T07:00:00Z"
+                adminEmailTaken:
+                  value:
+                    error:
+                      code: ADMIN_EMAIL_TAKEN
+                      message: admin.email already exists for this tenant
+                      timestamp: "2026-03-02T07:00:00Z"
 
   /super-admin/tenants/{tenantId}:
     put:
@@ -729,6 +826,7 @@ paths:
           application/json:
             schema:
               type: object
+              minProperties: 1
               properties:
                 name:
                   type: string
@@ -742,7 +840,7 @@ paths:
                 value:
                   name: Updated School Name
       responses:
-        "200":
+        '200':
           description: Tenant updated
           content:
             application/json:
@@ -752,15 +850,15 @@ paths:
                 properties:
                   tenant:
                     $ref: '#/components/schemas/Tenant'
-        "400":
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
-        "409":
+        '409':
           $ref: '#/components/responses/Conflict'
 
   /super-admin/tenants/{tenantId}/deactivate:
@@ -775,7 +873,7 @@ paths:
           schema:
             type: string
       responses:
-        "200":
+        '200':
           description: Tenant deactivated
           content:
             application/json:
@@ -791,14 +889,14 @@ paths:
                     tenant:
                       id: T001
                       status: inactive
-                      deactivatedAt: "2026-02-26T07:00:00Z"
-        "401":
+                      deactivatedAt: "2026-03-02T07:00:00Z"
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
-        "409":
+        '409':
           description: Tenant already inactive
           content:
             application/json:
@@ -808,7 +906,54 @@ paths:
                 error:
                   code: ALREADY_INACTIVE
                   message: Tenant is already inactive
-                  timestamp: "2026-02-26T07:00:00Z"
+                  timestamp: "2026-03-02T07:00:00Z"
+
+  /super-admin/tenants/{tenantId}/reactivate:
+    put:
+      summary: Reactivate an inactive tenant (v3.4 NEW)
+      operationId: reactivateTenant
+      tags: [SuperAdmin]
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tenant reactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tenant]
+                properties:
+                  tenant:
+                    $ref: '#/components/schemas/Tenant'
+              examples:
+                success:
+                  value:
+                    tenant:
+                      id: T001
+                      status: active
+                      deactivatedAt: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Tenant already active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: ALREADY_ACTIVE
+                  message: Tenant is already active
+                  timestamp: "2026-03-02T07:00:00Z"
 
   /super-admin/tenants/{tenantId}/features:
     get:
@@ -822,7 +967,7 @@ paths:
           schema:
             type: string
       responses:
-        "200":
+        '200':
           description: Feature list
           content:
             application/json:
@@ -846,11 +991,11 @@ paths:
                         name: Attendance Tracking
                         enabled: false
                         enabledAt: null
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
 
   /super-admin/tenants/{tenantId}/features/{featureKey}:
@@ -888,7 +1033,7 @@ paths:
                 value:
                   enabled: false
       responses:
-        "200":
+        '200':
           description: Feature toggled
           content:
             application/json:
@@ -904,8 +1049,8 @@ paths:
                     feature:
                       key: attendance
                       enabled: true
-                      enabledAt: "2026-02-26T07:00:00Z"
-        "400":
+                      enabledAt: "2026-03-02T07:00:00Z"
+        '400':
           description: Attendance requires timetable
           content:
             application/json:
@@ -915,17 +1060,17 @@ paths:
                 error:
                   code: FEATURE_DEPENDENCY
                   message: Attendance module requires Timetable to be enabled first
-                  timestamp: "2026-02-26T07:00:00Z"
-        "401":
+                  timestamp: "2026-03-02T07:00:00Z"
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
 
-  # ─────────────────────────────────────────
-  # FEATURES (tenant Admin — read-only)
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
+  # FEATURES (tenant read-only)
+  # ─────────────────────────────────────────────
 
   /features:
     get:
@@ -933,7 +1078,7 @@ paths:
       operationId: getTenantFeatures
       tags: [Features]
       responses:
-        "200":
+        '200':
           description: Feature list
           content:
             application/json:
@@ -945,14 +1090,14 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Feature'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
   /features/{featureKey}:
     put:
-      summary: "REMOVED in v3.2 — returns 403 for all callers"
+      summary: REMOVED in v3.2 — returns 403 for all callers
       operationId: toggleFeatureDeprecated
       tags: [Features]
       parameters:
@@ -971,7 +1116,7 @@ paths:
                 enabled:
                   type: boolean
       responses:
-        "403":
+        '403':
           description: Feature management restricted to SuperAdmin
           content:
             application/json:
@@ -981,13 +1126,13 @@ paths:
                 error:
                   code: FORBIDDEN
                   message: Feature management is restricted to platform administrators
-                  timestamp: "2026-02-26T07:00:00Z"
-        "401":
+                  timestamp: "2026-03-02T07:00:00Z"
+        '401':
           $ref: '#/components/responses/Unauthorized'
 
-  # ─────────────────────────────────────────
-  # SCHOOL PERIODS (v3.3: NEW)
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
+  # SCHOOL PERIODS
+  # ─────────────────────────────────────────────
 
   /school-periods:
     get:
@@ -995,7 +1140,7 @@ paths:
       operationId: listSchoolPeriods
       tags: [SchoolPeriods]
       responses:
-        "200":
+        '200':
           description: Period list ordered by periodNumber
           content:
             application/json:
@@ -1013,17 +1158,17 @@ paths:
                     periods:
                       - id: SP001
                         periodNumber: 1
-                        label: "Period 1"
+                        label: Period 1
                         startTime: "08:00"
                         endTime: "08:45"
                       - id: SP002
                         periodNumber: 2
-                        label: "Period 2"
+                        label: Period 2
                         startTime: "08:50"
                         endTime: "09:35"
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           description: Timetable feature not enabled
           content:
             application/json:
@@ -1033,7 +1178,7 @@ paths:
                 error:
                   code: FEATURE_DISABLED
                   message: Timetable feature is not enabled for this tenant
-                  timestamp: "2026-02-26T07:00:00Z"
+                  timestamp: "2026-03-02T07:00:00Z"
 
     post:
       summary: Create a new period for current tenant (Admin only)
@@ -1053,7 +1198,7 @@ paths:
                 label:
                   type: string
                   maxLength: 100
-                  default: ""
+                  default: ''
                 startTime:
                   type: string
                   pattern: '^\d{2}:\d{2}$'
@@ -1065,17 +1210,17 @@ paths:
                 summary: Add Period 9
                 value:
                   periodNumber: 9
-                  label: "Period 9"
+                  label: Period 9
                   startTime: "15:30"
                   endTime: "16:15"
-              error_time_invalid:
+              errorTimeInvalid:
                 summary: Invalid time range
                 value:
                   periodNumber: 9
                   startTime: "16:15"
                   endTime: "15:30"
       responses:
-        "201":
+        '201':
           description: Period created
           content:
             application/json:
@@ -1091,32 +1236,31 @@ paths:
                     period:
                       id: SP009
                       periodNumber: 9
-                      label: "Period 9"
+                      label: Period 9
                       startTime: "15:30"
                       endTime: "16:15"
-        "400":
-          description: Validation failure (including startTime >= endTime)
+        '400':
+          description: Validation failure including startTime >= endTime
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
-                time_invalid:
-                  summary: startTime >= endTime
+                timeInvalid:
                   value:
                     error:
                       code: PERIOD_TIME_INVALID
                       message: startTime must be before endTime
-                      timestamp: "2026-02-26T07:00:00Z"
-        "401":
+                      timestamp: "2026-03-02T07:00:00Z"
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           description: Admin required or timetable feature not enabled
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "409":
+        '409':
           description: periodNumber already exists for this tenant
           content:
             application/json:
@@ -1125,8 +1269,8 @@ paths:
               example:
                 error:
                   code: CONFLICT
-                  message: "Period number 9 already exists for this school"
-                  timestamp: "2026-02-26T07:00:00Z"
+                  message: Period number 9 already exists for this school
+                  timestamp: "2026-03-02T07:00:00Z"
 
   /school-periods/{id}:
     put:
@@ -1157,17 +1301,15 @@ paths:
                   type: string
                   pattern: '^\d{2}:\d{2}$'
             examples:
-              update_label:
-                summary: Rename period
+              updateLabel:
                 value:
-                  label: "Zero Period"
-              update_times:
-                summary: Adjust times
+                  label: Zero Period
+              updateTimes:
                 value:
                   startTime: "07:45"
                   endTime: "08:30"
       responses:
-        "200":
+        '200':
           description: Period updated
           content:
             application/json:
@@ -1177,17 +1319,8 @@ paths:
                 properties:
                   period:
                     $ref: '#/components/schemas/SchoolPeriod'
-              examples:
-                success:
-                  value:
-                    period:
-                      id: SP009
-                      periodNumber: 9
-                      label: "Zero Period"
-                      startTime: "07:45"
-                      endTime: "08:30"
-        "400":
-          description: Validation failure (including startTime >= endTime)
+        '400':
+          description: Validation failure
           content:
             application/json:
               schema:
@@ -1196,16 +1329,16 @@ paths:
                 error:
                   code: PERIOD_TIME_INVALID
                   message: startTime must be before endTime
-                  timestamp: "2026-02-26T07:00:00Z"
-        "401":
+                  timestamp: "2026-03-02T07:00:00Z"
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           description: Admin required or timetable feature not enabled
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
 
     delete:
@@ -1219,19 +1352,19 @@ paths:
           schema:
             type: string
       responses:
-        "204":
+        '204':
           description: Period deleted
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           description: Admin required or timetable feature not enabled
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
-        "409":
+        '409':
           description: Active timeslots reference this period
           content:
             application/json:
@@ -1241,15 +1374,250 @@ paths:
                 error:
                   code: HAS_REFERENCES
                   message: Cannot delete period — active timeslots reference it
-                  timestamp: "2026-02-26T07:00:00Z"
+                  timestamp: "2026-03-02T07:00:00Z"
 
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
+  # TIMETABLE
+  # ─────────────────────────────────────────────
+
+  /timetable:
+    get:
+      summary: Query timetable
+      operationId: getTimetable
+      tags: [Timetable]
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dayOfWeek
+          in: query
+          schema:
+            type: string
+            enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+        - name: teacherId
+          in: query
+          schema:
+            type: string
+        - name: classId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Active, All]
+            default: Active
+      responses:
+        '200':
+          description: Timetable entries — startTime/endTime/label derived from schoolperiods
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [timetable]
+                properties:
+                  timetable:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TimeSlot'
+              examples:
+                success:
+                  value:
+                    timetable:
+                      - id: TS001
+                        classId: C001
+                        className: Grade 10A
+                        subjectId: SUB001
+                        subjectName: Mathematics
+                        teacherId: U123
+                        teacherName: John Doe
+                        dayOfWeek: Monday
+                        periodNumber: 3
+                        label: Period 3
+                        startTime: "09:40"
+                        endTime: "10:25"
+                        effectiveFrom: "2026-01-01"
+                        effectiveTo: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Timetable feature not enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: FEATURE_DISABLED
+                  message: Timetable feature is not enabled for this tenant
+                  timestamp: "2026-03-02T07:00:00Z"
+
+    post:
+      summary: Create timetable entry (Admin only) — v3.3 startTime/endTime removed from request
+      operationId: createTimeSlot
+      tags: [Timetable]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [classId, subjectId, teacherId, dayOfWeek, periodNumber, effectiveFrom]
+              properties:
+                classId:
+                  type: string
+                subjectId:
+                  type: string
+                teacherId:
+                  type: string
+                dayOfWeek:
+                  type: string
+                  enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+                periodNumber:
+                  type: integer
+                  minimum: 1
+                effectiveFrom:
+                  type: string
+                  format: date
+            examples:
+              success:
+                summary: Create Monday Period 3 slot
+                value:
+                  classId: C001
+                  subjectId: SUB001
+                  teacherId: U123
+                  dayOfWeek: Monday
+                  periodNumber: 3
+                  effectiveFrom: "2026-03-01"
+              errorPeriodNotConfigured:
+                summary: Unknown period number
+                value:
+                  classId: C001
+                  subjectId: SUB001
+                  teacherId: U123
+                  dayOfWeek: Monday
+                  periodNumber: 99
+                  effectiveFrom: "2026-03-01"
+      responses:
+        '201':
+          description: TimeSlot created — startTime/endTime/label populated from schoolperiods
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [timeSlot]
+                properties:
+                  timeSlot:
+                    $ref: '#/components/schemas/TimeSlot'
+              examples:
+                success:
+                  value:
+                    timeSlot:
+                      id: TS002
+                      classId: C001
+                      className: Grade 10A
+                      subjectId: SUB001
+                      subjectName: Mathematics
+                      teacherId: U123
+                      teacherName: John Doe
+                      dayOfWeek: Monday
+                      periodNumber: 3
+                      label: Period 3
+                      startTime: "09:40"
+                      endTime: "10:25"
+                      effectiveFrom: "2026-03-01"
+                      effectiveTo: null
+        '400':
+          description: Validation failure or period not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                periodNotConfigured:
+                  value:
+                    error:
+                      code: PERIOD_NOT_CONFIGURED
+                      message: Period 99 is not configured for this school
+                      timestamp: "2026-03-02T07:00:00Z"
+                teacherRoleMissing:
+                  value:
+                    error:
+                      code: INVALID_TEACHER
+                      message: The specified user does not have the Teacher role
+                      timestamp: "2026-03-02T07:00:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Slot already occupied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: CONFLICT
+                  message: This period slot is already occupied for the given class and day
+                  timestamp: "2026-03-02T07:00:00Z"
+
+  /timetable/{timeSlotId}/end:
+    put:
+      summary: End a timetable assignment (Admin only)
+      operationId: endTimeSlot
+      tags: [Timetable]
+      parameters:
+        - name: timeSlotId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [effectiveTo]
+              properties:
+                effectiveTo:
+                  type: string
+                  format: date
+      responses:
+        '200':
+          description: TimeSlot ended
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [timeSlot]
+                properties:
+                  timeSlot:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      effectiveTo:
+                        type: string
+                        format: date
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─────────────────────────────────────────────
   # USERS
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
 
   /users:
     get:
-      summary: List users
+      summary: List users (Admin only)
       operationId: listUsers
       tags: [Users]
       parameters:
@@ -1257,13 +1625,13 @@ paths:
           in: query
           schema:
             type: string
-            enum: [Teacher, Admin, TeacherAdmin]
+            enum: [Teacher, Admin, Student]
         - name: search
           in: query
           schema:
             type: string
       responses:
-        "200":
+        '200':
           description: User list
           content:
             application/json:
@@ -1283,13 +1651,13 @@ paths:
                         name: John Doe
                         email: john@school1.com
                         roles: [Teacher]
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
     post:
-      summary: Create user
+      summary: Create user (Admin only)
       operationId: createUser
       tags: [Users]
       requestBody:
@@ -1313,17 +1681,24 @@ paths:
                   type: array
                   items:
                     type: string
-                    enum: [Teacher, Admin]
+                    enum: [Teacher, Admin, Student]
                   minItems: 1
+                  uniqueItems: true
             examples:
-              success:
+              createTeacher:
                 value:
                   name: Jane Smith
                   email: jane@school1.com
                   password: securepass1
                   roles: [Teacher]
+              createStudent:
+                value:
+                  name: Alice Student
+                  email: alice@school1.com
+                  password: securepass1
+                  roles: [Student]
       responses:
-        "201":
+        '201':
           description: User created
           content:
             application/json:
@@ -1333,18 +1708,18 @@ paths:
                 properties:
                   user:
                     $ref: '#/components/schemas/User'
-        "400":
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "409":
+        '409':
           $ref: '#/components/responses/Conflict'
 
   /users/bulk:
     delete:
-      summary: Bulk soft-delete users
+      summary: Bulk soft-delete users (Admin only)
       operationId: bulkDeleteUsers
       tags: [Users]
       requestBody:
@@ -1358,7 +1733,7 @@ paths:
                 value:
                   ids: [U001, U002, U003]
       responses:
-        "200":
+        '200':
           description: Bulk delete result (partial success allowed)
           content:
             application/json:
@@ -1371,17 +1746,17 @@ paths:
                     failed:
                       - id: U003
                         reason: HAS_REFERENCES
-                        message: "Cannot delete: user has active timeslot assignments or attendance records"
-        "400":
+                        message: Cannot delete user — has active timeslot assignments or attendance records
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
   /users/{id}:
     delete:
-      summary: Soft-delete a user
+      summary: Soft-delete a user (Admin only)
       operationId: deleteUser
       tags: [Users]
       parameters:
@@ -1391,20 +1766,24 @@ paths:
           schema:
             type: string
       responses:
-        "204":
+        '204':
           description: Deleted
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
-        "409":
+        '409':
           $ref: '#/components/responses/Conflict'
 
   /users/{id}/roles:
     put:
-      summary: Update user roles
+      summary: >
+        Update user roles (Admin only).
+        v3.4 BREAKING: Admin may now target self.
+        SELFROLECHANGEFORBIDDEN removed.
+        LASTADMIN guard added: cannot remove own Admin role if last admin.
       operationId: updateUserRoles
       tags: [Users]
       parameters:
@@ -1425,15 +1804,20 @@ paths:
                   type: array
                   items:
                     type: string
-                    enum: [Teacher, Admin]
+                    enum: [Teacher, Admin, Student]
                   minItems: 1
                   uniqueItems: true
             examples:
-              add_admin:
+              addTeacherToSelf:
+                summary: Admin adds Teacher role to self
                 value:
-                  roles: [Teacher, Admin]
+                  roles: [Admin, Teacher]
+              removeOwnAdmin:
+                summary: Admin removing own Admin (fails if last admin)
+                value:
+                  roles: [Teacher]
       responses:
-        "200":
+        '200':
           description: Roles updated
           content:
             application/json:
@@ -1450,28 +1834,31 @@ paths:
                       id: U124
                       name: John Doe
                       email: john@school1.com
-                      roles: [Teacher, Admin]
-        "400":
+                      roles: [Admin, Teacher]
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
-          description: Not Admin, or caller targeting own id
+        '403':
+          description: Not Admin, or last-admin guard triggered
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: SELF_ROLE_CHANGE_FORBIDDEN
-                  message: Admin cannot modify their own roles
-                  timestamp: "2026-02-26T07:00:00Z"
-        "404":
+              examples:
+                lastAdmin:
+                  summary: Caller is the last admin
+                  value:
+                    error:
+                      code: LAST_ADMIN
+                      message: Cannot remove Admin role — you are the last admin of this tenant
+                      timestamp: "2026-03-02T07:00:00Z"
+        '404':
           $ref: '#/components/responses/NotFound'
 
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   # STUDENTS
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
 
   /students:
     get:
@@ -1505,7 +1892,7 @@ paths:
             default: 0
             minimum: 0
       responses:
-        "200":
+        '200':
           description: Student list
           content:
             application/json:
@@ -1519,13 +1906,13 @@ paths:
                       $ref: '#/components/schemas/Student'
                   pagination:
                     $ref: '#/components/schemas/Pagination'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
     post:
-      summary: Create student
+      summary: Create student (Admin only)
       operationId: createStudent
       tags: [Students]
       requestBody:
@@ -1543,8 +1930,14 @@ paths:
                   type: string
                 batchId:
                   type: string
+            examples:
+              success:
+                value:
+                  name: Alice Smith
+                  classId: C001
+                  batchId: B001
       responses:
-        "201":
+        '201':
           description: Student created
           content:
             application/json:
@@ -1554,16 +1947,16 @@ paths:
                 properties:
                   student:
                     $ref: '#/components/schemas/Student'
-        "400":
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
   /students/bulk:
     delete:
-      summary: Bulk soft-delete students
+      summary: Bulk soft-delete students (Admin only)
       operationId: bulkDeleteStudents
       tags: [Students]
       requestBody:
@@ -1573,22 +1966,22 @@ paths:
             schema:
               $ref: '#/components/schemas/BulkDeleteRequest'
       responses:
-        "200":
+        '200':
           description: Bulk delete result
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkDeleteResponse'
-        "400":
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
   /students/{id}:
     delete:
-      summary: Soft-delete a student
+      summary: Soft-delete a student (Admin only)
       operationId: deleteStudent
       tags: [Students]
       parameters:
@@ -1598,20 +1991,119 @@ paths:
           schema:
             type: string
       responses:
-        "204":
+        '204':
           description: Deleted
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
-        "409":
+        '409':
           $ref: '#/components/responses/Conflict'
+
+  /students/{studentId}/link-account:
+    put:
+      summary: >
+        Link or unlink a user account to a student enrollment record (Admin only).
+        v3.4 NEW. Pass userId: null to unlink.
+      operationId: linkStudentAccount
+      tags: [Students]
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  type: string
+                  nullable: true
+            examples:
+              link:
+                summary: Link a user account
+                value:
+                  userId: U456
+              unlink:
+                summary: Unlink user account
+                value:
+                  userId: null
+      responses:
+        '200':
+          description: Student account linked or unlinked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [student]
+                properties:
+                  student:
+                    $ref: '#/components/schemas/Student'
+              examples:
+                linked:
+                  value:
+                    student:
+                      id: S001
+                      name: Alice Smith
+                      classId: C001
+                      className: Grade 10A
+                      batchId: B001
+                      batchName: "2025-26"
+                      userId: U456
+                unlinked:
+                  value:
+                    student:
+                      id: S001
+                      name: Alice Smith
+                      classId: C001
+                      className: Grade 10A
+                      batchId: B001
+                      batchName: "2025-26"
+                      userId: null
+        '400':
+          description: User not found or lacks Student role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidUser:
+                  value:
+                    error:
+                      code: INVALID_USER
+                      message: User not found or does not have the Student role
+                      timestamp: "2026-03-02T07:00:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: userId already linked to another student
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: USER_ALREADY_LINKED
+                  message: This user is already linked to a different student record
+                  timestamp: "2026-03-02T07:00:00Z"
 
   /students/{studentId}/attendance:
     get:
-      summary: Get student attendance history
+      summary: >
+        Get student attendance history.
+        Admin: any student. Teacher: own-class students only.
+        Student role: own record only (where students.user_id = caller's userId) — else 403 STUDENT_ACCESS_DENIED.
       operationId: getStudentAttendance
       tags: [Attendance]
       parameters:
@@ -1644,8 +2136,8 @@ paths:
             default: 0
             minimum: 0
       responses:
-        "200":
-          description: Attendance history
+        '200':
+          description: Attendance history — status is effective (correctedStatus ?? originalStatus)
           content:
             application/json:
               schema:
@@ -1674,258 +2166,68 @@ paths:
                         format: float
                   pagination:
                     $ref: '#/components/schemas/Pagination'
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "403":
-          $ref: '#/components/responses/Forbidden'
-        "404":
-          $ref: '#/components/responses/NotFound'
-
-  # ─────────────────────────────────────────
-  # TIMETABLE
-  # ─────────────────────────────────────────
-
-  /timetable:
-    get:
-      summary: Query timetable
-      operationId: getTimetable
-      tags: [Timetable]
-      parameters:
-        - name: date
-          in: query
-          schema:
-            type: string
-            format: date
-        - name: dayOfWeek
-          in: query
-          schema:
-            type: string
-            enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
-        - name: teacherId
-          in: query
-          schema:
-            type: string
-        - name: classId
-          in: query
-          schema:
-            type: string
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [Active, All]
-            default: Active
-      responses:
-        "200":
-          description: Timetable entries (startTime/endTime/label derived from school_periods)
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [timetable]
-                properties:
-                  timetable:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/TimeSlot'
               examples:
                 success:
                   value:
-                    timetable:
-                      - id: TS001
-                        classId: C001
-                        className: "Grade 10A"
-                        subjectId: SUB001
-                        subjectName: Mathematics
-                        teacherId: U123
-                        teacherName: John Doe
-                        dayOfWeek: Monday
-                        periodNumber: 3
-                        label: "Period 3"
-                        startTime: "09:40"
-                        endTime: "10:25"
-                        effectiveFrom: "2026-01-01"
-                        effectiveTo: null
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "403":
-          description: Timetable feature not enabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: FEATURE_DISABLED
-                  message: Timetable feature is not enabled for this tenant
-                  timestamp: "2026-02-26T07:00:00Z"
-
-    post:
-      # v3.3 BREAKING: startTime and endTime REMOVED from request body
-      # Times are owned by school_periods; derived at read time via JOIN
-      summary: "Create timetable entry (v3.3: startTime/endTime removed from request)"
-      operationId: createTimeSlot
-      tags: [Timetable]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [classId, subjectId, teacherId, dayOfWeek, periodNumber, effectiveFrom]
-              properties:
-                classId:
-                  type: string
-                subjectId:
-                  type: string
-                teacherId:
-                  type: string
-                dayOfWeek:
-                  type: string
-                  enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
-                periodNumber:
-                  type: integer
-                  minimum: 1
-                  # maximum: 10 REMOVED in v3.3
-                  # startTime REMOVED in v3.3
-                  # endTime REMOVED in v3.3
-                effectiveFrom:
-                  type: string
-                  format: date
-            examples:
-              success:
-                summary: Create a Monday Period 3 slot
-                value:
-                  classId: C001
-                  subjectId: SUB001
-                  teacherId: U123
-                  dayOfWeek: Monday
-                  periodNumber: 3
-                  effectiveFrom: "2026-03-01"
-              error_period_not_configured:
-                summary: Unknown period number
-                value:
-                  classId: C001
-                  subjectId: SUB001
-                  teacherId: U123
-                  dayOfWeek: Monday
-                  periodNumber: 99
-                  effectiveFrom: "2026-03-01"
-      responses:
-        "201":
-          description: TimeSlot created (startTime/endTime/label populated from school_periods)
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [timeSlot]
-                properties:
-                  timeSlot:
-                    $ref: '#/components/schemas/TimeSlot'
-              examples:
-                success:
-                  value:
-                    timeSlot:
-                      id: TS002
+                    student:
+                      id: S001
+                      name: Alice Smith
                       classId: C001
-                      className: "Grade 10A"
-                      subjectId: SUB001
-                      subjectName: Mathematics
-                      teacherId: U123
-                      teacherName: John Doe
-                      dayOfWeek: Monday
-                      periodNumber: 3
-                      label: "Period 3"
-                      startTime: "09:40"
-                      endTime: "10:25"
-                      effectiveFrom: "2026-03-01"
-                      effectiveTo: null
-        "400":
-          description: Validation failure or period not configured
+                      className: Grade 10A
+                      batchId: B001
+                      batchName: "2025-26"
+                      userId: U456
+                    records:
+                      - id: AR001
+                        date: "2026-02-26"
+                        originalStatus: Absent
+                        status: Present
+                        correctedBy: U123
+                        correctedAt: "2026-03-02T07:30:00Z"
+                        timeSlot:
+                          id: TS001
+                          subjectName: Mathematics
+                          periodNumber: 1
+                          dayOfWeek: Monday
+                        recordedBy: U123
+                        recordedAt: "2026-02-26T09:00:00Z"
+                    summary:
+                      totalRecords: 120
+                      present: 110
+                      absent: 8
+                      late: 2
+                      attendanceRate: 91.67
+                    pagination:
+                      limit: 50
+                      offset: 0
+                      total: 120
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Attendance feature not enabled or student access denied
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
-                period_not_configured:
-                  summary: periodNumber not in school_periods
+                featureDisabled:
                   value:
                     error:
-                      code: PERIOD_NOT_CONFIGURED
-                      message: "Period 99 is not configured for this school"
-                      timestamp: "2026-02-26T07:00:00Z"
-                teacher_role_missing:
-                  summary: Teacher does not have Teacher role
+                      code: FEATURE_DISABLED
+                      message: Attendance feature is not enabled for this tenant
+                      timestamp: "2026-03-02T07:00:00Z"
+                studentAccessDenied:
                   value:
                     error:
-                      code: INVALID_TEACHER
-                      message: "The specified user does not have the Teacher role"
-                      timestamp: "2026-02-26T07:00:00Z"
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "403":
-          $ref: '#/components/responses/Forbidden'
-        "409":
-          description: Slot already occupied
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: CONFLICT
-                  message: "This period slot is already occupied for the given class and day"
-                  timestamp: "2026-02-26T07:00:00Z"
-
-  /timetable/{timeSlotId}/end:
-    put:
-      summary: End a timetable assignment
-      operationId: endTimeSlot
-      tags: [Timetable]
-      parameters:
-        - name: timeSlotId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [effectiveTo]
-              properties:
-                effectiveTo:
-                  type: string
-                  format: date
-      responses:
-        "200":
-          description: TimeSlot ended
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [timeSlot]
-                properties:
-                  timeSlot:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                      effectiveTo:
-                        type: string
-                        format: date
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "403":
-          $ref: '#/components/responses/Forbidden'
-        "404":
+                      code: STUDENT_ACCESS_DENIED
+                      message: You can only view your own attendance record
+                      timestamp: "2026-03-02T07:00:00Z"
+        '404':
           $ref: '#/components/responses/NotFound'
 
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   # ATTENDANCE
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
 
   /attendance/record-class:
     post:
@@ -1959,8 +2261,17 @@ paths:
                       status:
                         type: string
                         enum: [Present, Absent, Late]
+            examples:
+              success:
+                value:
+                  timeSlotId: TS001
+                  date: "2026-03-01"
+                  defaultStatus: Present
+                  exceptions:
+                    - studentId: S005
+                      status: Absent
       responses:
-        "201":
+        '201':
           description: Attendance recorded
           content:
             application/json:
@@ -1990,14 +2301,157 @@ paths:
                         type: string
                       periodNumber:
                         type: integer
-        "400":
+              examples:
+                success:
+                  value:
+                    recorded: 30
+                    present: 28
+                    absent: 1
+                    late: 1
+                    date: "2026-03-01"
+                    timeSlot:
+                      id: TS001
+                      className: Grade 10A
+                      subjectName: Mathematics
+                      periodNumber: 1
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "409":
-          $ref: '#/components/responses/Conflict'
+        '409':
+          description: Attendance already recorded for this class/date/timeslot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: CONFLICT
+                  message: Attendance already recorded for this class, date, and timeslot
+                  timestamp: "2026-03-02T07:00:00Z"
+
+  /attendance/{recordId}:
+    put:
+      summary: >
+        Correct an attendance record (v3.4 NEW).
+        Original status is never mutated — preserved as originalStatus.
+        Teacher: own-class records only. Admin: any record in tenant.
+      operationId: correctAttendance
+      tags: [Attendance]
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [Present, Absent, Late]
+            examples:
+              correctToPresent:
+                summary: Correct Absent → Present
+                value:
+                  status: Present
+      responses:
+        '200':
+          description: Attendance corrected
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [record]
+                properties:
+                  record:
+                    type: object
+                    required: [id, date, originalStatus, status, correctedBy, correctedAt, timeSlot]
+                    properties:
+                      id:
+                        type: string
+                      date:
+                        type: string
+                        format: date
+                      originalStatus:
+                        type: string
+                        enum: [Present, Absent, Late]
+                      status:
+                        type: string
+                        enum: [Present, Absent, Late]
+                        description: Effective status after correction
+                      correctedBy:
+                        type: string
+                      correctedAt:
+                        type: string
+                        format: date-time
+                      timeSlot:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          subjectName:
+                            type: string
+                          periodNumber:
+                            type: integer
+                          dayOfWeek:
+                            type: string
+              examples:
+                success:
+                  value:
+                    record:
+                      id: AR001
+                      date: "2026-03-01"
+                      originalStatus: Absent
+                      status: Present
+                      correctedBy: U123
+                      correctedAt: "2026-03-02T07:30:00Z"
+                      timeSlot:
+                        id: TS001
+                        subjectName: Mathematics
+                        periodNumber: 3
+                        dayOfWeek: Monday
+        '400':
+          description: Future date or same status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                futureDate:
+                  value:
+                    error:
+                      code: FUTURE_DATE
+                      message: Cannot correct attendance for a future date
+                      timestamp: "2026-03-02T07:00:00Z"
+                sameStatus:
+                  value:
+                    error:
+                      code: SAME_STATUS
+                      message: Correction status is identical to current effective status
+                      timestamp: "2026-03-02T07:00:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Teacher not assigned to this timeslot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: You are not assigned to this timeslot
+                  timestamp: "2026-03-02T07:00:00Z"
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /attendance/summary:
     get:
@@ -2022,8 +2476,8 @@ paths:
             type: string
             format: date
       responses:
-        "200":
-          description: Attendance summary
+        '200':
+          description: Attendance summary — uses effective status (corrected where applicable)
           content:
             application/json:
               schema:
@@ -2079,163 +2533,40 @@ paths:
                           type: integer
                         attendanceRate:
                           type: number
-        "400":
+              examples:
+                success:
+                  value:
+                    class:
+                      id: C001
+                      name: Grade 10A
+                      studentCount: 30
+                    period:
+                      from: "2026-02-01"
+                      to: "2026-02-28"
+                      days: 28
+                    summary:
+                      totalRecords: 840
+                      present: 780
+                      absent: 50
+                      late: 10
+                      attendanceRate: 92.86
+                    byStudent:
+                      - studentId: S001
+                        studentName: Alice Smith
+                        present: 26
+                        absent: 2
+                        late: 0
+                        attendanceRate: 92.86
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
-  # ─────────────────────────────────────────
-  # CLASSES
-  # ─────────────────────────────────────────
-
-  /classes:
-    get:
-      summary: List classes
-      operationId: listClasses
-      tags: [Classes]
-      responses:
-        "200":
-          description: Class list
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [classes]
-                properties:
-                  classes:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Class'
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "403":
-          $ref: '#/components/responses/Forbidden'
-
-    post:
-      summary: Create class
-      operationId: createClass
-      tags: [Classes]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, batchId]
-              properties:
-                name:
-                  type: string
-                  maxLength: 255
-                batchId:
-                  type: string
-      responses:
-        "201":
-          description: Class created
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [class]
-                properties:
-                  class:
-                    $ref: '#/components/schemas/Class'
-        "400":
-          $ref: '#/components/responses/BadRequest'
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "403":
-          $ref: '#/components/responses/Forbidden'
-
-  /classes/bulk:
-    delete:
-      summary: Bulk soft-delete classes
-      operationId: bulkDeleteClasses
-      tags: [Classes]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BulkDeleteRequest'
-      responses:
-        "200":
-          description: Bulk delete result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BulkDeleteResponse'
-        "400":
-          $ref: '#/components/responses/BadRequest'
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "403":
-          $ref: '#/components/responses/Forbidden'
-
-  /classes/{id}:
-    put:
-      summary: Update class
-      operationId: updateClass
-      tags: [Classes]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-      responses:
-        "200":
-          description: Class updated
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [class]
-                properties:
-                  class:
-                    $ref: '#/components/schemas/Class'
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "403":
-          $ref: '#/components/responses/Forbidden'
-        "404":
-          $ref: '#/components/responses/NotFound'
-
-    delete:
-      summary: Soft-delete a class
-      operationId: deleteClass
-      tags: [Classes]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: Deleted
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "403":
-          $ref: '#/components/responses/Forbidden'
-        "404":
-          $ref: '#/components/responses/NotFound'
-        "409":
-          $ref: '#/components/responses/Conflict'
-
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   # BATCHES
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
 
   /batches:
     get:
@@ -2243,7 +2574,7 @@ paths:
       operationId: listBatches
       tags: [Batches]
       responses:
-        "200":
+        '200':
           description: Batch list
           content:
             application/json:
@@ -2255,11 +2586,11 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Batch'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
 
     post:
-      summary: Create batch
+      summary: Create batch (Admin only)
       operationId: createBatch
       tags: [Batches]
       requestBody:
@@ -2277,7 +2608,7 @@ paths:
                 endYear:
                   type: integer
       responses:
-        "201":
+        '201':
           description: Batch created
           content:
             application/json:
@@ -2287,16 +2618,16 @@ paths:
                 properties:
                   batch:
                     $ref: '#/components/schemas/Batch'
-        "400":
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
   /batches/bulk:
     delete:
-      summary: Bulk soft-delete batches
+      summary: Bulk soft-delete batches (Admin only)
       operationId: bulkDeleteBatches
       tags: [Batches]
       requestBody:
@@ -2306,22 +2637,22 @@ paths:
             schema:
               $ref: '#/components/schemas/BulkDeleteRequest'
       responses:
-        "200":
+        '200':
           description: Bulk delete result
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkDeleteResponse'
-        "400":
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
   /batches/{id}:
     put:
-      summary: Update batch
+      summary: Update batch (Admin only)
       operationId: updateBatch
       tags: [Batches]
       parameters:
@@ -2343,7 +2674,7 @@ paths:
                   type: string
                   enum: [Active, Archived]
       responses:
-        "200":
+        '200':
           description: Batch updated
           content:
             application/json:
@@ -2353,15 +2684,15 @@ paths:
                 properties:
                   batch:
                     $ref: '#/components/schemas/Batch'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
 
     delete:
-      summary: Soft-delete a batch
+      summary: Soft-delete a batch (Admin only)
       operationId: deleteBatch
       tags: [Batches]
       parameters:
@@ -2371,20 +2702,20 @@ paths:
           schema:
             type: string
       responses:
-        "204":
+        '204':
           description: Deleted
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
-        "409":
+        '409':
           $ref: '#/components/responses/Conflict'
 
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
   # SUBJECTS
-  # ─────────────────────────────────────────
+  # ─────────────────────────────────────────────
 
   /subjects:
     get:
@@ -2392,7 +2723,7 @@ paths:
       operationId: listSubjects
       tags: [Subjects]
       responses:
-        "200":
+        '200':
           description: Subject list
           content:
             application/json:
@@ -2404,11 +2735,11 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Subject'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
 
     post:
-      summary: Create subject
+      summary: Create subject (Admin only)
       operationId: createSubject
       tags: [Subjects]
       requestBody:
@@ -2426,7 +2757,7 @@ paths:
                   type: string
                   maxLength: 50
       responses:
-        "201":
+        '201':
           description: Subject created
           content:
             application/json:
@@ -2436,16 +2767,16 @@ paths:
                 properties:
                   subject:
                     $ref: '#/components/schemas/Subject'
-        "400":
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
   /subjects/bulk:
     delete:
-      summary: Bulk soft-delete subjects
+      summary: Bulk soft-delete subjects (Admin only)
       operationId: bulkDeleteSubjects
       tags: [Subjects]
       requestBody:
@@ -2455,22 +2786,22 @@ paths:
             schema:
               $ref: '#/components/schemas/BulkDeleteRequest'
       responses:
-        "200":
+        '200':
           description: Bulk delete result
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkDeleteResponse'
-        "400":
+        '400':
           $ref: '#/components/responses/BadRequest'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
 
   /subjects/{id}:
     put:
-      summary: Update subject
+      summary: Update subject (Admin only)
       operationId: updateSubject
       tags: [Subjects]
       parameters:
@@ -2491,7 +2822,7 @@ paths:
                 code:
                   type: string
       responses:
-        "200":
+        '200':
           description: Subject updated
           content:
             application/json:
@@ -2501,15 +2832,15 @@ paths:
                 properties:
                   subject:
                     $ref: '#/components/schemas/Subject'
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
 
     delete:
-      summary: Soft-delete a subject
+      summary: Soft-delete a subject (Admin only)
       operationId: deleteSubject
       tags: [Subjects]
       parameters:
@@ -2519,13 +2850,160 @@ paths:
           schema:
             type: string
       responses:
-        "204":
+        '204':
           description: Deleted
-        "401":
+        '401':
           $ref: '#/components/responses/Unauthorized'
-        "403":
+        '403':
           $ref: '#/components/responses/Forbidden'
-        "404":
+        '404':
           $ref: '#/components/responses/NotFound'
-        "409":
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ─────────────────────────────────────────────
+  # CLASSES
+  # ─────────────────────────────────────────────
+
+  /classes:
+    get:
+      summary: List classes
+      operationId: listClasses
+      tags: [Classes]
+      responses:
+        '200':
+          description: Class list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classes]
+                properties:
+                  classes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Class'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      summary: Create class (Admin only)
+      operationId: createClass
+      tags: [Classes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, batchId]
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+                batchId:
+                  type: string
+      responses:
+        '201':
+          description: Class created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [class]
+                properties:
+                  class:
+                    $ref: '#/components/schemas/Class'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /classes/bulk:
+    delete:
+      summary: Bulk soft-delete classes (Admin only)
+      operationId: bulkDeleteClasses
+      tags: [Classes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkDeleteRequest'
+      responses:
+        '200':
+          description: Bulk delete result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /classes/{id}:
+    put:
+      summary: Update class (Admin only)
+      operationId: updateClass
+      tags: [Classes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Class updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [class]
+                properties:
+                  class:
+                    $ref: '#/components/schemas/Class'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Soft-delete a class (Admin only)
+      operationId: deleteClass
+      tags: [Classes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
           $ref: '#/components/responses/Conflict'

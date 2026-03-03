@@ -7,9 +7,10 @@
  * Endpoints implemented:
  *   POST   /api/super-admin/auth/login
  *   GET    /api/super-admin/tenants
- *   POST   /api/super-admin/tenants            (v3.3: seeds 8 periods atomically)
+ *   POST   /api/super-admin/tenants            (v3.4: seeds 8 periods + first Admin atomically)
  *   PUT    /api/super-admin/tenants/:id
  *   PUT    /api/super-admin/tenants/:id/deactivate
+ *   PUT    /api/super-admin/tenants/:id/reactivate   (v3.4: CR-07)
  *   GET    /api/super-admin/tenants/:id/features
  *   PUT    /api/super-admin/tenants/:id/features/:featureKey
  */
@@ -24,6 +25,7 @@ import { send400, send401, send404, send409 } from "../../utils/errors";
 import {
   SuperAdminRow,
   TenantRow,
+  UserRow,
   TenantFeatureRow,
   FeatureRow,
   FeatureKey,
@@ -152,17 +154,19 @@ export async function listTenants(req: Request, res: Response): Promise<void> {
 
 // ═══════════════════════════════════════════════════════════════════
 // POST /api/super-admin/tenants
-// v3.3: Creates tenant + 8 default school_periods atomically
+// v3.4 CR-06: Creates tenant + 8 default school_periods + first Admin
+// admin block is REQUIRED. All four steps are atomic.
 // ═══════════════════════════════════════════════════════════════════
 
 export async function createTenant(req: Request, res: Response): Promise<void> {
-  const { id, name, slug } = req.body as {
+  const { id, name, slug, admin } = req.body as {
     id?: string;
     name?: string;
     slug?: string;
+    admin?: { name?: string; email?: string; password?: string };
   };
 
-  // ── Validation ────────────────────────────────────────────────────
+  // ── Validate tenant fields ────────────────────────────────────────
   if (!id || !name || !slug) {
     send400(res, "id, name, and slug are required");
     return;
@@ -180,13 +184,36 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // ── Atomic transaction: tenant + 8 periods + 2 feature rows ──────
-  // WHY withTransaction: If the school_periods inserts fail after the
-  // tenant is created, we'd have a tenant with no period config —
-  // breaking every timetable operation. Either everything commits or
-  // everything rolls back.
+  // ── Validate admin block (v3.4 CR-06 — REQUIRED) ─────────────────
+  if (!admin || typeof admin !== "object") {
+    send400(res, "admin block is required");
+    return;
+  }
+  if (!admin.name || !admin.email || !admin.password) {
+    send400(res, "admin.name, admin.email, and admin.password are required");
+    return;
+  }
+  if (admin.password.length < 8) {
+    send400(res, "admin.password must be at least 8 characters");
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(admin.email)) {
+    send400(res, "admin.email must be a valid email address");
+    return;
+  }
+
+  // Hash admin password before entering the transaction
+  const adminPasswordHash = await bcrypt.hash(
+    admin.password,
+    config.BCRYPT_ROUNDS,
+  );
+  const adminId = `U-${uuidv4()}`;
+
+  // ── Atomic transaction: tenant + 8 periods + 2 feature rows + Admin user ─
+  // WHY withTransaction: any failure in any step rolls everything back.
+  // A tenant with no period config or no admin would be unusable.
   try {
-    const tenant = await withTransaction(async (client) => {
+    const { tenant, adminUser } = await withTransaction(async (client) => {
       // 1. Insert tenant
       const tenantResult = await client.query<TenantRow>(
         `INSERT INTO tenants (id, name, slug, status, created_at, updated_at)
@@ -194,7 +221,6 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
          RETURNING id, name, slug, status, deactivated_at, created_at, updated_at`,
         [id, name.trim(), slug.trim()],
       );
-
       const newTenant = tenantResult.rows[0];
       if (!newTenant) throw new Error("Tenant insert returned no rows");
 
@@ -218,12 +244,63 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
         );
       }
 
-      return newTenant;
+      // 4. Create first Admin user (CR-06)
+      // WHY inside transaction: if user creation fails (e.g. duplicate email)
+      // the whole tenant + periods + features must roll back.
+      let newAdmin: UserRow;
+      try {
+        const adminResult = await client.query<UserRow>(
+          `INSERT INTO users
+             (id, tenant_id, name, email, password_hash, roles, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, '["Admin"]'::jsonb, NOW(), NOW())
+           RETURNING id, tenant_id, name, email, password_hash, roles,
+                     deleted_at, created_at, updated_at`,
+          [
+            adminId,
+            newTenant.id,
+            admin.name!.trim(),
+            admin.email!.toLowerCase().trim(),
+            adminPasswordHash,
+          ],
+        );
+        newAdmin = adminResult.rows[0]!;
+      } catch (userErr: unknown) {
+        if (
+          userErr instanceof Error &&
+          "code" in userErr &&
+          (userErr as NodeJS.ErrnoException).code === "23505"
+        ) {
+          // Rethrow with sentinel message so outer catch can distinguish
+          throw Object.assign(new Error("ADMIN_EMAIL_TAKEN"), {
+            isSentinel: true,
+          });
+        }
+        throw userErr;
+      }
+
+      return { tenant: newTenant, adminUser: newAdmin };
     });
 
-    res.status(201).json({ tenant: formatTenant(tenant) });
+    res.status(201).json({
+      tenant: formatTenant(tenant),
+      admin: {
+        id: adminUser.id,
+        name: adminUser.name,
+        email: adminUser.email,
+        roles: adminUser.roles,
+      },
+    });
   } catch (err: unknown) {
-    // PostgreSQL unique violation code = 23505
+    // Admin email collision (sentinel thrown from inside transaction)
+    if (err instanceof Error && err.message === "ADMIN_EMAIL_TAKEN") {
+      send409(
+        res,
+        "Admin email already exists in this platform",
+        "ADMIN_EMAIL_TAKEN",
+      );
+      return;
+    }
+    // Tenant id / slug collision
     if (
       err instanceof Error &&
       "code" in err &&
@@ -338,6 +415,58 @@ export async function deactivateTenant(
   >(
     `UPDATE tenants
      SET status = 'inactive', deactivated_at = NOW(), updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, status, deactivated_at`,
+    [tenantId],
+  );
+
+  const updated = result.rows[0];
+  if (!updated) {
+    send404(res, "Tenant does not exist");
+    return;
+  }
+
+  res.status(200).json({
+    tenant: {
+      id: updated.id,
+      status: updated.status,
+      deactivatedAt: updated.deactivated_at?.toISOString() ?? null,
+    },
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PUT /api/super-admin/tenants/:tenantId/reactivate  (v3.4 CR-07)
+// ═══════════════════════════════════════════════════════════════════
+
+export async function reactivateTenant(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { tenantId } = req.params as { tenantId: string };
+
+  const existing = await pool.query<Pick<TenantRow, "id" | "status">>(
+    "SELECT id, status FROM tenants WHERE id = $1",
+    [tenantId],
+  );
+
+  const tenant = existing.rows[0];
+
+  if (!tenant) {
+    send404(res, "Tenant does not exist");
+    return;
+  }
+
+  if (tenant.status === "active") {
+    send409(res, "Tenant is already active", "ALREADY_ACTIVE");
+    return;
+  }
+
+  const result = await pool.query<
+    Pick<TenantRow, "id" | "status" | "deactivated_at">
+  >(
+    `UPDATE tenants
+     SET status = 'active', deactivated_at = NULL, updated_at = NOW()
      WHERE id = $1
      RETURNING id, status, deactivated_at`,
     [tenantId],
