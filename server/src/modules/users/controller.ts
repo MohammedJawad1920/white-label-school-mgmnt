@@ -1,16 +1,14 @@
 /**
- * Users Controller
+ * Users Controller — v3.5 CR-12 + CR-13
  *
- * GET    /api/users           — list (Admin + Teacher)
- * POST   /api/users           — create (Admin only)
- * PUT    /api/users/:id/roles — update roles (Admin only, CANNOT target self)
+ * GET    /api/users           — list (Admin + Teacher); Student-role users EXCLUDED (CR-13)
+ * POST   /api/users           — create (Admin only); Student role REJECTED → INVALIDROLE (CR-13)
+ * PUT    /api/users/:id/roles — update roles (Admin only); self-edit ALLOWED (CR-12); Student role REJECTED
  * DELETE /api/users/:id       — soft delete (Admin only)
  * DELETE /api/users/bulk      — bulk soft delete (Admin only, max 100)
  *
- * Self-target guard on PUT /roles:
- * An Admin cannot update their own roles. This prevents accidental
- * self-demotion that would lock them out of admin operations.
- * Freeze §3: "PUT /api/users/{id}/roles caller cannot target their own id"
+ * LASTADMIN guard: cannot remove own Admin role when last admin in tenant.
+ * INVALIDROLE guard: Student role cannot be assigned via users API — use POST /students.
  *
  * Soft delete pattern:
  * All reads include WHERE deleted_at IS NULL.
@@ -45,11 +43,16 @@ export async function listUsers(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;
   const { role, search } = req.query as { role?: string; search?: string };
 
-  const conditions = ["tenant_id = $1", "deleted_at IS NULL"];
+  // v3.5 CR-13: Student-role users are always excluded from this endpoint
+  const conditions = [
+    "tenant_id = $1",
+    "deleted_at IS NULL",
+    "NOT (roles @> '[\"Student\"]'::jsonb)",
+  ];
   const params: unknown[] = [tenantId];
   let idx = 2;
 
-  if (role && (role === "Teacher" || role === "Admin" || role === "Student")) {
+  if (role && (role === "Teacher" || role === "Admin")) {
     conditions.push(`roles @> $${idx++}::jsonb`);
     params.push(JSON.stringify([role]));
   }
@@ -91,18 +94,25 @@ export async function createUser(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const validRoles: UserRole[] = ["Teacher", "Admin", "Student"]; // v3.4
+  const validRoles: UserRole[] = ["Teacher", "Admin"]; // v3.5: Student excluded
   const sanitizedRoles: UserRole[] = [
     ...new Set(
       (roles as string[]).filter((r) => validRoles.includes(r as UserRole)),
     ),
   ] as UserRole[];
 
-  if (sanitizedRoles.length === 0) {
+  // v3.5 CR-13: Reject Student role — students are created via POST /students
+  if (Array.isArray(roles) && (roles as string[]).includes("Student")) {
     send400(
       res,
-      "roles must contain at least one valid role: Teacher, Admin, Student",
+      "Student role cannot be assigned via POST /users. Use POST /students instead.",
+      "INVALIDROLE",
     );
+    return;
+  }
+
+  if (sanitizedRoles.length === 0) {
+    send400(res, "roles must contain at least one valid role: Teacher, Admin");
     return;
   }
 
@@ -154,18 +164,25 @@ export async function updateUserRoles(
     return;
   }
 
-  const validRoles: UserRole[] = ["Teacher", "Admin", "Student"]; // v3.4 CR-10
+  const validRoles: UserRole[] = ["Teacher", "Admin"]; // v3.5: Student excluded
   const sanitizedRoles: UserRole[] = [
     ...new Set(
       (roles as string[]).filter((r) => validRoles.includes(r as UserRole)),
     ),
   ] as UserRole[];
 
-  if (sanitizedRoles.length === 0) {
+  // v3.5 CR-13: Reject Student role on role updates
+  if ((roles as string[]).includes("Student")) {
     send400(
       res,
-      "roles must contain at least one valid role: Teacher, Admin, Student",
+      "Student role cannot be assigned via PUT /users/:id/roles.",
+      "INVALIDROLE",
     );
+    return;
+  }
+
+  if (sanitizedRoles.length === 0) {
+    send400(res, "roles must contain at least one valid role: Teacher, Admin");
     return;
   }
 

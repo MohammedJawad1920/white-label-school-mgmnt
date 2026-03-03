@@ -2,9 +2,11 @@
  * UsersPage — Freeze §Screen: User Management
  * TQ key: ['users', roleFilter, searchQuery]  stale: 2 min
  *
+ * v3.5 CR-12: Admin can now edit their own roles (self-edit permitted).
+ * v3.5 CR-13: Student role removed from this page; students managed on Students page.
+ *
  * Self-target guard (Freeze §Screen):
- *   - Role editor hidden when targetUser.id === currentUser.id
- *   - Delete button hidden for current user
+ *   - Delete button hidden for current user (self-delete still blocked)
  *
  * Bulk delete shows failed rows highlighted red with reason.
  */
@@ -32,19 +34,21 @@ import {
 import { cn } from "@/utils/cn";
 import type { User } from "@/types/api";
 
-type Role = "Teacher" | "Admin" | "Student";
+// v3.5 CR-12+13: Student role is no longer manageable via Users page.
+// Students are managed on the Students page with atomic account creation.
+type Role = "Teacher" | "Admin";
 
 const createSchema = z.object({
   name: z.string().min(1, "Required").max(255),
   email: z.string().email("Valid email required"),
   password: z.string().min(8, "Minimum 8 characters"),
   roles: z
-    .array(z.enum(["Teacher", "Admin", "Student"]))
+    .array(z.enum(["Teacher", "Admin"]))
     .min(1, "At least one role required"),
 });
 type CreateFormValues = z.infer<typeof createSchema>;
 
-const ROLES: Role[] = ["Teacher", "Admin", "Student"];
+const ROLES: Role[] = ["Teacher", "Admin"];
 
 // ── Create user form ──────────────────────────────────────────────────────────
 function CreateUserForm({
@@ -371,7 +375,6 @@ export default function UsersPage() {
           <option value="">All Roles</option>
           <option value="Teacher">Teacher</option>
           <option value="Admin">Admin</option>
-          <option value="Student">Student</option>
         </select>
       </div>
 
@@ -478,16 +481,14 @@ export default function UsersPage() {
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex justify-end gap-1.5">
-                      {/* Role editor hidden for self — Freeze §Screen */}
-                      {!isSelf && (
-                        <ActionBtn
-                          onClick={() => {
-                            setDrawerError(null);
-                            setEditRolesUser(user);
-                          }}
-                          label={`Edit roles for ${user.name}`}
-                        />
-                      )}
+                      {/* CR-12: role editor is now available for all users including self */}
+                      <ActionBtn
+                        onClick={() => {
+                          setDrawerError(null);
+                          setEditRolesUser(user);
+                        }}
+                        label={`Edit roles for ${user.name}`}
+                      />
                       {/* Delete hidden for self — Freeze §Screen */}
                       {!isSelf && (
                         <ActionBtn

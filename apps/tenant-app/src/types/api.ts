@@ -1,14 +1,15 @@
 /**
  * types/api.ts — LOCKED per Frontend Freeze §3.2
- * All interfaces match OpenAPI v3.4.0 exactly.
+ * All interfaces match OpenAPI v3.5.0 exactly.
  * timestamp is INSIDE error.{} per OpenAPI ErrorResponse schema.
  * Never define API shapes in component files — always import from here.
  *
- * v3.4 changes:
- * - Role enum: Teacher | Admin | Student
- * - Student gains userId (nullable)
- * - AttendanceRecord gains originalStatus, correctedBy, correctedAt
- * - New: CorrectAttendanceRequest/Response, LinkStudentAccountRequest/Response
+ * v3.5 changes (CR-12, CR-13):
+ * - Student gains admissionNumber, dob, loginId
+ * - CreateStudentRequest gains admissionNumber, dob (replaces manual user creation)
+ * - New: UpdateStudentRequest/Response
+ * - CreateUserRequest.roles: Teacher|Admin only (Student excluded)
+ * - UpdateUserRolesRequest.roles: Teacher|Admin only
  */
 
 // ─── ERROR ───────────────────────────────────────────────────────────────────
@@ -88,17 +89,19 @@ export interface User {
 export interface ListUsersResponse {
   users: User[];
 }
+/** Roles available in user management forms (v3.5 CR-13: Student excluded) */
+export type ManageableUserRole = "Teacher" | "Admin";
 export interface CreateUserRequest {
   name: string;
   email: string;
   password: string;
-  roles: Array<UserRole>;
+  roles: Array<ManageableUserRole>;
 }
 export interface CreateUserResponse {
   user: User;
 }
 export interface UpdateUserRolesRequest {
-  roles: Array<UserRole>;
+  roles: Array<ManageableUserRole>;
 }
 export interface UpdateUserRolesResponse {
   user: User;
@@ -108,14 +111,17 @@ export interface UpdateUserRolesResponse {
 export interface Student {
   id: string;
   name: string;
-  userId?: string | null; // v3.4 CR-08: linked user account
+  userId: string | null; // auto-created on POST /students (v3.5 CR-13)
   classId: string;
   className?: string;
   batchId: string;
   batchName?: string;
+  admissionNumber: string; // v3.5 CR-13
+  dob: string; // YYYY-MM-DD  (v3.5 CR-13)
+  loginId: string; // {admissionNumber.lower}@{slug}.local  (v3.5 CR-13)
 }
 
-// v3.4 CR-08: link a student record to a user account
+// v3.4 CR-08: DEPRECATED in v3.5 -- backend retained, frontend removed
 export interface LinkStudentAccountRequest {
   userId: string;
 }
@@ -129,8 +135,21 @@ export interface CreateStudentRequest {
   name: string;
   classId: string;
   batchId: string;
+  admissionNumber: string; // v3.5 CR-13
+  dob: string; // YYYY-MM-DD  (v3.5 CR-13)
 }
 export interface CreateStudentResponse {
+  student: Student;
+}
+/** v3.5 CR-13: all fields optional; at least one required */
+export interface UpdateStudentRequest {
+  name?: string;
+  classId?: string;
+  batchId?: string;
+  admissionNumber?: string;
+  dob?: string;
+}
+export interface UpdateStudentResponse {
   student: Student;
 }
 

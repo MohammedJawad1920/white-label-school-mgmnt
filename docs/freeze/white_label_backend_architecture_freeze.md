@@ -1,9 +1,8 @@
-
 # BACKEND PROJECT FREEZE: White-Label School Management System
-**Version:** 3.4 (IMMUTABLE)
-**Date:** 2026-03-02
+**Version:** 3.5 (IMMUTABLE)
+**Date:** 2026-03-03
 **Status:** APPROVED FOR EXECUTION
-**Previous Version:** v3.3 — 2026-02-26
+**Previous Version:** v3.4 — 2026-03-02
 
 > **CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI):**
 > This document is the Absolute Source of Truth. You have NO authority to modify schema, API
@@ -12,44 +11,46 @@
 
 ---
 
-## CHANGE SUMMARY v3.3 → v3.4
+## CHANGE SUMMARY v3.4 → v3.5
 
 ### CRs Applied
-- **CR-06** Atomic tenant + admin provisioning (Breaking)
-- **CR-07** Tenant reactivation (Additive)
-- **CR-08** Student role + students.user_id linkage (Breaking)
-- **CR-09** Attendance correction with audit trail (Additive)
-- **CR-10** Admin self-role edit with last-admin guard (Breaking)
+- **CR-11** Inline timetable cell entry — Frontend-only, Additive
+- **CR-12** Admin self-role edit unblocked in UI — Frontend-only, Additive
+- **CR-13** Auto student user creation + users/students page separation — Breaking
 
 ### What Changed
-1. `POST /api/super-admin/tenants` — `admin` block now required; atomically creates tenant + periods + first Admin user
-2. New endpoint: `PUT /api/super-admin/tenants/{tenantId}/reactivate`
-3. Role enum expanded: `[Teacher, Admin]` → `[Teacher, Admin, Student]` across all surfaces
-4. `students` table gains `user_id VARCHAR(50) NULLABLE FK → users.id` (unique partial index)
-5. New endpoint: `PUT /api/students/{studentId}/link-account` (Admin only)
-6. `GET /api/students/{studentId}/attendance` — Student role can access own record
-7. `attendancerecords` gains `correctedstatus`, `correctedby`, `correctedat` columns
-8. New endpoint: `PUT /api/attendance/{recordId}` (Teacher own-class / Admin any)
-9. `PUT /api/users/{id}/roles` — Admin may now target self; `SELFROLECHANGEFORBIDDEN` removed; `LASTADMIN` guard added
-10. `AttendanceRecord` response shape gains `originalStatus`, `correctedBy`, `correctedAt`
+- `students` table gains `admission_number VARCHAR(50) NOT NULL` + `dob DATE NOT NULL` + `UNIQUE(tenantid, admission_number)`
+- Migration `004_student_admission_dob.sql` required
+- `POST /api/students` request: adds `admissionNumber` (required), `dob` (required DATE); atomically creates `users` row + `students` row in a single transaction
+- `GET /api/students` response: adds `admissionNumber`, `dob`, `loginId` fields
+- `GET /api/users`: excludes all users where `roles @> '["Student"]'::jsonb`
+- `POST /api/users`: rejects `Student` in roles → `400 INVALIDROLE`
+- `PUT /api/students/:id/link-account`: deprecated in OpenAPI (backend retained for migration only; removed from frontend)
+- Frontend — Timetable: standalone "Add Slot" button removed; empty cell click is sole create trigger
+- Frontend — Users page: `!isSelf` guard on Edit Roles button removed; `403 LASTADMIN` shown inline for self-edit
 
 ### Breaking Changes
-- `POST /api/super-admin/tenants` request: `admin` block required (was not present)
-- All role enums: `[Teacher, Admin]` → `[Teacher, Admin, Student]`
-- `PUT /api/users/{id}/roles`: 403 case changed (`SELFROLECHANGEFORBIDDEN` → `LASTADMIN`)
-- `AttendanceRecord` schema extended
+- `POST /api/students` request shape changed (admissionNumber + dob added, no email/password)
+- `GET /api/students` response shape extended
+- `GET /api/users` no longer returns Student-role users
+- `POST /api/users` rejects Student role
 
 ### New Error Codes
-- `LASTADMIN` — Cannot remove own Admin role; last admin in tenant
-- `STUDENT_ACCESS_DENIED` — Student-role caller accessing another student's record
-- `USER_ALREADY_LINKED` — userId already linked to a different student record
-- `FUTURE_DATE` — Attendance correction attempted on a future record
-- `SAME_STATUS` — Correction status equals current effective status
-- `ALREADY_ACTIVE` — Tenant reactivation on already-active tenant
-- `ADMIN_EMAIL_TAKEN` — Admin email conflict during tenant creation
+| Code | HTTP | Trigger |
+|---|---|---|
+| `ADMISSIONNUMBERCONFLICT` | 409 | admissionNumber already active in tenant |
+| `INVALIDROLE` | 400 | `Student` passed in `POST /api/users` roles array |
 
-### User Story Count
-12 unchanged
+### Unchanged from v3.4
+- All authentication endpoints
+- All timetable endpoints and business logic
+- All attendance endpoints and business logic
+- All school-periods endpoints
+- SuperAdmin endpoints
+- JWT payload shapes
+- Global error format
+- Soft-delete policy
+- All other invariants
 
 ---
 
@@ -57,7 +58,7 @@
 
 **Engagement Type:** Fixed-scope
 **Chosen Package:** Standard
-**Price & Payment Schedule:** Unchanged from v3.3
+**Price & Payment Schedule:** Unchanged from v3.4
 **Timeline Range (weeks):** 8–10
 **Assumptions (must be true):**
 - Single decision maker available within 24 hours for clarifications
@@ -76,9 +77,7 @@
 > timetable scheduling and attendance tracking, deployable on low-cost infrastructure with
 > per-school module activation managed by a central SuperAdmin.
 
----
-
-### The 12 User Stories (COMPLETE SCOPE)
+### The 12 Backend User Stories (COMPLETE SCOPE)
 
 1. As a teacher, I want to record student attendance for each class period, so that attendance is captured once and not lost on paper.
 2. As a school admin, I want to view a student's complete attendance history, so that I don't have to search through physical records.
@@ -93,11 +92,9 @@
 11. As a multi-role user, I want to switch my active role context in-session, so that I don't need to log out and log back in to act as Teacher or Admin.
 12. As an Admin, I want to bulk-delete records, so that I can clean up data efficiently without repeating individual delete calls.
 
----
-
 ### The "NO" List (Explicitly Out of Scope for MVP)
 
-- Student enrollment workflow / approval-rejection process
+- Student enrollment workflow approval/rejection process
 - Parent portal or parent role
 - SMS/Email notifications
 - Grade/exam management
@@ -109,66 +106,66 @@
 - Audit log viewer UI (logs exist, but no interface)
 - Custom branding UI (logo upload, theme customization)
 - Multi-language support (English only)
-- Forgot password flow (admin resets only)
+- Forgot password flow (admin resets only via DB or Reset Login action)
 - Parent communication features
-- **Library, transportation, hostel management** — `Librarian` role is NOT implemented; introduce via Change Request when library module is scoped
+- Library, transportation, hostel management
 - Exam scheduling, report card generation
 - SuperAdmin self-registration (seeded via DB script only)
-- JWT token blacklist / forced invalidation on role update
+- JWT token blacklist (forced invalidation on role update)
 - SuperAdmin tenant hard-delete (deactivate/reactivate only)
-- Student-to-user bulk linking / CSV import — manual one-by-one via `PUT /api/students/{id}/link-account` only
+- Student-to-user bulk linking (CSV import) — manual one-by-one via `PUT /api/students/:id/link-account` (deprecated, migration use only)
 - Student role users creating or managing any resource other than reading own attendance and timetable
-
----
+- Student self-registration (accounts created only via `POST /api/students` by Admin)
 
 ### User Roles (Backend authorization truth)
 
 **SuperAdmin** — Platform-level operator, exists outside tenant scope
-- Authenticated via `POST /api/super-admin/auth/login` (no `tenantSlug` required)
-- JWT payload: `{ superAdminId, role: "SuperAdmin" }` — no `tenantId`
-- Can create, list, update, deactivate, and **reactivate** tenants
+- Authenticated via `POST /api/super-admin/auth/login` (no tenantSlug required)
+- JWT payload: `{ superAdminId, role: "SuperAdmin" }` — no tenantId
+- Can create, list, update, deactivate, and reactivate tenants
 - Can enable/disable feature flags for any tenant
 - SuperAdmin JWT is rejected by `tenantContextMiddleware`
 - SuperAdmin routes use `superAdminAuthMiddleware` exclusively
-- Provisioned only via one-time DB seed script (no registration endpoint)
+- Provisioned only via one-time DB seed script — no registration endpoint
 
 **Admin** — Tenant-scoped
 - Full CRUD access to all tenant resources (users, batches, subjects, classes, students, timetable, attendance, schoolperiods)
 - Can view all reports and summaries
-- Can view enabled features (`GET /api/features`, read-only)
+- Can view enabled features (`GET /api/features`), read-only
 - Cannot toggle feature flags (`PUT /api/features/:featureKey` removed in v3.2)
 - Can end any TimeSlot assignment
-- Can update any user's roles including own — **EXCEPT** cannot remove own `Admin` role if they are the last Admin in the tenant (`LASTADMIN`)
+- Can update any user's roles including own EXCEPT cannot remove own Admin role if they are the last Admin in the tenant (`LASTADMIN`)
 - Can bulk-delete users, students, classes, batches, subjects
-- Full CRUD on `schoolperiods`
-- Can link/unlink student user accounts (`PUT /api/students/{id}/link-account`)
-- Can correct any attendance record (`PUT /api/attendance/{recordId}`)
+- Full CRUD on schoolperiods
+- Can link/unlink student user accounts via `PUT /api/students/:id/link-account` (deprecated — migration use only; use `POST /api/students` for new enrollments)
+- Can correct any attendance record (`PUT /api/attendance/:recordId`)
 
 **Teacher** — Tenant-scoped
 - Can view timetable (all classes, all teachers, read-only)
 - Can view own assigned classes
 - Can record attendance for own classes
 - Can view attendance for students in own classes
-- Can view `schoolperiods` (read-only)
+- Can view schoolperiods (read-only)
 - Can correct attendance records for own-class timeslots only
 - Cannot end TimeSlot assignments (Admin-only)
 
-**Student** — Tenant-scoped *(v3.4 NEW)*
+**Student** — Tenant-scoped (v3.4, unchanged in v3.5)
 - Can view timetable (read-only)
-- Can view `schoolperiods` (read-only)
-- Can view own attendance: `GET /api/students/{studentId}/attendance` where `students.user_id = req.user.userId` only — 403 `STUDENT_ACCESS_DENIED` otherwise
+- Can view schoolperiods (read-only)
+- Can view own attendance: `GET /api/students/:studentId/attendance` where `students.userId = req.user.userId` only — `403 STUDENTACCESSDENIED` otherwise
 - Cannot record, correct, or delete any data
-- Student-role user account is separate from `students` enrollment row; linked via `students.user_id FK → users.id`
+- Login credentials: admission number + `DDMMYYYY` of date of birth, concatenated (e.g., `53010032003`)
+- Account is auto-created atomically when admin runs `POST /api/students`
+- Student accounts are NOT visible in `GET /api/users` — managed exclusively via Students page
 
-**Multiple Roles (v3.1, unchanged)**
-- Users can hold multiple roles simultaneously (e.g., `["Teacher", "Admin"]`)
+**Multiple Roles** (v3.1, unchanged)
+- Users can hold multiple roles simultaneously (e.g., Teacher + Admin)
 - Authorization checks if user has required role using array membership
-- `activeRole` in JWT is a **UI context hint only** — it does NOT gate API access
+- `activeRole` in JWT is a UI context hint only — does NOT gate API access
 - All write authorization checks validate against the full `roles` array
 
----
-
 ### Module Structure
+
 - **Timetable Management** — Core module, can be enabled standalone
 - **Attendance Tracking** — Dependent module, REQUIRES Timetable to be enabled
 
@@ -179,8 +176,8 @@
 **External Systems:** None
 
 **Operational Assumptions:**
-- Hosting: Single monolith deployment (Render/Fly.io/Railway or equivalent $5–$45/month tier)
-- Data retention: Indefinite (no automated deletion)
+- Hosting: Single monolith deployment — Render/Fly.io/Railway or equivalent ($5–$45/month tier)
+- Data retention: Indefinite, no automated deletion
 - Expected user scale: 5–50 schools initially, 25,000 total students max, 10 concurrent RPS
 - Admin/support operations: Manual DB access for SuperAdmin seeding only
 
@@ -193,14 +190,14 @@
 PORT=3000
 NODE_ENV=development
 
-# Database Configuration (PostgreSQL required)
-DATABASE_URL="postgresql://username:password@localhost:5432/school_management"
+# Database Configuration — PostgreSQL required
+DATABASE_URL="postgresql://username:password@localhost:5432/schoolmanagement"
 DATABASE_POOL_MIN=2
 DATABASE_POOL_MAX=10
 
 # Authentication & Security
 JWT_SECRET="your-256-bit-secret-key-min-32-characters-required"
-JWT_EXPIRES_IN="365d"
+JWT_EXPIRES_IN=365d
 BCRYPT_ROUNDS=10
 
 # Tenant Configuration
@@ -212,51 +209,44 @@ ALLOWED_ORIGINS="http://localhost:3000,http://localhost:5173"
 # Logging
 LOG_LEVEL=info
 
-# Future: Email Service (not required for MVP)
+# Future — Email Service (not required for MVP)
 # EMAIL_SERVICE_API_KEY=
 # EMAIL_FROM_ADDRESS=
 
-# Future: File Storage (not required for MVP)
+# Future — File Storage (not required for MVP)
 # CLOUDINARY_CLOUD_NAME=
 # CLOUDINARY_API_KEY=
 # CLOUDINARY_API_SECRET=
 ```
 
 **Configuration Rules:**
-
 - `JWT_SECRET` must be at least 32 characters (256 bits)
 - `DATABASE_URL` must use PostgreSQL connection string format
 - `PORT` defaults to 3000 if not specified
-- `NODE_ENV` must be one of `development`, `production`, `test`
+- `NODE_ENV` must be one of: `development`, `production`, `test`
 - `BCRYPT_ROUNDS` must be between 10–12
 - `JWT_EXPIRES_IN` uses format `365d`, `30d`, `7d` — do not use less than `7d`
 
 ---
 
-## 1.6 Tech Stack \& Key Libraries (Backend toolbelt)
+## 1.6 Tech Stack & Key Libraries (Backend toolbelt)
 
 **Core Stack:**
-
-- **Language/Runtime:** TypeScript + Node.js
-- **Framework:** Express
-- **DB:** PostgreSQL
-- **ORM/Query:** Knex.js or pg (raw)
-- **Validation:** Zod
-- **Auth:** jsonwebtoken + bcrypt
-- **OpenAPI:** swagger-ui-express
+- Language/Runtime: TypeScript + Node.js
+- Framework: Express
+- DB: PostgreSQL
+- ORM/Query: Knex.js or pg (raw)
+- Validation: Zod
+- Auth: jsonwebtoken + bcrypt
+- OpenAPI: swagger-ui-express
 
 **Critical Packages:**
-
 - Logging: `pino`
 - Env/config validation: `zod`, `dotenv`
 - Testing: `vitest` + `supertest`
-- Migration tooling: `knex` migrations
-
-**Dialect:** PostgreSQL
-**Extensions:** None required
+- Migration tooling: knex migrations
 
 **Explicitly Banned Patterns:**
-
 - Do NOT use separate databases per tenant
 - Do NOT use microservices (solo dev constraint)
 - Do NOT use NoSQL as primary database
@@ -280,67 +270,68 @@ LOG_LEVEL=info
 -- TENANTS TABLE (v3.2: added status, deactivatedat)
 -- --------------------------------------------------------
 CREATE TABLE tenants (
-  id            VARCHAR(50)   PRIMARY KEY,
-  name          VARCHAR(255)  NOT NULL,
-  slug          VARCHAR(100)  UNIQUE NOT NULL,
-  status        VARCHAR(20)   NOT NULL DEFAULT 'active'
-                  CHECK(status IN ('active','inactive')),
-  deactivatedat TIMESTAMPTZ   DEFAULT NULL,
-  createdat     TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  updatedat     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+  id          VARCHAR(50) PRIMARY KEY,
+  name        VARCHAR(255) NOT NULL,
+  slug        VARCHAR(100) UNIQUE NOT NULL,
+  status      VARCHAR(20) NOT NULL DEFAULT 'active'
+                CHECK(status IN ('active','inactive')),
+  deactivatedat TIMESTAMPTZ DEFAULT NULL,
+  createdat   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updatedat   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_tenants_slug   ON tenants(slug);
 CREATE INDEX idx_tenants_status ON tenants(status);
 
 -- --------------------------------------------------------
--- SUPERADMINS TABLE (v3.2: platform-level, no tenantid)
+-- SUPERADMINS TABLE (platform-level, no tenantid)
 -- --------------------------------------------------------
 CREATE TABLE superadmins (
-  id           VARCHAR(50)  PRIMARY KEY,
+  id           VARCHAR(50) PRIMARY KEY,
   name         VARCHAR(255) NOT NULL,
   email        VARCHAR(255) NOT NULL,
   passwordhash VARCHAR(255) NOT NULL,
-  createdat    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updatedat    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  createdat    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updatedat    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE UNIQUE INDEX idx_superadmins_email ON superadmins(email);
 
 -- --------------------------------------------------------
 -- USERS TABLE (Teachers, Admins, Students — tenant-scoped)
 -- v3.1: added deletedat, updated email uniqueness
--- v3.4: roles enum expands to include 'Student'
+-- v3.4: roles enum expands to include Student
+-- v3.5: UNCHANGED — Student users auto-created via POST /api/students
 -- --------------------------------------------------------
 CREATE TABLE users (
-  id           VARCHAR(50)  PRIMARY KEY,
-  tenantid     VARCHAR(50)  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  id           VARCHAR(50) PRIMARY KEY,
+  tenantid     VARCHAR(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name         VARCHAR(255) NOT NULL,
   email        VARCHAR(255) NOT NULL,
   passwordhash VARCHAR(255) NOT NULL,
-  roles        JSONB        NOT NULL DEFAULT '["Teacher"]'::jsonb,
-  deletedat    TIMESTAMPTZ  DEFAULT NULL,
-  createdat    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updatedat    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  roles        JSONB NOT NULL DEFAULT '["Teacher"]'::jsonb,
+  deletedat    TIMESTAMPTZ DEFAULT NULL,
+  createdat    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updatedat    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX        idx_users_tenantid    ON users(tenantid);
-CREATE INDEX        idx_users_email       ON users(tenantid, email);
-CREATE INDEX        idx_users_roles       ON users USING GIN(roles);
-CREATE INDEX        idx_users_deleted     ON users(tenantid, deletedat) WHERE deletedat IS NULL;
+CREATE INDEX        idx_users_tenantid     ON users(tenantid);
+CREATE INDEX        idx_users_email        ON users(tenantid, email);
+CREATE INDEX        idx_users_roles        ON users USING GIN(roles);
+CREATE INDEX        idx_users_deleted      ON users(tenantid, deletedat) WHERE deletedat IS NULL;
 CREATE UNIQUE INDEX idx_users_email_active ON users(tenantid, email) WHERE deletedat IS NULL;
 
 -- --------------------------------------------------------
 -- BATCHES TABLE (Academic Years)
 -- --------------------------------------------------------
 CREATE TABLE batches (
-  id        VARCHAR(50)  PRIMARY KEY,
-  tenantid  VARCHAR(50)  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  id        VARCHAR(50) PRIMARY KEY,
+  tenantid  VARCHAR(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name      VARCHAR(100) NOT NULL,
-  startyear INTEGER      NOT NULL,
-  endyear   INTEGER      NOT NULL,
-  status    VARCHAR(50)  NOT NULL DEFAULT 'Active'
+  startyear INTEGER NOT NULL,
+  endyear   INTEGER NOT NULL,
+  status    VARCHAR(50) NOT NULL DEFAULT 'Active'
               CHECK(status IN ('Active','Archived')),
-  deletedat TIMESTAMPTZ  DEFAULT NULL,
-  createdat TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updatedat TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  deletedat TIMESTAMPTZ DEFAULT NULL,
+  createdat TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updatedat TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_batches_tenantid ON batches(tenantid);
 CREATE INDEX idx_batches_status   ON batches(tenantid, status);
@@ -350,13 +341,13 @@ CREATE INDEX idx_batches_deleted  ON batches(tenantid, deletedat) WHERE deleteda
 -- SUBJECTS TABLE
 -- --------------------------------------------------------
 CREATE TABLE subjects (
-  id        VARCHAR(50)  PRIMARY KEY,
-  tenantid  VARCHAR(50)  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  id        VARCHAR(50) PRIMARY KEY,
+  tenantid  VARCHAR(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name      VARCHAR(255) NOT NULL,
   code      VARCHAR(50),
-  deletedat TIMESTAMPTZ  DEFAULT NULL,
-  createdat TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updatedat TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  deletedat TIMESTAMPTZ DEFAULT NULL,
+  createdat TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updatedat TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_subjects_tenantid ON subjects(tenantid);
 CREATE INDEX idx_subjects_deleted  ON subjects(tenantid, deletedat) WHERE deletedat IS NULL;
@@ -365,13 +356,13 @@ CREATE INDEX idx_subjects_deleted  ON subjects(tenantid, deletedat) WHERE delete
 -- CLASSES TABLE
 -- --------------------------------------------------------
 CREATE TABLE classes (
-  id        VARCHAR(50)  PRIMARY KEY,
-  tenantid  VARCHAR(50)  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  id        VARCHAR(50) PRIMARY KEY,
+  tenantid  VARCHAR(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name      VARCHAR(255) NOT NULL,
-  batchid   VARCHAR(50)  NOT NULL REFERENCES batches(id) ON DELETE RESTRICT,
-  deletedat TIMESTAMPTZ  DEFAULT NULL,
-  createdat TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updatedat TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  batchid   VARCHAR(50) NOT NULL REFERENCES batches(id) ON DELETE RESTRICT,
+  deletedat TIMESTAMPTZ DEFAULT NULL,
+  createdat TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updatedat TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_classes_tenantid ON classes(tenantid);
 CREATE INDEX idx_classes_batchid  ON classes(batchid);
@@ -379,37 +370,42 @@ CREATE INDEX idx_classes_deleted  ON classes(tenantid, deletedat) WHERE deleteda
 
 -- --------------------------------------------------------
 -- STUDENTS TABLE
--- v3.4: added user_id FK → users.id (nullable, unique)
+-- v3.4: added userid FK → users.id (nullable, unique)
+-- v3.5 CR-13: added admission_number (NOT NULL), dob (NOT NULL)
+--             UNIQUE(tenantid, admission_number)
 -- --------------------------------------------------------
 CREATE TABLE students (
-  id        VARCHAR(50)  PRIMARY KEY,
-  tenantid  VARCHAR(50)  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  name      VARCHAR(255) NOT NULL,
-  classid   VARCHAR(50)  NOT NULL REFERENCES classes(id) ON DELETE RESTRICT,
-  batchid   VARCHAR(50)  NOT NULL REFERENCES batches(id) ON DELETE RESTRICT,
-  user_id   VARCHAR(50)  DEFAULT NULL REFERENCES users(id) ON DELETE SET NULL,
-  deletedat TIMESTAMPTZ  DEFAULT NULL,
-  createdat TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updatedat TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  id               VARCHAR(50) PRIMARY KEY,
+  tenantid         VARCHAR(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name             VARCHAR(255) NOT NULL,
+  classid          VARCHAR(50) NOT NULL REFERENCES classes(id) ON DELETE RESTRICT,
+  batchid          VARCHAR(50) NOT NULL REFERENCES batches(id) ON DELETE RESTRICT,
+  userid           VARCHAR(50) DEFAULT NULL REFERENCES users(id) ON DELETE SET NULL,
+  admission_number VARCHAR(50) NOT NULL,
+  dob              DATE NOT NULL,
+  deletedat        TIMESTAMPTZ DEFAULT NULL,
+  createdat        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updatedat        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(tenantid, admission_number)
 );
 CREATE INDEX        idx_students_tenantid ON students(tenantid);
 CREATE INDEX        idx_students_classid  ON students(classid);
 CREATE INDEX        idx_students_batchid  ON students(batchid);
 CREATE INDEX        idx_students_deleted  ON students(tenantid, deletedat) WHERE deletedat IS NULL;
-CREATE UNIQUE INDEX idx_students_userid   ON students(user_id) WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_students_userid   ON students(userid) WHERE userid IS NOT NULL;
 
 -- --------------------------------------------------------
 -- SCHOOL PERIODS TABLE (v3.3: dynamic per-tenant config)
 -- --------------------------------------------------------
 CREATE TABLE schoolperiods (
-  id           VARCHAR(50)  PRIMARY KEY,
-  tenantid     VARCHAR(50)  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  periodnumber INTEGER      NOT NULL CHECK(periodnumber >= 1),
+  id           VARCHAR(50) PRIMARY KEY,
+  tenantid     VARCHAR(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  periodnumber INTEGER NOT NULL CHECK(periodnumber >= 1),
   label        VARCHAR(100) NOT NULL DEFAULT '',
-  starttime    TIME         NOT NULL,
-  endtime      TIME         NOT NULL,
-  createdat    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updatedat    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  starttime    TIME NOT NULL,
+  endtime      TIME NOT NULL,
+  createdat    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updatedat    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenantid, periodnumber)
 );
 CREATE INDEX idx_schoolperiods_tenant ON schoolperiods(tenantid);
@@ -428,21 +424,21 @@ CREATE TABLE timeslots (
   teacherid     VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   dayofweek     VARCHAR(20) NOT NULL
                   CHECK(dayofweek IN ('Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday')),
-  periodnumber  INTEGER     NOT NULL CHECK(periodnumber >= 1),
+  periodnumber  INTEGER NOT NULL CHECK(periodnumber >= 1),
   starttime     TIME,
   endtime       TIME,
-  effectivefrom DATE        NOT NULL,
+  effectivefrom DATE NOT NULL,
   effectiveto   DATE,
   deletedat     TIMESTAMPTZ DEFAULT NULL,
   createdat     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updatedat     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX        idx_timeslots_tenantid      ON timeslots(tenantid);
-CREATE INDEX        idx_timeslots_classid       ON timeslots(classid);
-CREATE INDEX        idx_timeslots_teacherid     ON timeslots(teacherid);
+CREATE INDEX        idx_timeslots_tenantid       ON timeslots(tenantid);
+CREATE INDEX        idx_timeslots_classid        ON timeslots(classid);
+CREATE INDEX        idx_timeslots_teacherid      ON timeslots(teacherid);
 CREATE INDEX        idx_timeslots_effectivedates ON timeslots(effectivefrom, effectiveto);
-CREATE INDEX        idx_timeslots_deleted       ON timeslots(tenantid, deletedat) WHERE deletedat IS NULL;
-CREATE UNIQUE INDEX idx_timeslots_active_unique ON timeslots(tenantid, classid, dayofweek, periodnumber)
+CREATE INDEX        idx_timeslots_deleted        ON timeslots(tenantid, deletedat) WHERE deletedat IS NULL;
+CREATE UNIQUE INDEX idx_timeslots_active_unique  ON timeslots(tenantid, classid, dayofweek, periodnumber)
   WHERE effectiveto IS NULL AND deletedat IS NULL;
 
 -- --------------------------------------------------------
@@ -451,40 +447,38 @@ CREATE UNIQUE INDEX idx_timeslots_active_unique ON timeslots(tenantid, classid, 
 --       originalstatus (status column) is NEVER mutated
 -- --------------------------------------------------------
 CREATE TABLE attendancerecords (
-  id              VARCHAR(50)  PRIMARY KEY,
-  tenantid        VARCHAR(50)  NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  studentid       VARCHAR(50)  NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-  timeslotid      VARCHAR(50)  NOT NULL REFERENCES timeslots(id) ON DELETE CASCADE,
-  date            DATE         NOT NULL,
-  status          VARCHAR(50)  NOT NULL
-                    CHECK(status IN ('Present','Absent','Late')),
-  recordedby      VARCHAR(50)  NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-  recordedat      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  correctedstatus VARCHAR(50)  DEFAULT NULL
-                    CHECK(correctedstatus IN ('Present','Absent','Late')),
-  correctedby     VARCHAR(50)  DEFAULT NULL REFERENCES users(id) ON DELETE RESTRICT,
-  correctedat     TIMESTAMPTZ  DEFAULT NULL,
+  id              VARCHAR(50) PRIMARY KEY,
+  tenantid        VARCHAR(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  studentid       VARCHAR(50) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  timeslotid      VARCHAR(50) NOT NULL REFERENCES timeslots(id) ON DELETE CASCADE,
+  date            DATE NOT NULL,
+  status          VARCHAR(50) NOT NULL CHECK(status IN ('Present','Absent','Late')),
+  recordedby      VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  recordedat      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  correctedstatus VARCHAR(50) DEFAULT NULL CHECK(correctedstatus IN ('Present','Absent','Late')),
+  correctedby     VARCHAR(50) DEFAULT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  correctedat     TIMESTAMPTZ DEFAULT NULL,
   UNIQUE(studentid, timeslotid, date)
 );
-CREATE INDEX idx_attendance_tenantid        ON attendancerecords(tenantid);
-CREATE INDEX idx_attendance_studentid       ON attendancerecords(studentid);
-CREATE INDEX idx_attendance_timeslotid      ON attendancerecords(timeslotid);
-CREATE INDEX idx_attendance_date            ON attendancerecords(date);
-CREATE INDEX idx_attendance_student_daterange ON attendancerecords(studentid, date);
+CREATE INDEX idx_attendance_tenantid       ON attendancerecords(tenantid);
+CREATE INDEX idx_attendance_studentid      ON attendancerecords(studentid);
+CREATE INDEX idx_attendance_timeslotid     ON attendancerecords(timeslotid);
+CREATE INDEX idx_attendance_date           ON attendancerecords(date);
+CREATE INDEX idx_attendance_studentdaterange ON attendancerecords(studentid, date);
 
 -- --------------------------------------------------------
 -- FEATURES TABLE (system-wide module definitions)
 -- --------------------------------------------------------
 CREATE TABLE features (
-  id          VARCHAR(50)  PRIMARY KEY,
+  id          VARCHAR(50) PRIMARY KEY,
   key         VARCHAR(100) UNIQUE NOT NULL,
   name        VARCHAR(255) NOT NULL,
   description TEXT,
-  createdat   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  createdat   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 INSERT INTO features (id, key, name, description) VALUES
-  ('F001','timetable','Timetable Management','Create and manage class schedules with teacher assignments'),
-  ('F002','attendance','Attendance Tracking','Record and view student attendance per class period');
+  ('F001', 'timetable', 'Timetable Management', 'Create and manage class schedules with teacher assignments'),
+  ('F002', 'attendance', 'Attendance Tracking', 'Record and view student attendance per class period');
 
 -- --------------------------------------------------------
 -- TENANT FEATURES TABLE (per-tenant module activation)
@@ -493,7 +487,7 @@ CREATE TABLE tenantfeatures (
   id         VARCHAR(50) PRIMARY KEY,
   tenantid   VARCHAR(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   featurekey VARCHAR(100) NOT NULL REFERENCES features(key) ON DELETE CASCADE,
-  enabled    BOOLEAN     NOT NULL DEFAULT FALSE,
+  enabled    BOOLEAN NOT NULL DEFAULT FALSE,
   enabledat  TIMESTAMPTZ,
   UNIQUE(tenantid, featurekey)
 );
@@ -501,72 +495,100 @@ CREATE INDEX idx_tenantfeatures_tenantid ON tenantfeatures(tenantid);
 CREATE INDEX idx_tenantfeatures_enabled  ON tenantfeatures(tenantid, enabled);
 ```
 
+### Migration Files
 
----
+```
+src/db/migrations/001_initial_schema.sql          — v3.1 base
+src/db/migrations/002_add_student_userid.sql       — v3.4 CR-08
+src/db/migrations/003_add_attendance_corrections.sql — v3.4 CR-09
+src/db/migrations/004_student_admission_dob.sql    — v3.5 CR-13 ← NEW
+```
+
+**Migration 004 content:**
+```sql
+-- v3.5 CR-13: Add admission_number and dob to students
+ALTER TABLE students
+  ADD COLUMN admission_number VARCHAR(50),
+  ADD COLUMN dob DATE;
+
+-- Backfill existing rows before enforcing NOT NULL
+-- Admin must run this manually for pre-existing students,
+-- OR use PUT /api/students/:id/link-account for migration.
+-- After backfill:
+ALTER TABLE students
+  ALTER COLUMN admission_number SET NOT NULL,
+  ALTER COLUMN dob SET NOT NULL;
+
+ALTER TABLE students
+  ADD CONSTRAINT uq_students_tenant_admission UNIQUE(tenantid, admission_number);
+```
 
 ### Data Invariants (Application-Enforced Rules)
 
 - `Student.batchid` MUST equal `Class.batchid` — validate on insert/update
-- Cannot delete Class if Student records reference it (`RESTRICT`)
-- Cannot delete Subject if TimeSlot records reference it (`RESTRICT`)
-- Cannot delete User if TimeSlot or AttendanceRecord references them (`RESTRICT`)
+- Cannot delete Class if Student records reference it — RESTRICT
+- Cannot delete Subject if TimeSlot records reference it — RESTRICT
+- Cannot delete User if TimeSlot or AttendanceRecord references them — RESTRICT
 - TimeSlot updates must create new records, not modify existing (immutability)
 - `AttendanceRecord.date` cannot be in the future
-- `Feature.attendance` can only be enabled if `timetable` is enabled
-- `User.roles` must be a non-empty array containing only `'Teacher'`, `'Admin'`, `'Student'`
+- Feature `attendance` can only be enabled if `timetable` is enabled
+- `User.roles` must be a non-empty array containing only `Teacher`, `Admin`, `Student`
 - `User.roles` must not contain duplicates — deduplicate before saving
-- `TimeSlot.teacherid` must reference a User with `'Teacher'` in their `roles` array
-- Admin calling `PUT /api/users/{id}/roles` targeting self: allowed, EXCEPT removing own `Admin` role when no other active Admin exists in the tenant → 403 `LASTADMIN`
-- A tenant with `status = 'inactive'` causes all its users to receive `403 Tenant is inactive` on every API call — enforced in `tenantContextMiddleware`
-- SuperAdmin credentials must be seeded via DB script only (no API creation path)
-- `students.user_id` is unique per non-null value (enforced by partial unique index)
-- A `Student`-role user may only call `GET /api/students/{studentId}/attendance` where `students.user_id = caller.userId`; all other student records → 403 `STUDENT_ACCESS_DENIED`
-- When a user is soft-deleted (`deletedat = NOW()`): if `students.user_id = userId`, set `students.user_id = NULL` in the same transaction
-- `attendancerecords.status` (original) is **never mutated** after insert; corrections write only to `correctedstatus` / `correctedby` / `correctedat`
-- Only one correction level per record — re-correcting overwrites `correctedstatus`, `correctedby`, `correctedat` in place; `status` (original) remains unchanged forever
-- `Student` role: no write access to any resource
-
-**v3.3 Invariants (unchanged):**
-
+- `TimeSlot.teacherid` must reference a User with `Teacher` in their roles array
+- Admin calling `PUT /api/users/:id/roles` targeting self: allowed EXCEPT removing own Admin role when no other active Admin exists in the tenant → `403 LASTADMIN`
+- A tenant with `status = inactive` causes all its users to receive `403 Tenant is inactive` on every API call — enforced in `tenantContextMiddleware`
+- SuperAdmin credentials must be seeded via DB script only — no API creation path
+- `students.userid` is unique per non-null value — enforced by partial unique index
+- A Student-role user may only call `GET /api/students/:studentId/attendance` where `students.userId = caller.userId` — all other student records → `403 STUDENTACCESSDENIED`
+- When a user is soft-deleted (`deletedat = NOW()`), if `students.userid = userId`, set `students.userid = NULL` in the same transaction
+- `attendancerecords.status` (original) is never mutated after insert — corrections write only to `correctedstatus`, `correctedby`, `correctedat`
+- Only one correction level per record — re-correcting overwrites `correctedstatus`, `correctedby`, `correctedat` in place; original `status` remains unchanged forever
+- Student role: no write access to any resource
 - `timeslots.periodnumber` must exist in `schoolperiods` for the same `tenantid` — validated at app layer on `POST /api/timetable`
-- Cannot delete a `schoolperiod` if any active (`effectiveto IS NULL`) timeslot references that `periodnumber` for the same tenant → 409 `HAS_REFERENCES`
-- `schoolperiods` must be configured before any timetable entry can be created → 400 `PERIOD_NOT_CONFIGURED`
-- `schoolperiods.starttime < endtime` enforced on create/update
-- `schoolperiods.periodnumber` is immutable after creation (to renumber: delete and recreate)
-
----
+- Cannot delete a schoolperiod if any active (`effectiveto IS NULL`) timeslot references that `periodnumber` for the same tenant → `409 HASREFERENCES`
+- `schoolperiods` must be configured before any timetable entry can be created → `400 PERIODNOTCONFIGURED`
+- `schoolperiods.starttime < endtime` — enforced on create/update
+- `schoolperiods.periodnumber` is immutable after creation
+- **v3.5 CR-13:** `students.admission_number` must be unique within the tenant (active records only — `deletedat IS NULL`) → `409 ADMISSIONNUMBERCONFLICT`
+- **v3.5 CR-13:** `POST /api/users` must reject any `roles` array containing `Student` → `400 INVALIDROLE`
+- **v3.5 CR-13:** `GET /api/users` MUST apply `WHERE NOT (roles @> '["Student"]'::jsonb)` — Student-role users are never returned from the users listing
+- **v3.5 CR-13:** Student login password is derived as: `bcrypt(admissionNumber + DDMMYYYY(dob))` — zero-padded, e.g., admission `530`, dob `2003-10-03` → password = `53003102003`
+- **v3.5 CR-13:** When admin updates `dob` on a student record, `users.passwordhash` MUST be re-computed as `bcrypt(admissionNumber + DDMMYYYY(newDob))` in the same transaction (Reset Login)
 
 ### Soft Delete Policy (v3.1, unchanged)
 
-- All `DELETE` operations MUST set `deletedat = NOW()` instead of removing rows — applies to: users, batches, subjects, classes, students, timeslots
+- All DELETE operations MUST set `deletedat = NOW()` instead of removing rows — applies to: users, batches, subjects, classes, students, timeslots
 - All read queries MUST include `WHERE deletedat IS NULL` filter
 - Hard delete ONLY via manual DB admin action
-- Attendance records are **NOT** soft-deleted — immutable audit trail
-- Features, tenantfeatures, tenants, superadmins, schoolperiods are **NOT** soft-deleted
+- Attendance records are NOT soft-deleted — immutable audit trail
+- Features, tenantfeatures, tenants, superadmins, schoolperiods are NOT soft-deleted
 
 ---
 
 ## 2.1 Transactions, Concurrency, Idempotency
 
-**Transaction boundaries:**
+### Transaction Boundaries
 
+| Workflow | Tables Touched | Commit/Rollback Condition |
+|---|---|---|
+| Create tenant (CR-06) | tenants, schoolperiods ×8, users | All-or-nothing — any failure = full rollback |
+| **Create student (CR-13)** | **users, students** | **All-or-nothing — user insert failure = full rollback, no orphaned student** |
+| Record class attendance | attendancerecords | Per-student insert — partial failure returns which students failed |
+| Soft delete user | users, students (userid nullify) | Both in single transaction |
+| Update student dob | students, users (passwordhash) | Both in single transaction |
 
-| Workflow | Tables touched | Commit/rollback condition |
-| :-- | :-- | :-- |
-| Create tenant (CR-06) | `tenants`, `schoolperiods` (×8), `users` | All-or-nothing; any failure → full rollback |
-| Record class attendance | `attendancerecords` | Per-student insert; partial failure returns which students failed |
-| Soft delete user | `users`, `students` (user_id nullify) | Both in single transaction |
-
-**Concurrency strategy:**
+### Concurrency Strategy
 
 - No optimistic locking required at MVP scale (10 RPS)
 - Unique indexes enforce slot-level timetable conflicts at DB layer
 - Attendance unique constraint `(studentid, timeslotid, date)` prevents double-recording at DB layer
+- `UNIQUE(tenantid, admission_number)` on students prevents duplicate admission numbers
 
-**Idempotency:**
+### Idempotency
 
 - No `Idempotency-Key` header in MVP
-- Attendance recording is idempotent by DB unique constraint — duplicate → 409
+- Attendance recording is idempotent by DB unique constraint — duplicate → `409`
+- Student creation is NOT idempotent — duplicate admission number → `409 ADMISSIONNUMBERCONFLICT`
 
 ---
 
@@ -579,12 +601,9 @@ CREATE INDEX idx_tenantfeatures_enabled  ON tenantfeatures(tenantid, enabled);
 **Request Content-Type:** `application/json`
 **Response Content-Type:** `application/json`
 
----
-
-### JWT Payload Shapes (v3.4)
+### JWT Payload Shapes (v3.4, unchanged)
 
 **Tenant user (Teacher / Admin / Student):**
-
 ```json
 {
   "userId": "U123",
@@ -594,23 +613,14 @@ CREATE INDEX idx_tenantfeatures_enabled  ON tenantfeatures(tenantid, enabled);
   "exp": 1234567890
 }
 ```
-
 - `activeRole` defaults to first element of `roles` on initial login
 - Updated via `POST /api/auth/switch-role`
-- `activeRole` enum: `["Teacher", "Admin", "Student"]`
+- `activeRole` enum: `Teacher | Admin | Student`
 
 **SuperAdmin:**
-
 ```json
-{
-  "superAdminId": "SA001",
-  "role": "SuperAdmin",
-  "exp": 1234567890
-}
+{ "superAdminId": "SA001", "role": "SuperAdmin", "exp": 1234567890 }
 ```
-
-
----
 
 ### Global Error Response Format (LOCKED)
 
@@ -621,17 +631,14 @@ CREATE INDEX idx_tenantfeatures_enabled  ON tenantfeatures(tenantid, enabled);
     "message": "Human-readable error message",
     "details": {}
   },
-  "timestamp": "2026-03-02T07:00:00Z"
+  "timestamp": "2026-03-03T07:00:00Z"
 }
 ```
-
-
----
 
 ### Common HTTP Status Codes
 
 | Code | Meaning |
-| :-- | :-- |
+|---|---|
 | 200 | Success (GET, PUT, bulk DELETE) |
 | 201 | Created (POST) |
 | 204 | No Content (single DELETE) |
@@ -642,136 +649,108 @@ CREATE INDEX idx_tenantfeatures_enabled  ON tenantfeatures(tenantid, enabled);
 | 409 | Conflict — duplicate entry, referential integrity violation |
 | 500 | Internal Server Error |
 
-
----
-
 ### 3.1 OpenAPI Contract Artifact (REQUIRED, LOCKED)
 
 - **File name:** `openapi.yaml`
-- **Repo path:** `docs/openapi.yaml`
+- **Repo path:** `./docs/openapi.yaml`
 - **OpenAPI version:** 3.1.0
-- **API version identifier:** `3.4.0` (bumped from 3.3.0)
+- **API version identifier:** `3.5.0` (bumped from 3.4.0)
 
 **Consistency rule (hard):** Endpoint list + schemas + status codes in this Freeze MUST match `openapi.yaml` exactly. If mismatch exists → Freeze is invalid until corrected.
 
 **Breaking change rules:**
-
 - Major version bump requires Freeze version bump
 - Minor version bump for additive changes only
 - Patch version bump for clarifications/fixes only
 
----
-
 ### 3.2 Example Payload Set (REQUIRED)
 
-At least 1 success + 1 error example per endpoint. Examples must match OpenAPI schemas exactly. Refer to `openapi.yaml` for complete examples.
-
-**Key examples for v3.4:**
-
-`POST /api/super-admin/tenants` — success:
-
+**POST /api/students — success (v3.5)**
 ```json
+Request:
+{ "name": "Ravi Kumar", "classId": "C001", "batchId": "B001", "admissionNumber": "530", "dob": "2003-10-03" }
+
+Response 201:
 {
-  "id": "T002", "name": "New School", "slug": "newschool",
-  "admin": { "name": "School Admin", "email": "admin@newschool.com", "password": "securepass1" }
-}
-→ 201
-{
-  "tenant": { "id": "T002", "name": "New School", "slug": "newschool", "status": "active", "deactivatedAt": null, "createdAt": "2026-03-02T07:00:00Z" },
-  "admin": { "id": "U001", "name": "School Admin", "email": "admin@newschool.com", "roles": ["Admin"] }
-}
-```
-
-`POST /api/super-admin/tenants` — error (missing admin block):
-
-```json
-→ 400 { "error": { "code": "VALIDATION_ERROR", "message": "admin block is required", "details": {}, "timestamp": "2026-03-02T07:00:00Z" } }
-```
-
-`PUT /api/super-admin/tenants/{tenantId}/reactivate` — success:
-
-```json
-→ 200 { "tenant": { "id": "T001", "status": "active", "deactivatedAt": null } }
-```
-
-`PUT /api/students/{studentId}/link-account` — success:
-
-```json
-{ "userId": "U456" }
-→ 200 { "student": { "id": "S001", "name": "Alice Smith", "classId": "C001", "batchId": "B001", "userId": "U456" } }
-```
-
-`PUT /api/attendance/{recordId}` — success:
-
-```json
-{ "status": "Present" }
-→ 200
-{
-  "record": {
-    "id": "AR001", "date": "2026-03-01",
-    "originalStatus": "Absent", "status": "Present",
-    "correctedBy": "U123", "correctedAt": "2026-03-02T07:30:00Z",
-    "timeSlot": { "id": "TS001", "subjectName": "Mathematics", "periodNumber": 3, "dayOfWeek": "Monday" }
+  "student": {
+    "id": "S001", "name": "Ravi Kumar", "classId": "C001", "className": "Grade 10A",
+    "batchId": "B001", "batchName": "2025-26",
+    "admissionNumber": "530", "dob": "2003-10-03",
+    "loginId": "530@greenvalley.local", "userId": "U999"
   }
 }
 ```
 
-`PUT /api/users/{id}/roles` — last admin error:
-
+**POST /api/students — error: duplicate admission number**
 ```json
-→ 403 { "error": { "code": "LAST_ADMIN", "message": "Cannot remove Admin role: you are the last admin of this tenant", "timestamp": "2026-03-02T07:00:00Z" } }
+Response 409:
+{ "error": { "code": "ADMISSIONNUMBERCONFLICT", "message": "Admission number 530 already exists for this school", "details": {} }, "timestamp": "2026-03-03T07:00:00Z" }
 ```
 
+**POST /api/users — error: Student role rejected**
+```json
+Response 400:
+{ "error": { "code": "INVALIDROLE", "message": "Student accounts must be created via the Students page", "details": {} }, "timestamp": "2026-03-03T07:00:00Z" }
+```
 
----
+**GET /api/users — success (Student-role users excluded)**
+```json
+Response 200:
+{ "users": [{ "id": "U123", "name": "John Doe", "email": "john@school1.com", "roles": ["Teacher"] }] }
+```
+
+**PUT /api/users/:id/roles — self-edit success (Admin adds Teacher to self)**
+```json
+Request: { "roles": ["Admin", "Teacher"] }
+Response 200: { "user": { "id": "U123", "name": "John Doe", "email": "john@school1.com", "roles": ["Admin", "Teacher"] } }
+```
+
+**PUT /api/users/:id/roles — LASTADMIN error**
+```json
+Response 403:
+{ "error": { "code": "LASTADMIN", "message": "Cannot remove Admin role — you are the last admin of this tenant", "details": {} }, "timestamp": "2026-03-03T07:00:00Z" }
+```
+
+*(All v3.4 examples for other endpoints remain valid and unchanged — refer to openapi.yaml v3.5.0)*
 
 ### 3.3 Mock Server (REQUIRED)
 
-**Tool:** Prism (serves mocks directly from `openapi.yaml`, no extra code)
+**Tool:** Prism (serves mocks directly from `openapi.yaml` — no extra code)
 
 **Install (one-time):**
-
 ```bash
 npm install -g @stoplight/prism-cli
 ```
 
 **Run command (LOCKED):**
-
 ```bash
 prism mock ./docs/openapi.yaml --port 4010
 ```
 
-File path contract: `openapi.yaml` MUST live at `./docs/openapi.yaml` in the repo root. This command is the only allowed mock server invocation.
+**File path contract:** `openapi.yaml` MUST live at `./docs/openapi.yaml` in the repo root.
 
 **Frontend usage:**
-
 - Base URL for mocks: `http://localhost:4010/api`
-- Set `VITE_API_BASE_URL=http://localhost:4010/api` or equivalent env var
-
-**Failure simulation via `Prefer` header:**
-
+- Set `VITE_API_BASE_URL=http://localhost:4010/api`
 
 | Scenario | Header | Endpoint |
-| :-- | :-- | :-- |
+|---|---|---|
 | Missing/invalid token | `Prefer: code=401` | Any protected endpoint |
 | Inactive tenant login | `Prefer: code=403` | `POST /api/auth/login` |
 | Period not configured | `Prefer: code=400` | `POST /api/timetable` |
 | Duplicate email on create user | `Prefer: code=409` | `POST /api/users` |
 | Student batch mismatch | `Prefer: code=400` | `POST /api/students` |
-| Resource not found | `Prefer: code=404` | Any `/{id}` endpoint |
-| Last admin guard | `Prefer: code=403` | `PUT /api/users/{id}/roles` |
-| User already linked | `Prefer: code=409` | `PUT /api/students/{id}/link-account` |
-| Same status correction | `Prefer: code=400` | `PUT /api/attendance/{id}` |
-
-
----
+| Duplicate admission number | `Prefer: code=409` | `POST /api/students` |
+| Student role in POST users | `Prefer: code=400` | `POST /api/users` |
+| Resource not found | `Prefer: code=404` | Any `:id` endpoint |
+| Last admin guard | `Prefer: code=403` | `PUT /api/users/:id/roles` |
+| Same status correction | `Prefer: code=400` | `PUT /api/attendance/:id` |
 
 ### 3.4 Contract Enforcement (REQUIRED)
 
 **Provider contract testing approach:** OpenAPI-driven contract tests (Dredd or equivalent)
 
 **CI Gate (locked):**
-
 - Runs on: PR to `main` branch
 - Must fail build if: OpenAPI mismatch OR contract tests fail OR examples fail schema validation
 - Artifacts published: `openapi.yaml` versioned file
@@ -780,804 +759,409 @@ File path contract: `openapi.yaml` MUST live at `./docs/openapi.yaml` in the rep
 
 ## 3.5 Endpoints (MVP only — ALL listed)
 
-
----
-
 ### AUTHENTICATION ENDPOINTS
 
-#### `POST /api/auth/login`
-
+#### POST /api/auth/login
 - **Purpose:** Authenticate tenant user and establish session
 - **Auth required:** No
 - **Request body:**
-
-```json
-{ "email": "string (required)", "password": "string (required, min 8)", "tenantSlug": "string (required, 1–100 chars)" }
-```
-
-- **Response 200:**
-
-```json
-{ "token": "eyJ...", "user": { "id": "U123", "tenantId": "T001", "name": "John Doe", "email": "teacher@school1.com", "roles": ["Teacher"], "activeRole": "Teacher" } }
-```
-
+  - `email` string required — for Students this is the `loginId` (e.g., `530@greenvalley.local`)
+  - `password` string required, min 8 — for Students: `admissionNumber + DDMMYYYY(dob)`
+  - `tenantSlug` string required, 1–100 chars
+- **Response 200:** `{ token, user: { id, tenantId, name, email, roles, activeRole } }`
 - **Errors:**
-    - `400` — email, password, and tenantSlug are required
-    - `401` — Invalid credentials
-    - `403` — `TENANT_INACTIVE` — Tenant is inactive
-    - `404` — Tenant does not exist
+  - `400` email, password, and tenantSlug are required
+  - `401` Invalid credentials
+  - `403 TENANTINACTIVE` Tenant is inactive
+  - `404` Tenant does not exist
 
----
-
-#### `POST /api/auth/logout`
-
+#### POST /api/auth/logout
 - **Purpose:** Invalidate current session
 - **Auth required:** Yes (any tenant role)
 - **Request body:** Empty
 - **Response:** `204 No Content`
 
----
-
-#### `POST /api/auth/switch-role`
-
+#### POST /api/auth/switch-role
 - **Purpose:** Switch active role context for multi-role users. Issues new JWT with updated `activeRole`.
 - **Auth required:** Yes (any tenant user)
-- **Request body:**
-
-```json
-{ "role": "Teacher | Admin | Student (required, must exist in caller's roles array)" }
-```
-
-- **Response 200:**
-
-```json
-{ "token": "eyJ...", "user": { "id": "U123", "roles": ["Admin","Teacher"], "activeRole": "Teacher" } }
-```
-
+- **Request body:** `{ role: "Teacher" | "Admin" | "Student" }` — must exist in caller's roles array
+- **Response 200:** `{ token, user: { id, roles, activeRole } }`
 - **Errors:**
-    - `400` — `ROLE_NOT_ASSIGNED` — Requested role is not assigned to this user
-    - `403` — `SINGLE_ROLE_USER` — User has only one role, switching not applicable
+  - `400 ROLENOTASSIGNED` Requested role is not assigned to this user
+  - `403 SINGLEROLEUSER` User has only one role, switching not applicable
 
 ---
 
-### SUPER ADMIN AUTH ENDPOINTS
+### SUPER ADMIN ENDPOINTS
 
-> All routes under `/api/super-admin` require `superAdminAuthMiddleware`. They do NOT use `tenantContextMiddleware`.
+*All routes under `/api/super-admin` require `superAdminAuthMiddleware`. They do NOT use `tenantContextMiddleware`.*
 
-#### `POST /api/super-admin/auth/login`
-
-- **Purpose:** Authenticate SuperAdmin (no tenantSlug required)
+#### POST /api/super-admin/auth/login
 - **Auth required:** No
-- **Request body:**
+- **Request body:** `{ email, password }`
+- **Response 200:** `{ token, superAdmin: { id, name, email } }`
 
-```json
-{ "email": "string (required)", "password": "string (required, min 8)" }
-```
+#### GET /api/super-admin/tenants
+- **Auth required:** Yes (SuperAdmin)
+- **Query params:** `status` (active|inactive), `search`
+- **Response 200:** `{ tenants: [...] }`
 
-- **Response 200:**
+#### POST /api/super-admin/tenants
+- **Auth required:** Yes (SuperAdmin)
+- **Request body:** `{ id, name, slug, admin: { name, email, password } }`
+- **Response 201:** `{ tenant, admin: { id, name, email, roles } }`
+- **Errors:** `400 VALIDATIONERROR`, `409 CONFLICT`, `409 ADMINEMAILTAKEN`
 
-```json
-{ "token": "eyJ...", "superAdmin": { "id": "SA001", "name": "Platform Admin", "email": "admin@platform.com" } }
-```
+#### PUT /api/super-admin/tenants/:tenantId
+- **Auth required:** Yes (SuperAdmin)
+- **Request body:** `{ name?, slug? }` (at least one)
+- **Response 200:** `{ tenant }`
 
-- **Errors:**
-    - `400` — email and password are required
-    - `401` — Invalid credentials
+#### PUT /api/super-admin/tenants/:tenantId/deactivate
+- **Response 200:** `{ tenant }` | `409 ALREADYINACTIVE`
 
----
+#### PUT /api/super-admin/tenants/:tenantId/reactivate
+- **Response 200:** `{ tenant }` | `409 ALREADYACTIVE`
 
-### SUPER ADMIN TENANT MANAGEMENT ENDPOINTS
+#### GET /api/super-admin/tenants/:tenantId/features
+- **Response 200:** `{ features: [...] }`
 
-#### `GET /api/super-admin/tenants`
-
-- **Purpose:** List all tenants
-- **Auth required:** SuperAdmin only
-- **Query params:**
-    - `status` — String, optional, enum: `active | inactive`
-    - `search` — String, optional, searches `name` and `slug`
-- **Response 200:**
-
-```json
-{ "tenants": [{ "id": "T001", "name": "Sunrise School", "slug": "sunrise", "status": "active", "deactivatedAt": null, "createdAt": "2026-01-01T00:00:00Z" }] }
-```
-
+#### PUT /api/super-admin/tenants/:tenantId/features/:featureKey
+- **Request body:** `{ enabled: boolean }`
+- **Response 200:** `{ feature }` | `400 FEATUREDEPENDENCY`
 
 ---
 
-#### `POST /api/super-admin/tenants` *(v3.4 BREAKING — admin block required)*
+### FEATURE MANAGEMENT ENDPOINTS
 
-- **Purpose:** Create new tenant; atomically seeds 8 default periods + first Admin user
-- **Auth required:** SuperAdmin only
-- **Request body:**
-
-```json
-{
-  "id": "string (required, 1–50 chars, alphanumeric-dash, unique)",
-  "name": "string (required, 1–255 chars)",
-  "slug": "string (required, 1–100 chars, alphanumeric-dash, unique)",
-  "admin": {
-    "name": "string (required)",
-    "email": "string (required, valid email)",
-    "password": "string (required, min 8 chars)"
-  }
-}
-```
-
-- **Response 201:**
-
-```json
-{
-  "tenant": { "id": "T002", "name": "New School", "slug": "newschool", "status": "active", "deactivatedAt": null, "createdAt": "2026-03-02T07:00:00Z" },
-  "admin": { "id": "U001", "name": "School Admin", "email": "admin@newschool.com", "roles": ["Admin"] }
-}
-```
-
-- **Errors:**
-    - `400` — `admin` block missing or invalid (name/email/password)
-    - `409` — Tenant `id` or `slug` already exists
-    - `409` — `ADMIN_EMAIL_TAKEN` — admin.email already exists for this tenant
-
-**Transaction (atomic — all or nothing):**
-
-```sql
-BEGIN;
-  INSERT INTO tenants (id, name, slug, status) VALUES (...);
-  INSERT INTO schoolperiods ... (8 rows, same defaults as v3.3);
-  INSERT INTO users (id, tenantid, name, email, passwordhash, roles)
-    VALUES (genId(), tenantId, admin.name, admin.email, bcrypt(admin.password), '["Admin"]');
-COMMIT;
-```
-
-
----
-
-#### `PUT /api/super-admin/tenants/{tenantId}`
-
-- **Purpose:** Update tenant name or slug
-- **Auth required:** SuperAdmin only
-- **Request body:**
-
-```json
-{ "name": "string (optional)", "slug": "string (optional)" }
-```
-
-- **Response 200:** `{ "tenant": { ... } }`
-- **Errors:**
-    - `404` — Tenant does not exist
-    - `409` — Slug already taken
-
----
-
-#### `PUT /api/super-admin/tenants/{tenantId}/deactivate`
-
-- **Purpose:** Deactivate a tenant. Sets `status = 'inactive'`. All tenant user logins return 403 after this.
-- **Auth required:** SuperAdmin only
-- **Request body:** Empty
-- **Response 200:**
-
-```json
-{ "tenant": { "id": "T001", "status": "inactive", "deactivatedAt": "2026-03-02T00:00:00Z" } }
-```
-
-- **Errors:**
-    - `404` — Tenant does not exist
-    - `409` — `ALREADY_INACTIVE` — Tenant is already inactive
-
----
-
-#### `PUT /api/super-admin/tenants/{tenantId}/reactivate` *(v3.4 NEW)*
-
-- **Purpose:** Reactivate an inactive tenant. All tenant users regain API access immediately.
-- **Auth required:** SuperAdmin only
-- **Request body:** Empty
-- **Response 200:**
-
-```json
-{ "tenant": { "id": "T001", "status": "active", "deactivatedAt": null } }
-```
-
-- **Errors:**
-    - `404` — Tenant does not exist
-    - `409` — `ALREADY_ACTIVE` — Tenant is already active
-
----
-
-#### `GET /api/super-admin/tenants/{tenantId}/features`
-
-- **Purpose:** Get feature flags for a specific tenant
-- **Auth required:** SuperAdmin only
-- **Response 200:**
-
-```json
-{ "features": [{ "key": "timetable", "name": "Timetable Management", "enabled": true, "enabledAt": "2026-01-01T00:00:00Z" }, { "key": "attendance", "name": "Attendance Tracking", "enabled": false, "enabledAt": null }] }
-```
-
-- **Errors:** `404` — Tenant does not exist
-
----
-
-#### `PUT /api/super-admin/tenants/{tenantId}/features/{featureKey}`
-
-- **Purpose:** Enable or disable a feature for a specific tenant
-- **Auth required:** SuperAdmin only
-- **Request body:** `{ "enabled": boolean (required) }`
-- **Validation:** If `featureKey = attendance` AND `enabled = true`, verify `timetable` is enabled for this tenant first
-- **Response 200:** `{ "feature": { "key": "attendance", "enabled": true, "enabledAt": "2026-03-02T06:00:00Z" } }`
-- **Errors:**
-    - `400` — `FEATURE_DEPENDENCY` — Attendance module requires Timetable to be enabled first
-    - `404` — Tenant or feature does not exist
-
----
-
-### FEATURE MANAGEMENT ENDPOINTS (Tenant-level, read-only for Admin)
-
-#### `GET /api/features`
-
-- **Purpose:** List feature flags for current tenant
+#### GET /api/features
 - **Auth required:** Yes (Admin only, read-only)
-- **Response 200:** `{ "features": [{ "key": "timetable", "name": "Timetable Management", "enabled": true, "enabledAt": "..." }] }`
-
----
-
-#### `PUT /api/features/{featureKey}` *(REMOVED in v3.2 — returns 403 for all callers)*
-
-- **Response:** `403 FORBIDDEN` — Feature management is restricted to platform administrators
+- **Response 200:** `{ features: [...] }`
 
 ---
 
 ### SCHOOL PERIODS ENDPOINTS (v3.3, unchanged)
 
-#### `GET /api/school-periods`
+#### GET /api/school-periods
+- **Auth required:** Yes (Teacher, Admin, Student — read-only)
+- **Response 200:** `{ periods: [...] }` | `403 FEATUREDISABLED`
 
-- **Purpose:** List all periods configured for current tenant
-- **Auth required:** Yes (Teacher read-only, Admin read-only, **Student read-only** v3.4)
-- **Response 200:** `{ "periods": [{ "id": "SP001", "periodNumber": 1, "label": "Period 1", "startTime": "08:00", "endTime": "08:45" }] }`
-- **Errors:** `403` — Timetable feature not enabled
-
----
-
-#### `POST /api/school-periods`
-
-- **Purpose:** Create a new period for current tenant
+#### POST /api/school-periods
 - **Auth required:** Yes (Admin only)
-- **Request body:**
+- **Request body:** `{ periodNumber, label?, startTime, endTime }`
+- **Response 201:** `{ period }` | `400 PERIODTIMEINVALID` | `409 CONFLICT`
 
-```json
-{ "periodNumber": 9, "label": "Period 9 (optional)", "startTime": "15:30 (required, HH:MM)", "endTime": "16:15 (required, HH:MM)" }
-```
-
-- **Response 201:** `{ "period": { "id": "SP009", "periodNumber": 9, "label": "Period 9", "startTime": "15:30", "endTime": "16:15" } }`
-- **Errors:**
-    - `400` — `PERIOD_TIME_INVALID` — startTime ≥ endTime
-    - `403` — Timetable feature not enabled
-    - `409` — periodNumber already exists for tenant
-
----
-
-#### `PUT /api/school-periods/{id}`
-
-- **Purpose:** Update period label or times (`periodNumber` is immutable)
+#### PUT /api/school-periods/:id
 - **Auth required:** Yes (Admin only)
-- **Request body:** At least one of: `label`, `startTime`, `endTime`
-- **Response 200:** `{ "period": { ... } }`
-- **Errors:**
-    - `400` — `PERIOD_TIME_INVALID`
-    - `403` — Timetable feature not enabled
-    - `404` — Period not found
+- **Request body:** At least one of `label`, `startTime`, `endTime`
+- **Response 200:** `{ period }` | `400 PERIODTIMEINVALID` | `404`
 
----
-
-#### `DELETE /api/school-periods/{id}`
-
-- **Purpose:** Delete a period (blocked if active timeslots reference it)
+#### DELETE /api/school-periods/:id
 - **Auth required:** Yes (Admin only)
-- **Response:** `204 No Content`
-- **Errors:**
-    - `404` — Period not found
-    - `409` — `HAS_REFERENCES` — Active timeslots reference this period
+- **Response 204** | `409 HASREFERENCES`
 
 ---
 
 ### TIMETABLE ENDPOINTS
 
-#### `GET /api/timetable`
+#### GET /api/timetable
+- **Auth required:** Yes (Teacher, Admin, Student — read-only)
+- **Query params:** `date`, `dayOfWeek`, `teacherId`, `classId`, `status` (Active|All, default Active)
+- **Response 200:** `{ timetable: [...] }` — `startTime`, `endTime`, `label` derived via JOIN from `schoolperiods`
+- **Errors:** `403 FEATUREDISABLED`
 
-- **Purpose:** Query timetable
-- **Auth required:** Yes (Teacher read-only, Admin read-only, **Student read-only** v3.4)
-- **Query params:** `date`, `dayOfWeek`, `teacherId`, `classId`, `status (Active|All, default Active)`
+#### POST /api/timetable
+- **Auth required:** Yes (Admin only)
+- **Request body:** `{ classId, subjectId, teacherId, dayOfWeek, periodNumber, effectiveFrom }`
+  - `startTime`/`endTime` NOT accepted — derived from `schoolperiods` at read time
+- **Response 201:** `{ timeSlot }` with `startTime`/`endTime`/`label` from `schoolperiods` JOIN
+- **Errors:** `400 PERIODNOTCONFIGURED`, `400 INVALIDTEACHER`, `403`, `409 CONFLICT`
+
+#### PUT /api/timetable/:timeSlotId/end
+- **Auth required:** Yes (Admin only)
+- **Request body:** `{ effectiveTo: "YYYY-MM-DD" }`
+- **Response 200:** `{ timeSlot: { id, effectiveTo } }` | `404`
+
+---
+
+### USER MANAGEMENT ENDPOINTS
+
+#### GET /api/users
+- **Auth required:** Yes (Admin only)
+- **Query params:** `role` (Teacher|Admin), `search`
+- **Response 200:** `{ users: [...] }`
+- **v3.5 CR-13:** Student-role users (`roles @> '["Student"]'`) are EXCLUDED from all results. Role filter enum is `Teacher | Admin` only.
+
+#### POST /api/users
+- **Auth required:** Yes (Admin only)
+- **Request body:** `{ name, email, password (min 8), roles: ["Teacher"|"Admin"] }`
+- **v3.5 CR-13:** `roles` array must NOT contain `Student` → `400 INVALIDROLE`
+- **Response 201:** `{ user }` | `409 CONFLICT`
+
+#### DELETE /api/users/bulk
+- **Auth required:** Yes (Admin only)
+- **Request body:** `{ ids: string[] }`
+- **Response 200:** `{ deleted: [...], failed: [...] }`
+
+#### DELETE /api/users/:id
+- **Auth required:** Yes (Admin only)
+- **Response 204** | `409 HASREFERENCES`
+
+#### PUT /api/users/:id/roles
+- **Auth required:** Yes (Admin only)
+- **Request body:** `{ roles: ["Teacher"|"Admin"|"Student"] }` (min 1, unique)
+- **v3.5 CR-12:** Admin MAY target self. `SELFROLECHANGEFORBIDDEN` removed. `LASTADMIN` guard remains.
+- **Response 200:** `{ user }` | `403 LASTADMIN` | `404`
+
+---
+
+### STUDENT MANAGEMENT ENDPOINTS
+
+#### GET /api/students
+- **Auth required:** Yes (Admin only for list; Teacher scoped to own classes)
+- **Query params:** `classId`, `batchId`, `search`, `limit` (default 50), `offset` (default 0)
 - **Response 200:**
-
 ```json
-{ "timetable": [{ "id": "TS001", "classId": "C001", "className": "Grade 10A", "subjectId": "SUB001", "subjectName": "Mathematics", "teacherId": "U123", "teacherName": "John Doe", "dayOfWeek": "Monday", "periodNumber": 3, "label": "Period 3", "startTime": "09:40", "endTime": "10:25", "effectiveFrom": "2026-01-01", "effectiveTo": null }] }
+{
+  "students": [{
+    "id": "S001", "name": "Ravi Kumar",
+    "classId": "C001", "className": "Grade 10A",
+    "batchId": "B001", "batchName": "2025-26",
+    "admissionNumber": "530", "dob": "2003-10-03",
+    "loginId": "530@greenvalley.local",
+    "userId": "U999"
+  }],
+  "pagination": { "limit": 50, "offset": 0, "total": 120 }
+}
 ```
 
-- **Errors:** `403` — Timetable feature not enabled
-
-> `startTime`, `endTime`, `label` are derived via JOIN from `schoolperiods` at query time.
-
----
-
-#### `POST /api/timetable`
-
-- **Purpose:** Create timetable entry
+#### POST /api/students
 - **Auth required:** Yes (Admin only)
-- **Request body (v3.3 — startTime/endTime removed):**
-
-```json
-{ "classId": "string", "subjectId": "string", "teacherId": "string", "dayOfWeek": "Monday...Sunday", "periodNumber": 3, "effectiveFrom": "2026-03-01" }
-```
-
-- **Response 201:** `{ "timeSlot": { ...with startTime/endTime/label from schoolperiods JOIN... } }`
+- **Request body (v3.5 CR-13):**
+  - `name` string required, max 255
+  - `classId` string required
+  - `batchId` string required — must match `class.batchId`
+  - `admissionNumber` string required — unique per tenant
+  - `dob` string required — format `YYYY-MM-DD`
+- **Atomically creates:**
+  1. `users` row: `email = {admissionNumber}@{tenantSlug}.local`, `passwordhash = bcrypt(admissionNumber + DDMMYYYY(dob))`, `roles = ["Student"]`, `name = student.name`
+  2. `students` row: with `userid` set to the newly created user
+- **Response 201:** `{ student }` including `admissionNumber`, `dob`, `loginId`, `userId`
 - **Errors:**
-    - `400` — Validation failure / teacher lacks Teacher role / `PERIOD_NOT_CONFIGURED`
-    - `403` — Timetable feature not enabled
-    - `409` — Slot already occupied for this class/day/period
+  - `400` Validation failure or `batchId`/`classId` mismatch
+  - `409 ADMISSIONNUMBERCONFLICT` Admission number already active in tenant
 
----
-
-#### `PUT /api/timetable/{timeSlotId}/end`
-
-- **Purpose:** End a timetable assignment
+#### PUT /api/students/:id
 - **Auth required:** Yes (Admin only)
-- **Request body:** `{ "effectiveTo": "2026-03-31" }`
-- **Response 200:** `{ "timeSlot": { "id": "TS001", "effectiveTo": "2026-03-31" } }`
-- **Errors:** `404` — TimeSlot not found
+- **Request body:** `{ name?, classId?, batchId?, admissionNumber?, dob? }`
+- **v3.5 CR-13:** If `dob` is updated → `users.passwordhash` re-computed as `bcrypt(admissionNumber + DDMMYYYY(newDob))` in same transaction (Reset Login)
+- **Response 200:** `{ student }` | `409 ADMISSIONNUMBERCONFLICT`
 
----
+#### DELETE /api/students/bulk
+- **Auth required:** Yes (Admin only)
+- **Request body:** `{ ids: string[] }`
+- **Response 200:** `{ deleted: [...], failed: [...] }`
 
-### STANDARD CRUD ENDPOINTS (Users, Classes, Batches, Subjects, Students)
+#### DELETE /api/students/:id
+- **Auth required:** Yes (Admin only)
+- **Response 204** | `409 HASREFERENCES` (has attendance records)
 
-All follow standard pattern:
-
-- `GET /api/{resource}` — List (excludes deleted)
-- `POST /api/{resource}` — Create
-- `PUT /api/{resource}/{id}` — Update
-- `DELETE /api/{resource}/{id}` — Soft delete (204)
-- `DELETE /api/{resource}/bulk` — Bulk soft delete (200, partial result)
-- Auth: Admin only for writes; Teacher read-only (varies by resource)
-
----
-
-#### `GET /api/users`
-
-- **Auth:** Yes (Admin only)
-- **Query params:** `role (Teacher|Admin|Student)`, `search`
-- **Response 200:** `{ "users": [{ "id": "U123", "name": "John Doe", "email": "john@school1.com", "roles": ["Teacher"] }] }`
-
-
-#### `POST /api/users`
-
-- **Auth:** Yes (Admin only)
-- **Request body:**
-
-```json
-{ "name": "string", "email": "string", "password": "string (min 8)", "roles": ["Teacher|Admin|Student (min 1)"] }
-```
-
-- **Response 201:** `{ "user": { ... } }`
-- **Errors:** `400` validation, `409` duplicate email
-
-
-#### `PUT /api/users/{id}/roles` *(v3.4 MODIFIED — SELFROLECHANGEFORBIDDEN removed)*
-
-- **Auth:** Yes (Admin only)
-- **Request body:** `{ "roles": ["Teacher","Admin","Student"] (min 1, unique) }`
-- **Response 200:** `{ "user": { "id": "U124", "name": "...", "roles": ["Teacher","Admin"] } }`
-- **Errors:**
-    - `400` — Invalid roles array
-    - `403` — `LAST_ADMIN` — Cannot remove own Admin role: last admin in tenant *(only when caller targets self)*
-    - `404` — User not found
-
-
-#### `DELETE /api/users/{id}` — Soft delete, `204`
-
-#### `DELETE /api/users/bulk` — Bulk soft delete, `200` partial result
-
-
----
-
-#### `GET /api/students`
-
-- **Auth:** Yes (Admin only for list; Teacher scoped to own classes)
-- **Query params:** `classId`, `batchId`, `search`, `limit (default 50)`, `offset (default 0)`
-- **Response 200:** `{ "students": [...], "pagination": { "limit": 50, "offset": 0, "total": 120 } }`
-
-**`Student` schema (v3.4 — adds `userId`):**
-
-```json
-{ "id": "S001", "name": "Alice Smith", "classId": "C001", "className": "Grade 10A", "batchId": "B001", "batchName": "2025-26", "userId": "U456" }
-```
-
-
-#### `POST /api/students`
-
-- **Auth:** Yes (Admin only)
-- **Request body:** `{ "name": "string", "classId": "string", "batchId": "string" }`
-- **Errors:** `400` — batchId mismatch with class's batchId
-
-
-#### `PUT /api/students/{studentId}/link-account` *(v3.4 NEW)*
-
-- **Purpose:** Link or unlink a user account to a student enrollment record
-- **Auth:** Yes (Admin only)
-- **Request body:** `{ "userId": "U456" }` — pass `null` to unlink: `{ "userId": null }`
-- **Response 200:** `{ "student": { ...with userId field... } }`
-- **Errors:**
-    - `400` — `INVALID_USER` — userId not found OR user does not have `Student` in roles
-    - `404` — Student not found
-    - `409` — `USER_ALREADY_LINKED` — userId is already linked to a different student record
-
-
-#### `DELETE /api/students/{id}` — Soft delete, `204`
-
-#### `DELETE /api/students/bulk` — Bulk soft delete, `200` partial result
-
-
----
-
-#### Batches, Subjects, Classes — standard CRUD (unchanged from v3.3)
-
-All support: `GET`, `POST`, `PUT /{id}`, `DELETE /{id}` (soft), `DELETE /bulk`
-Auth: Admin for writes, Teacher read-only where applicable.
+#### PUT /api/students/:studentId/link-account ⚠️ DEPRECATED in v3.5
+- **Status:** Deprecated — backend retained for migration of pre-existing students only
+- **Frontend:** Removed from UI
+- **Auth required:** Yes (Admin only)
+- **Request body:** `{ userId: string | null }`
+- **Response 200:** `{ student }` | `400 INVALIDUSER` | `409 USERALREADYLINKED`
 
 ---
 
 ### ATTENDANCE ENDPOINTS
 
-#### `POST /api/attendance/record-class`
-
-- **Purpose:** Record attendance for entire class
-- **Auth required:** Yes (Teacher own classes; Admin all classes)
-- **Request body:**
-
-```json
-{
-  "timeSlotId": "string",
-  "date": "YYYY-MM-DD",
-  "defaultStatus": "Present|Absent|Late",
-  "exceptions": [{ "studentId": "string", "status": "Present|Absent|Late" }]
-}
-```
-
-- **Response 201:**
-
-```json
-{ "recorded": 30, "present": 28, "absent": 1, "late": 1, "date": "2026-03-01", "timeSlot": { "id": "TS001", "className": "Grade 10A", "subjectName": "Mathematics", "periodNumber": 1 } }
-```
-
-- **Errors:**
-    - `400` — Validation failure / future date / teacher not assigned to this slot
-    - `403` — Attendance feature not enabled / teacher not authorized
-    - `409` — Attendance already recorded for this class/date/timeslot
-
----
-
-#### `PUT /api/attendance/{recordId}` *(v3.4 NEW)*
-
-- **Purpose:** Correct an attendance record (audit-safe — original `status` never mutated)
-- **Auth required:** Yes (Teacher — own-class records only; Admin — any record in tenant)
-- **Request body:** `{ "status": "Present|Absent|Late" }`
-- **Response 200:**
-
-```json
-{
-  "record": {
-    "id": "AR001",
-    "date": "2026-03-01",
-    "originalStatus": "Absent",
-    "status": "Present",
-    "correctedBy": "U123",
-    "correctedAt": "2026-03-02T07:30:00Z",
-    "timeSlot": { "id": "TS001", "subjectName": "Mathematics", "periodNumber": 3, "dayOfWeek": "Monday" }
-  }
-}
-```
-
-- **Errors:**
-    - `400` — `FUTURE_DATE` — Record date is in the future
-    - `400` — `SAME_STATUS` — Correction status equals current effective status (`correctedstatus ?? status`)
-    - `403` — Teacher not assigned to this record's timeslot
-    - `404` — Record not found
-
----
-
-#### `GET /api/students/{studentId}/attendance`
-
-- **Purpose:** Get student attendance history
+#### GET /api/students/:studentId/attendance
 - **Auth required:**
-    - Admin: any student in tenant
-    - Teacher: students in own assigned classes only
-    - **Student (v3.4):** only where `students.user_id = req.user.userId` — else 403 `STUDENT_ACCESS_DENIED`
-- **Query params:** `from`, `to`, `limit (default 50)`, `offset (default 0)`
-- **Response 200:**
+  - Admin: any student in tenant
+  - Teacher: students in own assigned classes only
+  - Student: only where `students.userId = req.user.userId` → `403 STUDENTACCESSDENIED` otherwise
+- **Query params:** `from`, `to`, `limit` (default 50), `offset` (default 0)
+- **Response 200:** `{ student, records, summary, pagination }`
+  - Each record: `{ id, date, originalStatus, status (effective), correctedBy, correctedAt, timeSlot, recordedBy, recordedAt }`
+  - `status` = `correctedStatus ?? originalStatus`
 
-```json
-{
-  "student": { "id": "S001", "name": "Alice Smith", "className": "Grade 10A" },
-  "records": [{
-    "id": "AR001", "date": "2026-02-26",
-    "originalStatus": "Absent",
-    "status": "Present",
-    "correctedBy": "U123", "correctedAt": "2026-03-02T07:30:00Z",
-    "timeSlot": { "id": "TS001", "subjectName": "Mathematics", "periodNumber": 1, "dayOfWeek": "Monday" },
-    "recordedBy": "U123", "recordedAt": "2026-02-26T09:00:00Z"
-  }],
-  "summary": { "totalRecords": 120, "present": 110, "absent": 8, "late": 2, "attendanceRate": 91.67 },
-  "pagination": { "limit": 50, "offset": 0, "total": 120 }
-}
-```
+#### POST /api/attendance/record-class
+- **Auth required:** Yes (Teacher own classes, Admin all)
+- **Request body:** `{ timeSlotId, date, defaultStatus, exceptions: [{ studentId, status }] }`
+- **Response 201:** `{ recorded, present, absent, late, date, timeSlot }`
+- **Errors:** `400 FUTUREDATE`, `403 FEATUREDISABLED`, `409 CONFLICT`
 
-- **Errors:**
-    - `403` — Attendance feature not enabled / `STUDENT_ACCESS_DENIED`
-    - `404` — Student not found
+#### PUT /api/attendance/:recordId
+- **Auth required:** Yes (Teacher own-class, Admin any)
+- **Request body:** `{ status: "Present"|"Absent"|"Late" }`
+- **Response 200:** `{ record }` with `originalStatus` + effective `status`
+- **Errors:** `400 FUTUREDATE`, `400 SAMESTATUS`, `403`, `404`
 
-> `status` field in each record reflects the **effective** status (`correctedstatus ?? status`). `originalStatus` is always the raw recorded value.
-
----
-
-#### `GET /api/attendance/summary`
-
-- **Purpose:** Get aggregated attendance summary
-- **Auth required:** Yes (Teacher own classes; Admin all classes)
-- **Query params:** `classId`, `from (required)`, `to (required)`
-- **Response 200:**
-
-```json
-{
-  "class": { "id": "C001", "name": "Grade 10A", "studentCount": 30 },
-  "period": { "from": "2026-02-01", "to": "2026-02-28", "days": 28 },
-  "summary": { "totalRecords": 840, "present": 780, "absent": 50, "late": 10, "attendanceRate": 92.86 },
-  "byStudent": [{ "studentId": "S001", "studentName": "Alice Smith", "present": 26, "absent": 2, "late": 0, "attendanceRate": 92.86 }]
-}
-```
-
-- **Errors:**
-    - `400` — `from` and `to` are required
-    - `403` — Attendance feature not enabled
-
-> Summary values use **effective** status (corrected where applicable).
+#### GET /api/attendance/summary
+- **Auth required:** Yes (Admin only)
+- **Query params:** `classId`, `from` (required), `to` (required)
+- **Response 200:** `{ class, period, summary, byStudent }`
 
 ---
 
 ## 4. Critical Business Logic (Pseudocode only)
 
-### Flow: `createTenantWithAdmin` (CR-06)
+### Flow: createStudent (v3.5 CR-13 — replaces direct INSERT)
 
 ```
-FUNCTION createTenantWithAdmin(id, name, slug, admin)
-  BEGIN TRANSACTION
-    1. VALIDATE admin.name (non-empty), admin.email (valid email format),
-               admin.password (min 8 chars)
-       IF invalid → ROLLBACK → 400
+FUNCTION createStudent(name, classId, batchId, admissionNumber, dob, tenantId, tenantSlug)
 
-    2. INSERT INTO tenants (id, name, slug, status='active')
-       IF id or slug conflict → ROLLBACK → 409
-
-    3. INSERT INTO schoolperiods (8 default rows):
-       (tenantId, 1, 'Period 1', '08:00', '08:45')
-       (tenantId, 2, 'Period 2', '08:50', '09:35')
-       (tenantId, 3, 'Period 3', '09:40', '10:25')
-       (tenantId, 4, 'Period 4', '10:30', '11:15')
-       (tenantId, 5, 'Period 5', '11:20', '12:05')
-       (tenantId, 6, 'Period 6', '13:00', '13:45')
-       (tenantId, 7, 'Period 7', '13:50', '14:35')
-       (tenantId, 8, 'Period 8', '14:40', '15:25')
-
-    4. newUserId = genId()
-       INSERT INTO users (id=newUserId, tenantId=id, name=admin.name,
-                         email=admin.email,
-                         passwordHash=bcrypt(admin.password, BCRYPT_ROUNDS),
-                         roles='["Admin"]')
-       IF email conflict for tenantId → ROLLBACK → 409 ADMIN_EMAIL_TAKEN
-  COMMIT
-  RETURN 201 { tenant, admin: { id, name, email, roles: ["Admin"] } }
+1. VALIDATE all fields present; dob is valid DATE
+2. SELECT id FROM classes WHERE id = classId AND batchid = batchId AND tenantid = tenantId
+   IF not found → 400 CLASSBATCHMISMATCH
+3. SELECT id FROM students
+   WHERE tenantid = tenantId AND admission_number = admissionNumber AND deletedat IS NULL
+   IF found → 409 ADMISSIONNUMBERCONFLICT
+4. BEGIN TRANSACTION
+5.   dobDDMMYYYY = formatDate(dob, "DDMMYYYY")  // zero-padded, e.g. "03102003"
+     password = admissionNumber + dobDDMMYYYY     // e.g. "53003102003"
+     loginId  = admissionNumber + "@" + tenantSlug + ".local"
+     newUserId = genId()
+     INSERT INTO users (id, tenantid, name, email, passwordhash, roles)
+     VALUES (newUserId, tenantId, name, loginId, bcrypt(password), '["Student"]')
+     → ON CONFLICT (tenantid, email) WHERE deletedat IS NULL → 409 ADMISSIONNUMBERCONFLICT
+6.   newStudentId = genId()
+     INSERT INTO students (id, tenantid, name, classid, batchid, userid, admission_number, dob)
+     VALUES (newStudentId, tenantId, name, classId, batchId, newUserId, admissionNumber, dob)
+7. COMMIT
+8. SELECT student with JOIN className, batchName
+9. RETURN 201 { student: { ...fields, admissionNumber, dob, loginId, userId: newUserId } }
 ```
 
-
----
-
-### Flow: `reactivateTenant` (CR-07)
+### Flow: updateStudent (v3.5 — handles dob change = Reset Login)
 
 ```
-FUNCTION reactivateTenant(tenantId)
-  1. SELECT id, status FROM tenants WHERE id = tenantId
-     IF not found → 404
-     IF status = 'active' → 409 ALREADY_ACTIVE
-  2. UPDATE tenants SET status='active', deactivatedat=NULL WHERE id=tenantId
-  3. RETURN 200 tenant
+FUNCTION updateStudent(studentId, updates, tenantId, tenantSlug)
+
+1. SELECT student WHERE id = studentId AND tenantid = tenantId AND deletedat IS NULL
+   IF not found → 404
+2. IF updates.admissionNumber AND updates.admissionNumber != student.admissionNumber
+     CHECK uniqueness → 409 ADMISSIONNUMBERCONFLICT if conflict
+3. IF updates.dob OR updates.admissionNumber (either changes password derivation)
+     newAdmissionNumber = updates.admissionNumber ?? student.admissionNumber
+     newDob = updates.dob ?? student.dob
+     newDobDDMMYYYY = formatDate(newDob, "DDMMYYYY")
+     newPassword = newAdmissionNumber + newDobDDMMYYYY
+     newLoginId  = newAdmissionNumber + "@" + tenantSlug + ".local"
+     BEGIN TRANSACTION
+       UPDATE students SET ...updates WHERE id = studentId
+       UPDATE users SET
+         passwordhash = bcrypt(newPassword),
+         email        = newLoginId,
+         name         = updates.name ?? student.name,
+         updatedat    = NOW()
+       WHERE id = student.userid
+     COMMIT
+   ELSE
+     UPDATE students SET ...updates WHERE id = studentId
+4. RETURN 200 { student }
 ```
 
-
----
-
-### Flow: `linkStudentAccount` (CR-08)
-
-```
-FUNCTION linkStudentAccount(studentId, userId, tenantId)
-  1. SELECT * FROM students WHERE id=studentId AND tenantid=tenantId AND deletedat IS NULL
-     IF not found → 404
-
-  2. IF userId IS NOT NULL
-       SELECT roles FROM users
-         WHERE id=userId AND tenantid=tenantId AND deletedat IS NULL
-       IF not found → 400 INVALID_USER
-       IF 'Student' NOT IN roles → 400 INVALID_USER
-
-       SELECT id FROM students WHERE user_id=userId AND deletedat IS NULL
-       IF found AND id != studentId → 409 USER_ALREADY_LINKED
-
-  3. UPDATE students SET user_id=userId WHERE id=studentId
-  4. RETURN 200 student (with userId field)
-```
-
-
----
-
-### Flow: `softDeleteUser` (v3.4 — adds user_id nullify)
-
-```
-FUNCTION softDeleteUser(userId, tenantId)
-  BEGIN TRANSACTION
-    1. SELECT id FROM users WHERE id=userId AND tenantid=tenantId AND deletedat IS NULL
-       IF not found → 404
-    2. Check RESTRICT constraints (timeslots, attendancerecords)
-       IF referenced → 409 HAS_REFERENCES
-    3. UPDATE users SET deletedat=NOW() WHERE id=userId
-    4. UPDATE students SET user_id=NULL WHERE user_id=userId AND tenantid=tenantId
-  COMMIT
-  RETURN 204
-```
-
-
----
-
-### Flow: `correctAttendance` (CR-09)
-
-```
-FUNCTION correctAttendance(recordId, newStatus, callerId, callerRoles, tenantId)
-  1. SELECT ar.*, ts.teacherid
-     FROM attendancerecords ar
-     JOIN timeslots ts ON ts.id = ar.timeslotid
-     WHERE ar.id = recordId AND ar.tenantid = tenantId
-     IF not found → 404
-
-  2. IF ar.date > TODAY() → 400 FUTURE_DATE
-
-  3. effectiveStatus = ar.correctedstatus ?? ar.status
-     IF newStatus = effectiveStatus → 400 SAME_STATUS
-
-  4. IF 'Admin' NOT IN callerRoles
-       IF 'Teacher' NOT IN callerRoles → 403
-       IF ts.teacherid != callerId → 403 (teacher not assigned to slot)
-
-  5. UPDATE attendancerecords
-     SET correctedstatus=newStatus,
-         correctedby=callerId,
-         correctedat=NOW()
-     WHERE id=recordId
-
-  6. RETURN 200 {
-       id, date,
-       originalStatus: ar.status,
-       status: newStatus,
-       correctedBy: callerId,
-       correctedAt: NOW(),
-       timeSlot: { id, subjectName, periodNumber, dayOfWeek }
-     }
-```
-
-
----
-
-### Flow: `updateUserRoles` (CR-10 — replaces v3.3 version)
+### Flow: updateUserRoles (CR-10 — unchanged from v3.4)
 
 ```
 FUNCTION updateUserRoles(targetId, newRoles, callerId, callerRoles, tenantId)
-  1. VALIDATE newRoles:
-       - non-empty array
-       - no duplicates
-       - all values in ['Teacher', 'Admin', 'Student']
-     IF invalid → 400
 
-  2. SELECT roles FROM users
-     WHERE id=targetId AND tenantid=tenantId AND deletedat IS NULL
-     IF not found → 404
-
-  3. IF targetId = callerId                    ← self-edit path
-       IF 'Admin' IN callerRoles
-         AND 'Admin' NOT IN newRoles           ← trying to remove own Admin
-         adminCount = SELECT COUNT(*) FROM users
-                      WHERE tenantid=tenantId
-                        AND roles @> '["Admin"]'::jsonb
-                        AND deletedat IS NULL
-                        AND id != callerId
-         IF adminCount = 0 → 403 LAST_ADMIN
-
-  4. UPDATE users SET roles=deduplicate(newRoles), updatedat=NOW()
-     WHERE id=targetId
-  5. RETURN 200 user
+1. VALIDATE newRoles: non-empty array, no duplicates, all values in [Teacher, Admin, Student]
+   IF invalid → 400
+2. SELECT roles FROM users WHERE id = targetId AND tenantid = tenantId AND deletedat IS NULL
+   IF not found → 404
+3. IF targetId == callerId (self-edit path)
+     IF Admin IN callerRoles AND Admin NOT IN newRoles
+       adminCount = SELECT COUNT(*) FROM users
+         WHERE tenantid = tenantId AND roles @> '["Admin"]'::jsonb
+         AND deletedat IS NULL AND id != callerId
+       IF adminCount == 0 → 403 LASTADMIN
+4. UPDATE users SET roles = deduplicate(newRoles), updatedat = NOW() WHERE id = targetId
+5. RETURN 200 { user }
 ```
 
-
----
-
-### Flow: `createTimeSlot` (v3.3, unchanged)
+### Flow: createTimeSlot (v3.3, unchanged)
 
 ```
 FUNCTION createTimeSlot(classId, subjectId, teacherId, dayOfWeek, periodNumber, effectiveFrom, tenantId)
-  1. Verify timetable feature enabled for tenantId → 403 if not
-  2. SELECT id FROM schoolperiods WHERE tenantid=tenantId AND periodnumber=periodNumber
-     IF not found → 400 PERIOD_NOT_CONFIGURED
-  3. SELECT roles FROM users WHERE id=teacherId AND tenantid=tenantId AND deletedat IS NULL
-     IF 'Teacher' NOT IN roles → 400
-  4. SELECT id FROM timeslots WHERE tenantid=tenantId AND classid=classId
-     AND dayofweek=dayOfWeek AND periodnumber=periodNumber
-     AND effectiveto IS NULL AND deletedat IS NULL
-     IF found → 409 CONFLICT
-  5. INSERT INTO timeslots (starttime=NULL, endtime=NULL — derived at read)
-  6. SELECT ts.*, sp.starttime, sp.endtime, sp.label
-     FROM timeslots ts JOIN schoolperiods sp ON sp.periodnumber=ts.periodnumber AND sp.tenantid=ts.tenantid
-     WHERE ts.id = newId
-  7. RETURN 201 timeSlot
+
+1. Verify timetable feature enabled → 403 if not
+2. SELECT id FROM schoolperiods WHERE tenantid = tenantId AND periodnumber = periodNumber
+   IF not found → 400 PERIODNOTCONFIGURED
+3. SELECT roles FROM users WHERE id = teacherId AND tenantid = tenantId AND deletedat IS NULL
+   IF Teacher NOT IN roles → 400 INVALIDTEACHER
+4. SELECT id FROM timeslots
+   WHERE tenantid = tenantId AND classid = classId AND dayofweek = dayOfWeek
+   AND periodnumber = periodNumber AND effectiveto IS NULL AND deletedat IS NULL
+   IF found → 409 CONFLICT
+5. INSERT INTO timeslots (starttime=NULL, endtime=NULL — derived at read)
+6. SELECT ts.*, sp.starttime, sp.endtime, sp.label FROM timeslots ts
+   JOIN schoolperiods sp ON sp.periodnumber = ts.periodnumber AND sp.tenantid = ts.tenantid
+   WHERE ts.id = newId
+7. RETURN 201 { timeSlot }
 ```
 
-
----
-
-### Flow: `recordClassAttendance` (unchanged)
+### Flow: recordClassAttendance (unchanged)
 
 ```
 FUNCTION recordClassAttendance(timeSlotId, date, defaultStatus, exceptions, callerId, callerRoles, tenantId)
-  1. Verify attendance feature enabled → 403 if not
-  2. SELECT ts.* FROM timeslots WHERE id=timeSlotId AND tenantid=tenantId AND deletedat IS NULL
-     IF not found → 404
-  3. IF date > TODAY() → 400
-  4. IF 'Admin' NOT IN callerRoles
-       IF ts.teacherid != callerId → 403
-  5. SELECT id FROM attendancerecords WHERE timeslotid=timeSlotId AND date=date LIMIT 1
-     IF found → 409 already recorded
-  6. SELECT id FROM students WHERE classid=ts.classid AND tenantid=tenantId AND deletedat IS NULL
-  7. FOR each student:
-       status = exceptions[student.id] ?? defaultStatus
-       INSERT INTO attendancerecords (tenantId, studentId, timeslotId, date, status, recordedby)
-  8. RETURN 201 { recorded, present, absent, late, date, timeSlot }
+
+1. Verify attendance feature enabled → 403 if not
+2. SELECT ts.* FROM timeslots WHERE id = timeSlotId AND tenantid = tenantId AND deletedat IS NULL
+   IF not found → 404
+3. IF date > TODAY → 400 FUTUREDATE
+4. IF Admin NOT IN callerRoles AND ts.teacherid != callerId → 403
+5. SELECT id FROM attendancerecords WHERE timeslotid = timeSlotId AND date = date LIMIT 1
+   IF found → 409 already recorded
+6. SELECT id FROM students WHERE classid = ts.classid AND tenantid = tenantId AND deletedat IS NULL
+7. FOR each student:
+     status = exceptions[student.id] ?? defaultStatus
+     INSERT INTO attendancerecords (tenantId, studentId, timeslotId, date, status, recordedby)
+8. RETURN 201 { recorded, present, absent, late, date, timeSlot }
 ```
 
+### Flow: correctAttendance (CR-09, unchanged)
+
+```
+FUNCTION correctAttendance(recordId, newStatus, callerId, callerRoles, tenantId)
+
+1. SELECT ar.*, ts.teacherid FROM attendancerecords ar
+   JOIN timeslots ts ON ts.id = ar.timeslotid
+   WHERE ar.id = recordId AND ar.tenantid = tenantId
+   IF not found → 404
+2. IF ar.date > TODAY → 400 FUTUREDATE
+3. effectiveStatus = ar.correctedstatus ?? ar.status
+   IF newStatus == effectiveStatus → 400 SAMESTATUS
+4. IF Admin NOT IN callerRoles:
+     IF Teacher NOT IN callerRoles → 403
+     IF ts.teacherid != callerId → 403
+5. UPDATE attendancerecords
+   SET correctedstatus = newStatus, correctedby = callerId, correctedat = NOW()
+   WHERE id = recordId
+6. RETURN 200 { record: { id, date, originalStatus: ar.status, status: newStatus, correctedBy, correctedAt, timeSlot } }
+```
+
+### Flow: softDeleteUser (v3.4, unchanged)
+
+```
+FUNCTION softDeleteUser(userId, tenantId)
+BEGIN TRANSACTION
+1. SELECT id FROM users WHERE id = userId AND tenantid = tenantId AND deletedat IS NULL
+   IF not found → 404
+2. Check RESTRICT constraints (timeslots, attendancerecords)
+   IF referenced → 409 HASREFERENCES
+3. UPDATE users SET deletedat = NOW() WHERE id = userId
+4. UPDATE students SET userid = NULL WHERE userid = userId AND tenantid = tenantId
+COMMIT
+RETURN 204
+```
 
 ---
 
-### Flow: `toggleFeature` (unchanged, SuperAdmin only)
-
-```
-FUNCTION toggleFeature(featureKey, enabled, tenantId)
-  1. IF featureKey='attendance' AND enabled=true
-       SELECT enabled FROM tenantfeatures WHERE tenantid=tenantId AND featurekey='timetable'
-       IF timetable not enabled → 400 FEATURE_DEPENDENCY
-  2. UPSERT INTO tenantfeatures (tenantid, featurekey, enabled, enabledat)
-       VALUES (tenantId, featureKey, enabled, IF enabled THEN NOW() ELSE NULL)
-  3. RETURN 200 feature
-```
-
-
----
-
-### Flow: `deleteSchoolPeriod` (v3.3, unchanged)
-
-```
-FUNCTION deleteSchoolPeriod(periodId, tenantId)
-  1. SELECT id, periodnumber FROM schoolperiods WHERE id=periodId AND tenantid=tenantId
-     IF not found → 404
-  2. SELECT COUNT(*) FROM timeslots WHERE tenantid=tenantId AND periodnumber=found.periodnumber
-     AND effectiveto IS NULL AND deletedat IS NULL
-     IF count > 0 → 409 HAS_REFERENCES
-  3. DELETE FROM schoolperiods WHERE id=periodId
-  4. RETURN 204
-```
-
-
----
-
-## 5. Integrations \& Failure Behavior
+## 5. Integrations & Failure Behavior
 
 **None.** No external integrations in MVP.
 
@@ -1585,33 +1169,193 @@ FUNCTION deleteSchoolPeriod(periodId, tenantId)
 
 ## 6. Observability, Audit, Safety
 
-**Logging (structured):**
-
+**Logging (structured, pino):**
 - Required fields: `requestId`, `userId` (if known), `tenantId` (if known), `route`, `statusCode`, `latencyMs`
-- PII rules: passwords, password hashes MUST NEVER be logged
+- PII rules: `passwordhash`, raw passwords, DOB MUST NEVER be logged
 
-**Audit log:** Implicit via `attendancerecords` immutable trail + `correctedby`/`correctedat` columns. No separate audit log table in MVP.
+**Audit log:**
+- Embedded in attendance correction: `correctedby`, `correctedat`, `originalstatus` — immutable, no UI viewer (out of scope)
 
 **Metrics (minimum):**
-
 - RPS, p95 latency, error rate, DB pool saturation
-
-**Alerts (minimum):**
-
-- Error rate > 1% sustained for 5 min → notify owner
-- DB pool at max saturation → notify owner
 
 ---
 
 ## 7. Acceptance Criteria (Backend)
 
-### Phase 1 — Foundation (Weeks 1–2)
-
-- [ ] DB schema applied — all 13 tables including `schoolperiods` + v3.4 schema changes (`students.user_id`, `attendancerecords` correction columns)
-- [ ] Migrations: drop CHECK upper bound on `timeslots.periodnumber`; add new lower-bound CHECK; add `students.user_id`; add `attendancerecords` correction columns
+### Phase 1 — Foundation
+- [ ] DB schema applied (migrations 001–004)
 - [ ] `.env.example` complete; app boots locally
-- [ ] `tenantContextMiddleware` rejects SuperAdmin JWT
-- [ ] `superAdminAuthMiddleware` rejects tenant JWT
-- [ ] Tenant inactive check enforced in `tenantContextMiddleware`
-- [ ] Soft delete filter `deletedat IS NULL` applied to all applicable read queries
+- [ ] Auth works (login/logout + protected routes)
+- [ ] Standard error format with timestamp
 
+### Phase 2 — Core API
+- [ ] All endpoints implemented per contract (schemas Zod-validated)
+- [ ] Role-based access enforced — no privilege escalation paths
+- [ ] `openapi.yaml` v3.5.0 exists, complete for MVP, matches implemented behavior
+- [ ] Example payload set for every endpoint (≥1 success + 1 error)
+- [ ] Student creation atomically creates user row — no orphaned students possible
+- [ ] `GET /api/users` never returns Student-role users
+- [ ] `POST /api/users` rejects Student role
+- [ ] DOB update on student re-hashes password in same transaction
+- [ ] `loginId` visible in `GET /api/students` response for admin distribution
+
+### Phase 3 — Reliability & Security
+- [ ] Input validation on all endpoints
+- [ ] No sensitive data (DOB, passwordhash) leaked in errors or logs
+- [ ] Contract enforcement gate passes in CI
+- [ ] `ADMISSIONNUMBERCONFLICT` raised correctly on duplicate
+
+### Phase 4 — Deployment Proof
+- [ ] Staging deployment URL works
+- [ ] Mock server starts from `openapi.yaml` using locked command
+- [ ] Smoke test: create student → login with `admissionNumber + DDMMYYYY(dob)` → receive JWT with `roles: ["Student"]`
+
+---
+
+## 8. Project Structure (Backend skeleton — unchanged)
+
+```text
+/
+├── .env.example
+├── package.json
+├── tsconfig.json
+├── docs/
+│   └── openapi.yaml          ← v3.5.0
+├── src/
+│   ├── server.ts
+│   ├── app.ts
+│   ├── config/
+│   ├── db/
+│   │   ├── pool.ts
+│   │   ├── migrations/
+│   │   │   ├── 001_initial_schema.sql
+│   │   │   ├── 002_add_student_userid.sql
+│   │   │   ├── 003_add_attendance_corrections.sql
+│   │   │   └── 004_student_admission_dob.sql   ← NEW
+│   │   └── seeds/
+│   │       └── superadmin.ts
+│   ├── middleware/
+│   │   ├── tenantContext.ts
+│   │   ├── superAdminAuth.ts
+│   │   ├── featureGuard.ts
+│   │   ├── requireRole.ts
+│   │   └── asyncHandler.ts
+│   ├── modules/
+│   │   ├── auth/
+│   │   ├── super-admin/
+│   │   ├── users/
+│   │   ├── students/          ← createStudent logic updated (CR-13)
+│   │   ├── classes/
+│   │   ├── batches/
+│   │   ├── subjects/
+│   │   ├── timetable/
+│   │   ├── school-periods/
+│   │   └── attendance/
+│   ├── types/
+│   └── utils/
+└── tests/
+    ├── unit/
+    └── integration/
+```
+
+---
+
+## 9. Constraints (Non-Functional)
+
+**Performance Targets (LOCKED):**
+- p95 latency: ≤300ms
+- Error rate: <1%
+- Sustained RPS: 10 for 5 minutes
+
+**Security Baseline (LOCKED):**
+- Password hashing: bcrypt rounds = 10
+- HTTPS in production
+- Secrets not committed
+- DOB never logged or returned in API responses after creation
+- `loginId` (system email) returned in `GET /api/students` for admin display only — not a real email
+
+**Hosting/Budget Constraints:**
+- Monthly hosting: $5–$45
+- Single-region deployment
+
+---
+
+## 10. Deployment, Rollback, Backups, DR
+
+**Deployment method:** CI pipeline → Render/Railway
+**Environments:** dev → staging → prod
+**Rollback strategy:** Redeploy previous Git tag; migration 004 is additive — safe to rollback app without DB rollback until `NOT NULL` is enforced
+**Backup policy:** Daily automated backup, 7-day retention
+**DR:** RPO 24h, RTO 2h
+
+---
+
+## 11. Forbidden Changes (Scope Lock)
+
+**BANNED without a new Freeze version + price/time update:**
+- Add roles/permissions model changes
+- Switch DB/dialect
+- Add new external integrations
+- Add realtime websockets
+- Change auth mode (JWT ↔ sessions)
+- Change pagination standard
+- Change `openapi.yaml` without a Freeze version bump
+- Change student credential derivation formula
+- Add email delivery (out of scope — no SMTP in MVP)
+- Student self-registration endpoint
+
+---
+
+## 12. Change Control
+
+**Change Request Format:**
+- Requested change / Reason / Scope impact / Timeline impact / Cost impact / Risk impact
+- Decision: Approved / Rejected
+- New Freeze version / OpenAPI version bump
+
+**Billing rule:** Per Change Request
+**Response SLA:** 24 hours
+
+---
+
+## 13. Version History
+
+| Version | Date | Summary |
+|---|---|---|
+| v3.0 | 2026-02-20 | Initial backend freeze |
+| v3.1 | 2026-02-22 | Soft delete, multi-role support |
+| v3.2 | 2026-02-24 | SuperAdmin tenant management, feature flags |
+| v3.3 | 2026-02-26 | School periods, timetable versioning |
+| v3.4 | 2026-03-02 | Student role, attendance correction, LASTADMIN guard, atomic tenant provisioning |
+| **v3.5** | **2026-03-03** | **CR-11: Inline timetable cell entry (FE only). CR-12: Admin self-role edit unblocked in UI (FE only). CR-13: Auto student user creation via admission number + DOB; users/students page separation (Breaking)** |
+
+---
+
+## FRONTEND FREEZE DELTA — v3.4 → v3.5
+
+*Backend-driven frontend changes only. Full frontend freeze document to be updated separately.*
+
+### CR-11: Timetable Screen
+- **REMOVE** standalone "Add Slot" button
+- Empty cell click remains the **sole** create trigger for Admin
+- Hint text: *"Click an empty cell to add a slot"*
+- No API change — `POST /api/timetable` contract unchanged
+
+### CR-12: Users Screen
+- **REMOVE** `!isSelf` guard on Edit Roles button
+- Admin can now open the role editor for their own account
+- On `403 LASTADMIN` response, show inline error: *"Cannot remove Admin role — you are the last admin of this tenant"*
+
+### CR-13: Students Screen
+- Create student form: **ADD** `Admission Number` (required) + `Date of Birth` (required, date picker) fields
+- Create student form: **REMOVE** `password` field (no longer exists in request)
+- Student table: **ADD** `Admission No.`, `Date of Birth`, `Login ID` columns
+- `Login ID` column: displayed as read-only text (e.g., `530@greenvalley.local`) — admin copies and gives to student
+- **REMOVE** "Link Account" button and dialog from student row actions
+- `PUT /api/students/:id` form: if DOB or admissionNumber edited, show tooltip: *"Changing this will reset the student's login password"*
+
+### CR-13: Users Screen
+- `GET /api/users` role filter: remove `Student` option from dropdown
+- `POST /api/users` role selector: remove `Student` chip/option
+- Students never appear in the Users page

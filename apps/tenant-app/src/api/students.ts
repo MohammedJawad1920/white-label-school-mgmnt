@@ -3,8 +3,8 @@ import type {
   ListStudentsResponse,
   CreateStudentRequest,
   CreateStudentResponse,
-  LinkStudentAccountRequest,
-  LinkStudentAccountResponse,
+  UpdateStudentRequest,
+  UpdateStudentResponse,
   BulkDeleteRequest,
   BulkDeleteResponse,
 } from "@/types/api";
@@ -24,13 +24,10 @@ export const studentsApi = {
     apiClient
       .post<CreateStudentResponse>("/students", data)
       .then((r) => r.data),
-  // v3.4 CR-08: link student to a user account
-  linkAccount: (studentId: string, data: LinkStudentAccountRequest) =>
+  // v3.5 CR-13: update student (dob/admissionNumber change resets login credentials)
+  update: (id: string, data: UpdateStudentRequest) =>
     apiClient
-      .put<LinkStudentAccountResponse>(
-        `/students/${studentId}/link-account`,
-        data,
-      )
+      .put<UpdateStudentResponse>(`/students/${id}`, data)
       .then((r) => r.data),
   delete: (id: string) =>
     apiClient.delete<void>(`/students/${id}`).then((r) => r.data),
@@ -38,4 +35,6 @@ export const studentsApi = {
     apiClient
       .delete<BulkDeleteResponse>("/students/bulk", { data })
       .then((r) => r.data),
+  // DEPRECATED in v3.5 — backend retained for migration only; removed from frontend UI
+  // linkAccount: (studentId: string, data: LinkStudentAccountRequest) => ...
 };

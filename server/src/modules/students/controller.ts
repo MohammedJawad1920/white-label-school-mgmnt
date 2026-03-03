@@ -1,75 +1,137 @@
 /**
- * Students Controller
+ * Students Controller — v3.5 CR-13
  *
- * KEY INVARIANT: student.batch_id MUST equal class.batch_id
- * WHY: A student belongs to a batch (academic year). Their class must be
- * from that same batch. Mismatches would corrupt attendance aggregation.
- * Validated on create (no PUT /students/:id in OpenAPI contract).
- *
- * v3.4 CR-08:
- * - students.user_id nullable FK → users.id (1-to-1, unique partial index)
- * - PUT /:studentId/link-account (Admin only)
- * - fmt() exposes userId in response
+ * KEY INVARIANTS:
+ * - student.batch_id MUST equal class.batch_id (batch/class mismatch guard)
+ * - POST /students atomically creates a linked users row (single transaction)
+ * - Student login:  email = {admissionNumber.toLowerCase()}@{tenantSlug}.local
+ *                   password = bcrypt(admissionNumber + DDMMYYYY(dob))
+ * - PUT /students/:id — if dob or admissionNumber changes, recomputes
+ *   linkedUser.password_hash (and email) in the same transaction
+ * - PUT /students/:studentId/link-account — DEPRECATED in v3.5 (backend retained
+ *   for migration only; removed from frontend)
  */
 import { Request, Response } from "express";
+import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
-import { pool } from "../../db/pool";
+import { pool, withTransaction } from "../../db/pool";
+import { config } from "../../config/env";
 import { send400, send404, send409 } from "../../utils/errors";
 import { bulkSoftDelete } from "../../utils/bulkDelete";
 import { StudentRow, BulkDeleteRequest } from "../../types";
 
-function fmt(s: StudentRow & { class_name?: string; batch_name?: string }) {
+// ── Row type returned by queries that JOIN on tenants ────────────────────────
+type StudentFmtRow = StudentRow & {
+  class_name?: string;
+  batch_name?: string;
+  tenant_slug: string;
+};
+
+// Helper: normalise pg DATE (may arrive as Date object or ISO string)
+function dobToISODate(dob: Date | string): string {
+  if (dob instanceof Date) return dob.toISOString().split("T")[0]!;
+  return (dob as string).split("T")[0]!;
+}
+
+// Helper: DDMMYYYY from a YYYY-MM-DD string
+function dDMMYYYY(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-");
+  return `${day}${month}${year}`;
+}
+
+function fmt(s: StudentFmtRow) {
+  const dobStr = dobToISODate(s.dob);
+  const loginId = `${s.admission_number.toLowerCase()}@${s.tenant_slug}.local`;
   return {
     id: s.id,
     tenantId: s.tenant_id,
     name: s.name,
     classId: s.class_id,
+    className: s.class_name,
     batchId: s.batch_id,
-    userId: s.user_id ?? null, // v3.4
+    batchName: s.batch_name,
+    userId: s.user_id ?? null,
+    admissionNumber: s.admission_number,
+    dob: dobStr,
+    loginId,
     createdAt: s.created_at.toISOString(),
     updatedAt: s.updated_at.toISOString(),
   };
 }
 
+// Base SELECT used by all handlers that call fmt()
+const STUDENT_SELECT = `
+  SELECT s.id, s.tenant_id, s.name, s.class_id, s.batch_id, s.user_id,
+         s.admission_number, s.dob, s.deleted_at, s.created_at, s.updated_at,
+         t.slug AS tenant_slug
+  FROM students s
+  JOIN tenants t ON t.id = s.tenant_id
+`;
+
+// ── GET /api/students ────────────────────────────────────────────────────────
 export async function listStudents(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;
-  const { classId, batchId } = req.query as {
+  const { classId, batchId, search } = req.query as {
     classId?: string;
     batchId?: string;
+    search?: string;
   };
   const params: unknown[] = [tenantId];
-  const conditions = ["tenant_id = $1", "deleted_at IS NULL"];
+  const conditions = ["s.tenant_id = $1", "s.deleted_at IS NULL"];
   let idx = 2;
   if (classId) {
-    conditions.push(`class_id = $${idx++}`);
+    conditions.push(`s.class_id = $${idx++}`);
     params.push(classId);
   }
   if (batchId) {
-    conditions.push(`batch_id = $${idx++}`);
+    conditions.push(`s.batch_id = $${idx++}`);
     params.push(batchId);
   }
-  const result = await pool.query<StudentRow>(
-    `SELECT id, tenant_id, name, class_id, batch_id, user_id,
-            deleted_at, created_at, updated_at
-     FROM students WHERE ${conditions.join(" AND ")} ORDER BY name ASC`,
+  if (search) {
+    conditions.push(
+      `(s.name ILIKE $${idx} OR s.admission_number ILIKE $${idx})`,
+    );
+    params.push(`%${search}%`);
+    idx++;
+  }
+  const result = await pool.query<StudentFmtRow>(
+    `${STUDENT_SELECT} WHERE ${conditions.join(" AND ")} ORDER BY s.name ASC`,
     params,
   );
   res.status(200).json({ students: result.rows.map(fmt) });
 }
 
+// ── POST /api/students ───────────────────────────────────────────────────────
+// v3.5 CR-13: atomically creates a users row + students row in one transaction
 export async function createStudent(
   req: Request,
   res: Response,
 ): Promise<void> {
   const tenantId = req.tenantId!;
-  const { name, classId, batchId } = req.body as {
+  const { name, classId, batchId, admissionNumber, dob } = req.body as {
     name?: string;
     classId?: string;
     batchId?: string;
+    admissionNumber?: string;
+    dob?: string;
   };
 
-  if (!name || !classId || !batchId) {
-    send400(res, "name, classId, and batchId are required");
+  if (!name || !classId || !batchId || !admissionNumber || !dob) {
+    send400(
+      res,
+      "name, classId, batchId, admissionNumber, and dob are required",
+    );
+    return;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+    send400(res, "dob must be a valid date in YYYY-MM-DD format");
+    return;
+  }
+
+  const trimmedAdmission = admissionNumber.trim();
+  if (trimmedAdmission.length === 0 || trimmedAdmission.length > 50) {
+    send400(res, "admissionNumber must be between 1 and 50 characters");
     return;
   }
 
@@ -83,8 +145,7 @@ export async function createStudent(
     return;
   }
 
-  // ── BATCH/CLASS MISMATCH GUARD ─────────────────────────────────────
-  // The class must belong to the same batch as the student.
+  // ── BATCH/CLASS MISMATCH GUARD ───────────────────────────────────────────
   if (classResult.rows[0]!.batch_id !== batchId) {
     send400(
       res,
@@ -104,18 +165,213 @@ export async function createStudent(
     return;
   }
 
-  const id = `STU-${uuidv4()}`;
-  const result = await pool.query<StudentRow>(
-    `INSERT INTO students (id, tenant_id, name, class_id, batch_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-     RETURNING id, tenant_id, name, class_id, batch_id, user_id,
-               deleted_at, created_at, updated_at`,
-    [id, tenantId, name.trim(), classId, batchId],
+  // Check admissionNumber uniqueness
+  const conflict = await pool.query<{ id: string }>(
+    `SELECT id FROM students WHERE tenant_id = $1 AND admission_number = $2 AND deleted_at IS NULL`,
+    [tenantId, trimmedAdmission],
   );
-  res.status(201).json({ student: fmt(result.rows[0]!) });
+  if ((conflict.rowCount ?? 0) > 0) {
+    send409(
+      res,
+      "Admission number already exists for this school",
+      "ADMISSIONNUMBERCONFLICT",
+    );
+    return;
+  }
+
+  // Get tenant slug for loginId derivation
+  const tenantResult = await pool.query<{ slug: string }>(
+    "SELECT slug FROM tenants WHERE id = $1",
+    [tenantId],
+  );
+  const tenantSlug = tenantResult.rows[0]!.slug;
+  const loginId = `${trimmedAdmission.toLowerCase()}@${tenantSlug}.local`;
+  const rawPassword = `${trimmedAdmission}${dDMMYYYY(dob)}`;
+  const passwordHash = await bcrypt.hash(rawPassword, config.BCRYPT_ROUNDS);
+
+  const userId = `U-${uuidv4()}`;
+  const studentId = `STU-${uuidv4()}`;
+
+  await withTransaction(async (client) => {
+    // 1. Create the user row (roles: ["Student"])
+    await client.query(
+      `INSERT INTO users (id, tenant_id, name, email, password_hash, roles, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, '["Student"]'::jsonb, NOW(), NOW())`,
+      [userId, tenantId, name.trim(), loginId, passwordHash],
+    );
+    // 2. Create the student row referencing the new user
+    await client.query(
+      `INSERT INTO students (id, tenant_id, name, class_id, batch_id, user_id,
+                             admission_number, dob, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
+      [
+        studentId,
+        tenantId,
+        name.trim(),
+        classId,
+        batchId,
+        userId,
+        trimmedAdmission,
+        dob,
+      ],
+    );
+  });
+
+  const created = await pool.query<StudentFmtRow>(
+    `${STUDENT_SELECT} WHERE s.id = $1 AND s.tenant_id = $2`,
+    [studentId, tenantId],
+  );
+  res.status(201).json({ student: fmt(created.rows[0]!) });
 }
 
-// PUT /api/students/:studentId/link-account  (v3.4 CR-08, Admin only)
+// ── PUT /api/students/:id ────────────────────────────────────────────────────
+// v3.5 CR-13: updates student; resets linked user credentials when dob/admissionNumber changes
+export async function updateStudent(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const tenantId = req.tenantId!;
+  const { id } = req.params as { id: string };
+  const { name, classId, batchId, admissionNumber, dob } = req.body as {
+    name?: string;
+    classId?: string;
+    batchId?: string;
+    admissionNumber?: string;
+    dob?: string;
+  };
+
+  if (!name && !classId && !batchId && !admissionNumber && !dob) {
+    send400(res, "At least one field must be provided");
+    return;
+  }
+
+  if (dob && !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+    send400(res, "dob must be a valid date in YYYY-MM-DD format");
+    return;
+  }
+
+  if (admissionNumber !== undefined) {
+    const t = admissionNumber.trim();
+    if (t.length === 0 || t.length > 50) {
+      send400(res, "admissionNumber must be between 1 and 50 characters");
+      return;
+    }
+  }
+
+  // Fetch current student (with tenant slug)
+  const studentResult = await pool.query<StudentFmtRow>(
+    `${STUDENT_SELECT} WHERE s.id = $1 AND s.tenant_id = $2 AND s.deleted_at IS NULL`,
+    [id, tenantId],
+  );
+  if ((studentResult.rowCount ?? 0) === 0) {
+    send404(res, "Student not found");
+    return;
+  }
+  const current = studentResult.rows[0]!;
+  const currentDob = dobToISODate(current.dob);
+
+  const finalAdmission = admissionNumber?.trim() ?? current.admission_number;
+  const finalDob = dob ?? currentDob;
+  const finalName = name?.trim() ?? current.name;
+
+  // Validate class if provided
+  let finalClassId = current.class_id;
+  let resolvedBatchId = current.batch_id;
+  if (classId) {
+    const classResult = await pool.query<{ id: string; batch_id: string }>(
+      "SELECT id, batch_id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+      [classId, tenantId],
+    );
+    if ((classResult.rowCount ?? 0) === 0) {
+      send404(res, "Class not found");
+      return;
+    }
+    finalClassId = classId;
+    resolvedBatchId = classResult.rows[0]!.batch_id;
+  }
+
+  const finalBatchId = batchId ?? resolvedBatchId;
+
+  if (classId && batchId && batchId !== resolvedBatchId) {
+    send400(
+      res,
+      "The selected class does not belong to the selected batch",
+      "BATCH_CLASS_MISMATCH",
+    );
+    return;
+  }
+
+  // Independent batchId change (without classId)
+  if (batchId && !classId) {
+    const batchCheck = await pool.query<{ id: string }>(
+      "SELECT id FROM batches WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+      [batchId, tenantId],
+    );
+    if ((batchCheck.rowCount ?? 0) === 0) {
+      send404(res, "Batch not found");
+      return;
+    }
+  }
+
+  // Admission number uniqueness check (excluding self)
+  if (admissionNumber && finalAdmission !== current.admission_number) {
+    const conflict = await pool.query<{ id: string }>(
+      `SELECT id FROM students
+       WHERE tenant_id = $1 AND admission_number = $2 AND deleted_at IS NULL AND id != $3`,
+      [tenantId, finalAdmission, id],
+    );
+    if ((conflict.rowCount ?? 0) > 0) {
+      send409(
+        res,
+        "Admission number already exists for this school",
+        "ADMISSIONNUMBERCONFLICT",
+      );
+      return;
+    }
+  }
+
+  const credentialsChanged =
+    finalAdmission !== current.admission_number || finalDob !== currentDob;
+  const shouldUpdateCredentials =
+    current.user_id !== null && credentialsChanged;
+
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE students
+       SET name = $1, class_id = $2, batch_id = $3,
+           admission_number = $4, dob = $5, updated_at = NOW()
+       WHERE id = $6 AND tenant_id = $7`,
+      [
+        finalName,
+        finalClassId,
+        finalBatchId,
+        finalAdmission,
+        finalDob,
+        id,
+        tenantId,
+      ],
+    );
+
+    if (shouldUpdateCredentials) {
+      const newLoginId = `${finalAdmission.toLowerCase()}@${current.tenant_slug}.local`;
+      const rawPassword = `${finalAdmission}${dDMMYYYY(finalDob)}`;
+      const passwordHash = await bcrypt.hash(rawPassword, config.BCRYPT_ROUNDS);
+      await client.query(
+        `UPDATE users SET email = $1, password_hash = $2, updated_at = NOW()
+         WHERE id = $3 AND tenant_id = $4`,
+        [newLoginId, passwordHash, current.user_id, tenantId],
+      );
+    }
+  });
+
+  const updated = await pool.query<StudentFmtRow>(
+    `${STUDENT_SELECT} WHERE s.id = $1 AND s.tenant_id = $2`,
+    [id, tenantId],
+  );
+  res.status(200).json({ student: fmt(updated.rows[0]!) });
+}
+
+// ── PUT /api/students/:studentId/link-account  (v3.4 CR-08 — DEPRECATED v3.5) ──
 export async function linkStudentAccount(
   req: Request,
   res: Response,
@@ -129,11 +385,8 @@ export async function linkStudentAccount(
     return;
   }
 
-  // Verify student exists in this tenant
-  const studentResult = await pool.query<StudentRow>(
-    `SELECT id, tenant_id, name, class_id, batch_id, user_id,
-            deleted_at, created_at, updated_at
-     FROM students WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+  const studentResult = await pool.query<StudentFmtRow>(
+    `${STUDENT_SELECT} WHERE s.id = $1 AND s.tenant_id = $2 AND s.deleted_at IS NULL`,
     [studentId, tenantId],
   );
   if ((studentResult.rowCount ?? 0) === 0) {
@@ -142,7 +395,6 @@ export async function linkStudentAccount(
   }
   const student = studentResult.rows[0]!;
 
-  // Verify target user exists in this tenant and is not deleted
   const userResult = await pool.query<{ id: string }>(
     "SELECT id FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
     [userId.trim(), tenantId],
@@ -152,7 +404,6 @@ export async function linkStudentAccount(
     return;
   }
 
-  // Guard: student already linked to this or another user
   if (student.user_id !== null) {
     send409(
       res,
@@ -162,7 +413,6 @@ export async function linkStudentAccount(
     return;
   }
 
-  // Guard: target userId already linked to a different student (partial unique index)
   const alreadyLinked = await pool.query<{ id: string }>(
     "SELECT id FROM students WHERE user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
     [userId.trim(), tenantId],
@@ -176,17 +426,20 @@ export async function linkStudentAccount(
     return;
   }
 
-  const updated = await pool.query<StudentRow>(
+  await pool.query(
     `UPDATE students SET user_id = $1, updated_at = NOW()
-     WHERE id = $2 AND tenant_id = $3
-     RETURNING id, tenant_id, name, class_id, batch_id, user_id,
-               deleted_at, created_at, updated_at`,
+     WHERE id = $2 AND tenant_id = $3`,
     [userId.trim(), studentId, tenantId],
   );
 
+  const updated = await pool.query<StudentFmtRow>(
+    `${STUDENT_SELECT} WHERE s.id = $1 AND s.tenant_id = $2`,
+    [studentId, tenantId],
+  );
   res.status(200).json({ student: fmt(updated.rows[0]!) });
 }
 
+// ── DELETE /api/students/:id ─────────────────────────────────────────────────
 export async function deleteStudent(
   req: Request,
   res: Response,
@@ -223,6 +476,7 @@ export async function deleteStudent(
   res.status(204).send();
 }
 
+// ── DELETE /api/students/bulk ────────────────────────────────────────────────
 export async function bulkDeleteStudents(
   req: Request,
   res: Response,

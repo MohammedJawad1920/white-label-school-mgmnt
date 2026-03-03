@@ -75,6 +75,8 @@ export interface StudentRow {
   class_id: string;
   batch_id: string;
   user_id: string | null; // v3.4: nullable FK → users.id
+  admission_number: string; // v3.5 CR-13
+  dob: Date | string; // v3.5 CR-13: pg DATE — may arrive as Date or ISO string
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;

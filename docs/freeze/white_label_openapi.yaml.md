@@ -1,15 +1,26 @@
 openapi: 3.1.0
 info:
   title: White-Label School Management System
-  version: 3.4.0
+  version: 3.5.0
   description: >
     Multi-tenant school management API. Supports SuperAdmin (platform-level)
     and tenant-scoped Admin / Teacher / Student roles.
+
+    v3.5.0 changes (CR-11, CR-12, CR-13):
+      - POST /students: BREAKING — admissionNumber + dob required; atomically creates users row (Student role) + students row
+      - GET /students: BREAKING — response now includes admissionNumber, dob, loginId fields
+      - PUT /students/{id}: BREAKING — admissionNumber/dob updatable; dob change triggers password re-hash (Reset Login)
+      - GET /users: BREAKING — Student-role users excluded from all results; role filter enum is Teacher|Admin only
+      - POST /users: BREAKING — Student role rejected with 400 INVALIDROLE
+      - PUT /students/{id}/link-account: DEPRECATED — backend retained for migration only; removed from frontend UI
+      - Student login credentials: admissionNumber + DDMMYYYY(dob) concatenated (e.g. 53003102003)
+      - New error codes: ADMISSION_NUMBER_CONFLICT (409), INVALID_ROLE (400)
+
     v3.4.0 changes:
       - POST /super-admin/tenants requires admin block (BREAKING)
       - PUT /super-admin/tenants/{id}/reactivate (NEW)
       - Role enum expanded to include Student (BREAKING)
-      - students.user_id linkage + PUT /students/{id}/link-account (NEW)
+      - students.user_id linkage + PUT /students/{id}/link-account (NEW, now deprecated in v3.5)
       - PUT /attendance/{recordId} correction endpoint (NEW)
       - AttendanceRecord schema extended with originalStatus/correctedBy/correctedAt (BREAKING)
       - PUT /users/{id}/roles: SELFROLECHANGEFORBIDDEN removed, LASTADMIN added (BREAKING)
@@ -138,12 +149,16 @@ components:
           type: array
           items:
             type: string
-            enum: [Teacher, Admin, Student]
+            enum: [Teacher, Admin]
           minItems: 1
+          description: >
+            v3.5: User schema returned from GET /users never contains Student.
+            Student-role users are managed exclusively via the Students endpoints.
 
+    # v3.5 CR-13: Student schema extended with admissionNumber, dob, loginId
     Student:
       type: object
-      required: [id, name, classId, batchId]
+      required: [id, name, classId, batchId, admissionNumber, dob, loginId, userId]
       properties:
         id:
           type: string
@@ -157,12 +172,31 @@ components:
           type: string
         batchName:
           type: string
+        admissionNumber:
+          type: string
+          maxLength: 50
+          description: >
+            Unique per tenant (active records). Used as part of login credentials.
+            Login password = admissionNumber + DDMMYYYY(dob). e.g. 530 + 03102003 = 53003102003.
+          example: "530"
+        dob:
+          type: string
+          format: date
+          description: >
+            Date of birth in YYYY-MM-DD format. Used to derive login password.
+            Changing dob triggers automatic password re-hash (Reset Login).
+          example: "2003-10-03"
+        loginId:
+          type: string
+          description: >
+            System-generated login identifier: {admissionNumber}@{tenantSlug}.local.
+            Displayed to Admin for distribution to student. Not a real email address.
+          example: "530@greenvalley.local"
         userId:
           type: string
-          nullable: true
           description: >
-            Linked user account id. Null if student has no login account.
-            Set via PUT /students/{id}/link-account.
+            Auto-set on POST /students. Always non-null for records created in v3.5+.
+            May be null for records migrated from v3.4 that have not yet been linked.
 
     Batch:
       type: object
@@ -373,7 +407,7 @@ components:
             error:
               code: UNAUTHORIZED
               message: Missing or invalid token
-              timestamp: "2026-03-02T01:00:00Z"
+              timestamp: "2026-03-03T07:00:00Z"
 
     Forbidden:
       description: Insufficient permissions
@@ -385,7 +419,7 @@ components:
             error:
               code: FORBIDDEN
               message: Insufficient permissions
-              timestamp: "2026-03-02T01:00:00Z"
+              timestamp: "2026-03-03T07:00:00Z"
 
     NotFound:
       description: Resource not found
@@ -416,7 +450,10 @@ paths:
 
   /auth/login:
     post:
-      summary: Tenant user login
+      summary: >
+        Tenant user login.
+        For Student accounts: email = loginId (e.g. 530@greenvalley.local),
+        password = admissionNumber + DDMMYYYY(dob) (e.g. 53003102003).
       operationId: tenantLogin
       security: []
       tags: [Auth]
@@ -430,20 +467,32 @@ paths:
               properties:
                 email:
                   type: string
-                  format: email
+                  description: >
+                    For Admin/Teacher: real email address.
+                    For Student: system loginId ({admissionNumber}@{tenantSlug}.local).
                 password:
                   type: string
                   minLength: 8
+                  description: >
+                    For Admin/Teacher: account password.
+                    For Student: admissionNumber + DDMMYYYY(dob) concatenated (zero-padded, e.g. 53003102003).
                 tenantSlug:
                   type: string
                   minLength: 1
                   maxLength: 100
             examples:
-              success:
+              adminLogin:
+                summary: Admin login
                 value:
                   email: admin@school1.com
                   password: password123
                   tenantSlug: school1
+              studentLogin:
+                summary: Student login (admission 530, dob 2003-10-03)
+                value:
+                  email: 530@greenvalley.local
+                  password: "53003102003"
+                  tenantSlug: greenvalley
       responses:
         '200':
           description: Login successful
@@ -458,7 +507,7 @@ paths:
                   user:
                     $ref: '#/components/schemas/TenantUser'
               examples:
-                success:
+                adminSuccess:
                   value:
                     token: eyJhbGciOiJIUzI1NiJ9.example
                     user:
@@ -468,6 +517,16 @@ paths:
                       email: admin@school1.com
                       roles: [Admin]
                       activeRole: Admin
+                studentSuccess:
+                  value:
+                    token: eyJhbGciOiJIUzI1NiJ9.studenttoken
+                    user:
+                      id: U999
+                      tenantId: T001
+                      name: Ravi Kumar
+                      email: 530@greenvalley.local
+                      roles: [Student]
+                      activeRole: Student
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -482,7 +541,7 @@ paths:
                 error:
                   code: TENANT_INACTIVE
                   message: Tenant is inactive
-                  timestamp: "2026-03-02T01:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -551,7 +610,7 @@ paths:
                 error:
                   code: ROLE_NOT_ASSIGNED
                   message: Requested role is not assigned to this user
-                  timestamp: "2026-03-02T01:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -564,7 +623,7 @@ paths:
                 error:
                   code: SINGLE_ROLE_USER
                   message: User has only one role, switching not applicable
-                  timestamp: "2026-03-02T01:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
 
   # ─────────────────────────────────────────────
   # SUPER ADMIN AUTH
@@ -670,8 +729,7 @@ paths:
 
     post:
       summary: >
-        Create new tenant — v3.4 BREAKING: admin block required.
-        Atomically seeds tenant + 8 default schoolperiods + first Admin user.
+        Create new tenant. Atomically seeds tenant + 8 default schoolperiods + first Admin user.
       operationId: createTenant
       tags: [SuperAdmin]
       requestBody:
@@ -708,21 +766,14 @@ paths:
                       minLength: 8
             examples:
               success:
-                summary: Create tenant with first admin
                 value:
                   id: T002
-                  name: New School
-                  slug: newschool
+                  name: Green Valley School
+                  slug: greenvalley
                   admin:
                     name: School Admin
-                    email: admin@newschool.com
+                    email: admin@greenvalley.com
                     password: securepass1
-              errorMissingAdmin:
-                summary: Missing admin block
-                value:
-                  id: T002
-                  name: New School
-                  slug: newschool
       responses:
         '201':
           description: Tenant created with 8 default periods and first Admin user
@@ -754,15 +805,15 @@ paths:
                   value:
                     tenant:
                       id: T002
-                      name: New School
-                      slug: newschool
+                      name: Green Valley School
+                      slug: greenvalley
                       status: active
                       deactivatedAt: null
-                      createdAt: "2026-03-02T07:00:00Z"
+                      createdAt: "2026-03-03T07:00:00Z"
                     admin:
                       id: U001
                       name: School Admin
-                      email: admin@newschool.com
+                      email: admin@greenvalley.com
                       roles: [Admin]
         '400':
           description: Validation failure or missing admin block
@@ -772,19 +823,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 missingAdmin:
-                  summary: admin block missing
                   value:
                     error:
                       code: VALIDATION_ERROR
                       message: admin block is required
-                      timestamp: "2026-03-02T07:00:00Z"
-                weakPassword:
-                  summary: admin password too short
-                  value:
-                    error:
-                      code: VALIDATION_ERROR
-                      message: admin.password must be at least 8 characters
-                      timestamp: "2026-03-02T07:00:00Z"
+                      timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -801,13 +844,13 @@ paths:
                     error:
                       code: CONFLICT
                       message: Tenant id or slug already exists
-                      timestamp: "2026-03-02T07:00:00Z"
+                      timestamp: "2026-03-03T07:00:00Z"
                 adminEmailTaken:
                   value:
                     error:
                       code: ADMIN_EMAIL_TAKEN
                       message: admin.email already exists for this tenant
-                      timestamp: "2026-03-02T07:00:00Z"
+                      timestamp: "2026-03-03T07:00:00Z"
 
   /super-admin/tenants/{tenantId}:
     put:
@@ -889,7 +932,7 @@ paths:
                     tenant:
                       id: T001
                       status: inactive
-                      deactivatedAt: "2026-03-02T07:00:00Z"
+                      deactivatedAt: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -906,11 +949,11 @@ paths:
                 error:
                   code: ALREADY_INACTIVE
                   message: Tenant is already inactive
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
 
   /super-admin/tenants/{tenantId}/reactivate:
     put:
-      summary: Reactivate an inactive tenant (v3.4 NEW)
+      summary: Reactivate an inactive tenant
       operationId: reactivateTenant
       tags: [SuperAdmin]
       parameters:
@@ -953,7 +996,7 @@ paths:
                 error:
                   code: ALREADY_ACTIVE
                   message: Tenant is already active
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
 
   /super-admin/tenants/{tenantId}/features:
     get:
@@ -1049,9 +1092,9 @@ paths:
                     feature:
                       key: attendance
                       enabled: true
-                      enabledAt: "2026-03-02T07:00:00Z"
+                      enabledAt: "2026-03-03T07:00:00Z"
         '400':
-          description: Attendance requires timetable
+          description: Attendance requires timetable to be enabled first
           content:
             application/json:
               schema:
@@ -1060,7 +1103,7 @@ paths:
                 error:
                   code: FEATURE_DEPENDENCY
                   message: Attendance module requires Timetable to be enabled first
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1099,6 +1142,7 @@ paths:
     put:
       summary: REMOVED in v3.2 — returns 403 for all callers
       operationId: toggleFeatureDeprecated
+      deprecated: true
       tags: [Features]
       parameters:
         - name: featureKey
@@ -1126,7 +1170,7 @@ paths:
                 error:
                   code: FORBIDDEN
                   message: Feature management is restricted to platform administrators
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -1161,11 +1205,6 @@ paths:
                         label: Period 1
                         startTime: "08:00"
                         endTime: "08:45"
-                      - id: SP002
-                        periodNumber: 2
-                        label: Period 2
-                        startTime: "08:50"
-                        endTime: "09:35"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1178,7 +1217,7 @@ paths:
                 error:
                   code: FEATURE_DISABLED
                   message: Timetable feature is not enabled for this tenant
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
 
     post:
       summary: Create a new period for current tenant (Admin only)
@@ -1207,18 +1246,11 @@ paths:
                   pattern: '^\d{2}:\d{2}$'
             examples:
               success:
-                summary: Add Period 9
                 value:
                   periodNumber: 9
                   label: Period 9
                   startTime: "15:30"
                   endTime: "16:15"
-              errorTimeInvalid:
-                summary: Invalid time range
-                value:
-                  periodNumber: 9
-                  startTime: "16:15"
-                  endTime: "15:30"
       responses:
         '201':
           description: Period created
@@ -1230,36 +1262,21 @@ paths:
                 properties:
                   period:
                     $ref: '#/components/schemas/SchoolPeriod'
-              examples:
-                success:
-                  value:
-                    period:
-                      id: SP009
-                      periodNumber: 9
-                      label: Period 9
-                      startTime: "15:30"
-                      endTime: "16:15"
         '400':
           description: Validation failure including startTime >= endTime
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                timeInvalid:
-                  value:
-                    error:
-                      code: PERIOD_TIME_INVALID
-                      message: startTime must be before endTime
-                      timestamp: "2026-03-02T07:00:00Z"
+              example:
+                error:
+                  code: PERIOD_TIME_INVALID
+                  message: startTime must be before endTime
+                  timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Admin required or timetable feature not enabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/Forbidden'
         '409':
           description: periodNumber already exists for this tenant
           content:
@@ -1270,7 +1287,7 @@ paths:
                 error:
                   code: CONFLICT
                   message: Period number 9 already exists for this school
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
 
   /school-periods/{id}:
     put:
@@ -1300,14 +1317,6 @@ paths:
                 endTime:
                   type: string
                   pattern: '^\d{2}:\d{2}$'
-            examples:
-              updateLabel:
-                value:
-                  label: Zero Period
-              updateTimes:
-                value:
-                  startTime: "07:45"
-                  endTime: "08:30"
       responses:
         '200':
           description: Period updated
@@ -1329,15 +1338,11 @@ paths:
                 error:
                   code: PERIOD_TIME_INVALID
                   message: startTime must be before endTime
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Admin required or timetable feature not enabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1357,11 +1362,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Admin required or timetable feature not enabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -1374,7 +1375,7 @@ paths:
                 error:
                   code: HAS_REFERENCES
                   message: Cannot delete period — active timeslots reference it
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
 
   # ─────────────────────────────────────────────
   # TIMETABLE
@@ -1382,7 +1383,9 @@ paths:
 
   /timetable:
     get:
-      summary: Query timetable
+      summary: >
+        Query timetable. startTime/endTime/label derived from schoolperiods at query time.
+        v3.5 CR-11: Inline cell click is the sole frontend create trigger — no UI button.
       operationId: getTimetable
       tags: [Timetable]
       parameters:
@@ -1412,7 +1415,7 @@ paths:
             default: Active
       responses:
         '200':
-          description: Timetable entries — startTime/endTime/label derived from schoolperiods
+          description: Timetable entries
           content:
             application/json:
               schema:
@@ -1453,10 +1456,13 @@ paths:
                 error:
                   code: FEATURE_DISABLED
                   message: Timetable feature is not enabled for this tenant
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
 
     post:
-      summary: Create timetable entry (Admin only) — v3.3 startTime/endTime removed from request
+      summary: >
+        Create timetable entry (Admin only).
+        startTime/endTime NOT accepted — derived from schoolperiods.
+        v3.5 CR-11: dayOfWeek and periodNumber are pre-filled from cell context in the UI.
       operationId: createTimeSlot
       tags: [Timetable]
       requestBody:
@@ -1484,7 +1490,6 @@ paths:
                   format: date
             examples:
               success:
-                summary: Create Monday Period 3 slot
                 value:
                   classId: C001
                   subjectId: SUB001
@@ -1493,7 +1498,6 @@ paths:
                   periodNumber: 3
                   effectiveFrom: "2026-03-01"
               errorPeriodNotConfigured:
-                summary: Unknown period number
                 value:
                   classId: C001
                   subjectId: SUB001
@@ -1503,7 +1507,7 @@ paths:
                   effectiveFrom: "2026-03-01"
       responses:
         '201':
-          description: TimeSlot created — startTime/endTime/label populated from schoolperiods
+          description: TimeSlot created
           content:
             application/json:
               schema:
@@ -1542,13 +1546,13 @@ paths:
                     error:
                       code: PERIOD_NOT_CONFIGURED
                       message: Period 99 is not configured for this school
-                      timestamp: "2026-03-02T07:00:00Z"
+                      timestamp: "2026-03-03T07:00:00Z"
                 teacherRoleMissing:
                   value:
                     error:
                       code: INVALID_TEACHER
                       message: The specified user does not have the Teacher role
-                      timestamp: "2026-03-02T07:00:00Z"
+                      timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1563,7 +1567,7 @@ paths:
                 error:
                   code: CONFLICT
                   message: This period slot is already occupied for the given class and day
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
 
   /timetable/{timeSlotId}/end:
     put:
@@ -1587,6 +1591,10 @@ paths:
                 effectiveTo:
                   type: string
                   format: date
+            examples:
+              success:
+                value:
+                  effectiveTo: "2026-03-31"
       responses:
         '200':
           description: TimeSlot ended
@@ -1604,6 +1612,12 @@ paths:
                       effectiveTo:
                         type: string
                         format: date
+              examples:
+                success:
+                  value:
+                    timeSlot:
+                      id: TS001
+                      effectiveTo: "2026-03-31"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1617,22 +1631,27 @@ paths:
 
   /users:
     get:
-      summary: List users (Admin only)
+      summary: >
+        List users (Admin only).
+        v3.5 CR-13 BREAKING: Student-role users are EXCLUDED from all results.
+        Use GET /students to manage student accounts.
+        Role filter accepts Teacher and Admin only.
       operationId: listUsers
       tags: [Users]
       parameters:
         - name: role
           in: query
+          description: Filter by role. Student is not a valid filter — student users are excluded from this endpoint.
           schema:
             type: string
-            enum: [Teacher, Admin, Student]
+            enum: [Teacher, Admin]
         - name: search
           in: query
           schema:
             type: string
       responses:
         '200':
-          description: User list
+          description: User list — never contains Student-role users
           content:
             application/json:
               schema:
@@ -1651,13 +1670,20 @@ paths:
                         name: John Doe
                         email: john@school1.com
                         roles: [Teacher]
+                      - id: U124
+                        name: Jane Smith
+                        email: jane@school1.com
+                        roles: [Admin, Teacher]
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
 
     post:
-      summary: Create user (Admin only)
+      summary: >
+        Create user (Admin only).
+        v3.5 CR-13 BREAKING: Student role is rejected — 400 INVALID_ROLE.
+        Student accounts must be created via POST /students.
       operationId: createUser
       tags: [Users]
       requestBody:
@@ -1681,9 +1707,12 @@ paths:
                   type: array
                   items:
                     type: string
-                    enum: [Teacher, Admin, Student]
+                    enum: [Teacher, Admin]
                   minItems: 1
                   uniqueItems: true
+                  description: >
+                    v3.5: Student role is NOT allowed here.
+                    Passing Student results in 400 INVALID_ROLE.
             examples:
               createTeacher:
                 value:
@@ -1691,9 +1720,16 @@ paths:
                   email: jane@school1.com
                   password: securepass1
                   roles: [Teacher]
-              createStudent:
+              createAdmin:
                 value:
-                  name: Alice Student
+                  name: Bob Admin
+                  email: bob@school1.com
+                  password: securepass1
+                  roles: [Admin]
+              errorStudentRole:
+                summary: Student role rejected
+                value:
+                  name: Alice
                   email: alice@school1.com
                   password: securepass1
                   roles: [Student]
@@ -1708,14 +1744,50 @@ paths:
                 properties:
                   user:
                     $ref: '#/components/schemas/User'
+              examples:
+                success:
+                  value:
+                    user:
+                      id: U125
+                      name: Jane Smith
+                      email: jane@school1.com
+                      roles: [Teacher]
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: Validation failure or Student role passed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidRole:
+                  summary: Student role rejected (v3.5)
+                  value:
+                    error:
+                      code: INVALID_ROLE
+                      message: Student accounts must be created via the Students page
+                      timestamp: "2026-03-03T07:00:00Z"
+                validationError:
+                  summary: General validation error
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: roles must contain at least one value
+                      timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '409':
-          $ref: '#/components/responses/Conflict'
+          description: Email already exists for this tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: CONFLICT
+                  message: Email already exists for this tenant
+                  timestamp: "2026-03-03T07:00:00Z"
 
   /users/bulk:
     delete:
@@ -1734,7 +1806,7 @@ paths:
                   ids: [U001, U002, U003]
       responses:
         '200':
-          description: Bulk delete result (partial success allowed)
+          description: Bulk delete result
           content:
             application/json:
               schema:
@@ -1781,9 +1853,9 @@ paths:
     put:
       summary: >
         Update user roles (Admin only).
-        v3.4 BREAKING: Admin may now target self.
-        SELFROLECHANGEFORBIDDEN removed.
-        LASTADMIN guard added: cannot remove own Admin role if last admin.
+        v3.4: Admin may target self. SELFROLECHANGEFORBIDDEN removed. LASTADMIN guard added.
+        v3.5 CR-12: Frontend no longer hides this button for self — UI guard removed.
+        Backend LASTADMIN guard remains and returns 403 if caller is the last admin.
       operationId: updateUserRoles
       tags: [Users]
       parameters:
@@ -1812,7 +1884,7 @@ paths:
                 summary: Admin adds Teacher role to self
                 value:
                   roles: [Admin, Teacher]
-              removeOwnAdmin:
+              removeOwnAdminFails:
                 summary: Admin removing own Admin (fails if last admin)
                 value:
                   roles: [Teacher]
@@ -1831,7 +1903,7 @@ paths:
                 success:
                   value:
                     user:
-                      id: U124
+                      id: U123
                       name: John Doe
                       email: john@school1.com
                       roles: [Admin, Teacher]
@@ -1852,7 +1924,7 @@ paths:
                     error:
                       code: LAST_ADMIN
                       message: Cannot remove Admin role — you are the last admin of this tenant
-                      timestamp: "2026-03-02T07:00:00Z"
+                      timestamp: "2026-03-03T07:00:00Z"
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1862,7 +1934,9 @@ paths:
 
   /students:
     get:
-      summary: List students
+      summary: >
+        List students. v3.5: response includes admissionNumber, dob, loginId.
+        loginId displayed to Admin for distribution to student.
       operationId: listStudents
       tags: [Students]
       parameters:
@@ -1893,7 +1967,7 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Student list
+          description: Student list with login credentials info
           content:
             application/json:
               schema:
@@ -1906,13 +1980,36 @@ paths:
                       $ref: '#/components/schemas/Student'
                   pagination:
                     $ref: '#/components/schemas/Pagination'
+              examples:
+                success:
+                  value:
+                    students:
+                      - id: S001
+                        name: Ravi Kumar
+                        classId: C001
+                        className: Grade 10A
+                        batchId: B001
+                        batchName: "2025-26"
+                        admissionNumber: "530"
+                        dob: "2003-10-03"
+                        loginId: 530@greenvalley.local
+                        userId: U999
+                    pagination:
+                      limit: 50
+                      offset: 0
+                      total: 1
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
 
     post:
-      summary: Create student (Admin only)
+      summary: >
+        Create student (Admin only).
+        v3.5 CR-13 BREAKING: admissionNumber + dob required.
+        Atomically creates a users row (roles=[Student], email={admissionNumber}@{tenantSlug}.local,
+        password=bcrypt(admissionNumber+DDMMYYYY(dob))) and the students row with userId set.
+        No separate link-account step required.
       operationId: createStudent
       tags: [Students]
       requestBody:
@@ -1921,7 +2018,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, classId, batchId]
+              required: [name, classId, batchId, admissionNumber, dob]
               properties:
                 name:
                   type: string
@@ -1930,15 +2027,51 @@ paths:
                   type: string
                 batchId:
                   type: string
+                  description: Must match the batchId of the referenced class
+                admissionNumber:
+                  type: string
+                  maxLength: 50
+                  description: >
+                    Unique per tenant (active records).
+                    Used to derive loginId and login password.
+                    Login password = admissionNumber + DDMMYYYY(dob).
+                dob:
+                  type: string
+                  format: date
+                  description: >
+                    Date of birth YYYY-MM-DD. Used to derive login password.
+                    e.g. dob=2003-10-03 → DDMMYYYY=03102003.
+                    Combined with admissionNumber 530 → password=53003102003.
             examples:
               success:
+                summary: Create student with auto login account
                 value:
-                  name: Alice Smith
+                  name: Ravi Kumar
                   classId: C001
                   batchId: B001
+                  admissionNumber: "530"
+                  dob: "2003-10-03"
+              errorDuplicateAdmission:
+                summary: Duplicate admission number
+                value:
+                  name: Another Student
+                  classId: C001
+                  batchId: B001
+                  admissionNumber: "530"
+                  dob: "2004-05-12"
+              errorBatchMismatch:
+                summary: Class batchId mismatch
+                value:
+                  name: Ravi Kumar
+                  classId: C001
+                  batchId: B999
+                  admissionNumber: "531"
+                  dob: "2003-10-03"
       responses:
         '201':
-          description: Student created
+          description: >
+            Student created and user account auto-provisioned.
+            loginId should be noted by Admin and given to student for login.
           content:
             application/json:
               schema:
@@ -1947,12 +2080,54 @@ paths:
                 properties:
                   student:
                     $ref: '#/components/schemas/Student'
+              examples:
+                success:
+                  value:
+                    student:
+                      id: S001
+                      name: Ravi Kumar
+                      classId: C001
+                      className: Grade 10A
+                      batchId: B001
+                      batchName: "2025-26"
+                      admissionNumber: "530"
+                      dob: "2003-10-03"
+                      loginId: 530@greenvalley.local
+                      userId: U999
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: Validation failure or class/batch mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                batchMismatch:
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: batchId does not match the batch of the selected class
+                      timestamp: "2026-03-03T07:00:00Z"
+                missingFields:
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: admissionNumber is required
+                      timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Admission number already active in this tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: ADMISSION_NUMBER_CONFLICT
+                  message: Admission number 530 already exists for this school
+                  timestamp: "2026-03-03T07:00:00Z"
 
   /students/bulk:
     delete:
@@ -1965,6 +2140,10 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/BulkDeleteRequest'
+            examples:
+              success:
+                value:
+                  ids: [S001, S002, S003]
       responses:
         '200':
           description: Bulk delete result
@@ -1972,6 +2151,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkDeleteResponse'
+              examples:
+                success:
+                  value:
+                    deleted: [S001, S002]
+                    failed:
+                      - id: S003
+                        reason: HAS_REFERENCES
+                        message: Cannot delete student — has attendance records
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1980,6 +2167,96 @@ paths:
           $ref: '#/components/responses/Forbidden'
 
   /students/{id}:
+    put:
+      summary: >
+        Update student (Admin only).
+        v3.5 CR-13: If dob or admissionNumber is updated, users.passwordhash is
+        re-computed as bcrypt(newAdmissionNumber + DDMMYYYY(newDob)) in the same
+        transaction (Reset Login). users.email (loginId) is also updated accordingly.
+      operationId: updateStudent
+      tags: [Students]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+                classId:
+                  type: string
+                batchId:
+                  type: string
+                admissionNumber:
+                  type: string
+                  maxLength: 50
+                  description: Changing this resets the student login password
+                dob:
+                  type: string
+                  format: date
+                  description: Changing this resets the student login password
+            examples:
+              updateName:
+                value:
+                  name: Ravi Kumar Updated
+              resetLogin:
+                summary: DOB correction triggers password re-hash
+                value:
+                  dob: "2003-10-15"
+      responses:
+        '200':
+          description: Student updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [student]
+                properties:
+                  student:
+                    $ref: '#/components/schemas/Student'
+              examples:
+                success:
+                  value:
+                    student:
+                      id: S001
+                      name: Ravi Kumar
+                      classId: C001
+                      className: Grade 10A
+                      batchId: B001
+                      batchName: "2025-26"
+                      admissionNumber: "530"
+                      dob: "2003-10-15"
+                      loginId: 530@greenvalley.local
+                      userId: U999
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Admission number conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: ADMISSION_NUMBER_CONFLICT
+                  message: Admission number 530 already exists for this school
+                  timestamp: "2026-03-03T07:00:00Z"
+
     delete:
       summary: Soft-delete a student (Admin only)
       operationId: deleteStudent
@@ -2004,9 +2281,11 @@ paths:
 
   /students/{studentId}/link-account:
     put:
+      deprecated: true
       summary: >
-        Link or unlink a user account to a student enrollment record (Admin only).
-        v3.4 NEW. Pass userId: null to unlink.
+        DEPRECATED in v3.5 — backend retained for migration of pre-existing students only.
+        Removed from frontend UI. New student enrollments auto-create user accounts
+        via POST /students. Use this only to link pre-v3.5 student records that have userId=null.
       operationId: linkStudentAccount
       tags: [Students]
       parameters:
@@ -2028,7 +2307,7 @@ paths:
                   nullable: true
             examples:
               link:
-                summary: Link a user account
+                summary: Link a user account (migration use)
                 value:
                   userId: U456
               unlink:
@@ -2046,40 +2325,17 @@ paths:
                 properties:
                   student:
                     $ref: '#/components/schemas/Student'
-              examples:
-                linked:
-                  value:
-                    student:
-                      id: S001
-                      name: Alice Smith
-                      classId: C001
-                      className: Grade 10A
-                      batchId: B001
-                      batchName: "2025-26"
-                      userId: U456
-                unlinked:
-                  value:
-                    student:
-                      id: S001
-                      name: Alice Smith
-                      classId: C001
-                      className: Grade 10A
-                      batchId: B001
-                      batchName: "2025-26"
-                      userId: null
         '400':
           description: User not found or lacks Student role
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                invalidUser:
-                  value:
-                    error:
-                      code: INVALID_USER
-                      message: User not found or does not have the Student role
-                      timestamp: "2026-03-02T07:00:00Z"
+              example:
+                error:
+                  code: INVALID_USER
+                  message: User not found or does not have the Student role
+                  timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2096,14 +2352,14 @@ paths:
                 error:
                   code: USER_ALREADY_LINKED
                   message: This user is already linked to a different student record
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
 
   /students/{studentId}/attendance:
     get:
       summary: >
         Get student attendance history.
         Admin: any student. Teacher: own-class students only.
-        Student role: own record only (where students.user_id = caller's userId) — else 403 STUDENT_ACCESS_DENIED.
+        Student role: own record only (students.userId = caller.userId) — else 403 STUDENT_ACCESS_DENIED.
       operationId: getStudentAttendance
       tags: [Attendance]
       parameters:
@@ -2171,19 +2427,22 @@ paths:
                   value:
                     student:
                       id: S001
-                      name: Alice Smith
+                      name: Ravi Kumar
                       classId: C001
                       className: Grade 10A
                       batchId: B001
                       batchName: "2025-26"
-                      userId: U456
+                      admissionNumber: "530"
+                      dob: "2003-10-03"
+                      loginId: 530@greenvalley.local
+                      userId: U999
                     records:
                       - id: AR001
                         date: "2026-02-26"
                         originalStatus: Absent
                         status: Present
                         correctedBy: U123
-                        correctedAt: "2026-03-02T07:30:00Z"
+                        correctedAt: "2026-03-03T07:30:00Z"
                         timeSlot:
                           id: TS001
                           subjectName: Mathematics
@@ -2204,7 +2463,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Attendance feature not enabled or student access denied
+          description: Feature not enabled or student accessing another student's record
           content:
             application/json:
               schema:
@@ -2215,13 +2474,13 @@ paths:
                     error:
                       code: FEATURE_DISABLED
                       message: Attendance feature is not enabled for this tenant
-                      timestamp: "2026-03-02T07:00:00Z"
+                      timestamp: "2026-03-03T07:00:00Z"
                 studentAccessDenied:
                   value:
                     error:
                       code: STUDENT_ACCESS_DENIED
                       message: You can only view your own attendance record
-                      timestamp: "2026-03-02T07:00:00Z"
+                      timestamp: "2026-03-03T07:00:00Z"
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -2315,7 +2574,16 @@ paths:
                       subjectName: Mathematics
                       periodNumber: 1
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: Future date
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: FUTURE_DATE
+                  message: Cannot record attendance for a future date
+                  timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2330,12 +2598,12 @@ paths:
                 error:
                   code: CONFLICT
                   message: Attendance already recorded for this class, date, and timeslot
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
 
   /attendance/{recordId}:
     put:
       summary: >
-        Correct an attendance record (v3.4 NEW).
+        Correct an attendance record.
         Original status is never mutated — preserved as originalStatus.
         Teacher: own-class records only. Admin: any record in tenant.
       operationId: correctAttendance
@@ -2359,7 +2627,6 @@ paths:
                   enum: [Present, Absent, Late]
             examples:
               correctToPresent:
-                summary: Correct Absent → Present
                 value:
                   status: Present
       responses:
@@ -2386,7 +2653,6 @@ paths:
                       status:
                         type: string
                         enum: [Present, Absent, Late]
-                        description: Effective status after correction
                       correctedBy:
                         type: string
                       correctedAt:
@@ -2412,7 +2678,7 @@ paths:
                       originalStatus: Absent
                       status: Present
                       correctedBy: U123
-                      correctedAt: "2026-03-02T07:30:00Z"
+                      correctedAt: "2026-03-03T07:30:00Z"
                       timeSlot:
                         id: TS001
                         subjectName: Mathematics
@@ -2430,13 +2696,13 @@ paths:
                     error:
                       code: FUTURE_DATE
                       message: Cannot correct attendance for a future date
-                      timestamp: "2026-03-02T07:00:00Z"
+                      timestamp: "2026-03-03T07:00:00Z"
                 sameStatus:
                   value:
                     error:
                       code: SAME_STATUS
                       message: Correction status is identical to current effective status
-                      timestamp: "2026-03-02T07:00:00Z"
+                      timestamp: "2026-03-03T07:00:00Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2449,13 +2715,13 @@ paths:
                 error:
                   code: FORBIDDEN
                   message: You are not assigned to this timeslot
-                  timestamp: "2026-03-02T07:00:00Z"
+                  timestamp: "2026-03-03T07:00:00Z"
         '404':
           $ref: '#/components/responses/NotFound'
 
   /attendance/summary:
     get:
-      summary: Get aggregated attendance summary
+      summary: Get aggregated attendance summary (Admin only)
       operationId: getAttendanceSummary
       tags: [Attendance]
       parameters:
@@ -2477,7 +2743,7 @@ paths:
             format: date
       responses:
         '200':
-          description: Attendance summary — uses effective status (corrected where applicable)
+          description: Attendance summary
           content:
             application/json:
               schema:
@@ -2552,7 +2818,7 @@ paths:
                       attendanceRate: 92.86
                     byStudent:
                       - studentId: S001
-                        studentName: Alice Smith
+                        studentName: Ravi Kumar
                         present: 26
                         absent: 2
                         late: 0
@@ -2607,6 +2873,12 @@ paths:
                   type: integer
                 endYear:
                   type: integer
+            examples:
+              success:
+                value:
+                  name: "2025-26"
+                  startYear: 2025
+                  endYear: 2026
       responses:
         '201':
           description: Batch created
@@ -2673,6 +2945,10 @@ paths:
                 status:
                   type: string
                   enum: [Active, Archived]
+            examples:
+              archive:
+                value:
+                  status: Archived
       responses:
         '200':
           description: Batch updated
@@ -2756,6 +3032,11 @@ paths:
                 code:
                   type: string
                   maxLength: 50
+            examples:
+              success:
+                value:
+                  name: Mathematics
+                  code: MATH01
       responses:
         '201':
           description: Subject created
@@ -2905,6 +3186,11 @@ paths:
                   maxLength: 255
                 batchId:
                   type: string
+            examples:
+              success:
+                value:
+                  name: Grade 10A
+                  batchId: B001
       responses:
         '201':
           description: Class created
@@ -2968,6 +3254,10 @@ paths:
               properties:
                 name:
                   type: string
+            examples:
+              success:
+                value:
+                  name: Grade 10B
       responses:
         '200':
           description: Class updated

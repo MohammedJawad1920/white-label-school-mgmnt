@@ -1,8 +1,16 @@
 /**
- * StudentsPage — Freeze §Screen: Student Management
+ * StudentsPage — Freeze §Screen: Student Management (v3.5 CR-13)
  * TQ key: ['students']  stale: 2 min
  *
- * No edit button — no PUT /students/:id in OpenAPI contract.
+ * v3.5 CR-13 changes:
+ * - Create form: adds admissionNumber (required, max 50) + dob (required YYYY-MM-DD)
+ * - POST /students atomically creates a linked user account server-side
+ * - On 201: show "Student created. Login ID: {loginId}"
+ * - On 409 ADMISSIONNUMBERCONFLICT: inline error on admissionNumber field
+ * - Table: adds Admission No., DOB, Login ID (read-only + copy button)
+ * - Edit drawer: PUT /students/:id; warn when dob/admissionNumber changes
+ * - Link Account drawer REMOVED (deprecated v3.5)
+ *
  * Cross-field validation: batchId must match selectedClass.batchId.
  */
 import { useState } from "react";
@@ -29,25 +37,110 @@ import {
 } from "@/components/manage/shared";
 import type { Student, Class, Batch } from "@/types/api";
 
-const schema = z.object({
+// ── Schemas ───────────────────────────────────────────────────────────────────
+const createSchema = z.object({
   name: z.string().min(1, "Required").max(255),
   classId: z.string().min(1, "Class is required"),
   batchId: z.string().min(1, "Batch is required"),
+  admissionNumber: z.string().min(1, "Required").max(50, "Max 50 characters"),
+  dob: z
+    .string()
+    .min(1, "Required")
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
 });
-type FormValues = z.infer<typeof schema>;
+type CreateFormValues = z.infer<typeof createSchema>;
 
-function StudentForm({
+const editSchema = z.object({
+  name: z.string().min(1, "Required").max(255),
+  classId: z.string().min(1, "Class is required"),
+  batchId: z.string().min(1, "Batch is required"),
+  admissionNumber: z.string().min(1, "Required").max(50, "Max 50 characters"),
+  dob: z
+    .string()
+    .min(1, "Required")
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
+});
+type EditFormValues = z.infer<typeof editSchema>;
+
+// ── Copy Login ID button ──────────────────────────────────────────────────────
+function CopyLoginId({
+  loginId,
+  studentName,
+}: {
+  loginId: string;
+  studentName: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  function handleCopy() {
+    void navigator.clipboard.writeText(loginId).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      <code className="text-xs font-mono bg-muted rounded px-1 py-0.5 select-all">
+        {loginId}
+      </code>
+      <button
+        type="button"
+        onClick={handleCopy}
+        aria-label={`Copy login ID for ${studentName}`}
+        title={copied ? "Copied!" : "Copy login ID"}
+        className="rounded p-0.5 hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-muted-foreground hover:text-foreground"
+      >
+        {copied ? (
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        ) : (
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+          </svg>
+        )}
+      </button>
+    </span>
+  );
+}
+
+// ── Create form ───────────────────────────────────────────────────────────────
+function CreateStudentForm({
   onSubmit,
   onCancel,
   isPending,
   rootError,
+  admissionError,
   classes,
   batches,
 }: {
-  onSubmit: (v: FormValues) => void;
+  onSubmit: (v: CreateFormValues) => void;
   onCancel: () => void;
   isPending: boolean;
   rootError?: string | null;
+  admissionError?: string | null;
   classes: Class[];
   batches: Batch[];
 }) {
@@ -58,19 +151,18 @@ function StudentForm({
     setValue,
     setError,
     formState: { errors },
-  } = useForm<FormValues>({ resolver: zodResolver(schema) });
+  } = useForm<CreateFormValues>({ resolver: zodResolver(createSchema) });
 
   const selectedClassId = watch("classId");
   const selectedClass = classes.find((c) => c.id === selectedClassId);
 
-  // Auto-fill batchId when class is selected, validate match
   function handleClassChange(classId: string) {
     setValue("classId", classId);
     const cls = classes.find((c) => c.id === classId);
     if (cls) setValue("batchId", cls.batchId);
   }
 
-  function handleSubmitWithCrossValidation(v: FormValues) {
+  function handleSubmitWithCrossValidation(v: CreateFormValues) {
     const cls = classes.find((c) => c.id === v.classId);
     if (cls && cls.batchId !== v.batchId) {
       setError("batchId", {
@@ -80,6 +172,9 @@ function StudentForm({
     }
     onSubmit(v);
   }
+
+  // Merge server-side admissionNumber error into field
+  const admissionFieldError = admissionError ?? errors.admissionNumber?.message;
 
   return (
     <form
@@ -148,6 +243,37 @@ function StudentForm({
             ))}
           </select>
         </FormField>
+        <FormField
+          id="stu-admission"
+          label="Admission Number"
+          error={admissionFieldError}
+          required
+          hint="Unique within this school. Used to derive the student's login ID."
+        >
+          <input
+            id="stu-admission"
+            type="text"
+            maxLength={50}
+            aria-invalid={!!admissionFieldError}
+            className={inputCls(!!admissionFieldError)}
+            {...register("admissionNumber")}
+          />
+        </FormField>
+        <FormField
+          id="stu-dob"
+          label="Date of Birth"
+          error={errors.dob?.message}
+          required
+          hint="YYYY-MM-DD. Used to derive the student's initial login password."
+        >
+          <input
+            id="stu-dob"
+            type="date"
+            aria-invalid={!!errors.dob}
+            className={inputCls(!!errors.dob)}
+            {...register("dob")}
+          />
+        </FormField>
       </div>
       <div className="border-t p-4 shrink-0">
         <SubmitFooter
@@ -160,16 +286,196 @@ function StudentForm({
   );
 }
 
+// ── Edit form ─────────────────────────────────────────────────────────────────
+function EditStudentForm({
+  student,
+  onSubmit,
+  onCancel,
+  isPending,
+  rootError,
+  admissionError,
+  classes,
+  batches,
+}: {
+  student: Student;
+  onSubmit: (v: EditFormValues) => void;
+  onCancel: () => void;
+  isPending: boolean;
+  rootError?: string | null;
+  admissionError?: string | null;
+  classes: Class[];
+  batches: Batch[];
+}) {
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    setError,
+    formState: { errors },
+  } = useForm<EditFormValues>({
+    resolver: zodResolver(editSchema),
+    defaultValues: {
+      name: student.name,
+      classId: student.classId,
+      batchId: student.batchId,
+      admissionNumber: student.admissionNumber,
+      dob: student.dob,
+    },
+  });
+
+  const currentAdmission = watch("admissionNumber");
+  const currentDob = watch("dob");
+  const credentialsWillReset =
+    currentAdmission !== student.admissionNumber || currentDob !== student.dob;
+
+  function handleClassChange(classId: string) {
+    setValue("classId", classId);
+    const cls = classes.find((c) => c.id === classId);
+    if (cls) setValue("batchId", cls.batchId);
+  }
+
+  function handleSubmitWithCrossValidation(v: EditFormValues) {
+    const cls = classes.find((c) => c.id === v.classId);
+    if (cls && cls.batchId !== v.batchId) {
+      setError("batchId", {
+        message: "The selected class does not belong to the selected batch.",
+      });
+      return;
+    }
+    onSubmit(v);
+  }
+
+  const admissionFieldError = admissionError ?? errors.admissionNumber?.message;
+
+  return (
+    <form
+      onSubmit={handleSubmit(handleSubmitWithCrossValidation)}
+      noValidate
+      className="contents"
+    >
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {rootError && <RootError message={rootError} />}
+        {credentialsWillReset && (
+          <div
+            role="alert"
+            className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800"
+          >
+            Changing admission number or date of birth will reset the student's
+            login password.
+          </div>
+        )}
+        <FormField
+          id="edit-stu-name"
+          label="Student Name"
+          error={errors.name?.message}
+          required
+        >
+          <input
+            id="edit-stu-name"
+            type="text"
+            aria-invalid={!!errors.name}
+            className={inputCls(!!errors.name)}
+            {...register("name")}
+          />
+        </FormField>
+        <FormField
+          id="edit-stu-class"
+          label="Class"
+          error={errors.classId?.message}
+          required
+        >
+          <select
+            id="edit-stu-class"
+            aria-invalid={!!errors.classId}
+            className={inputCls(!!errors.classId)}
+            {...register("classId", {
+              onChange: (e) => handleClassChange(e.target.value),
+            })}
+          >
+            <option value="">Select class…</option>
+            {classes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </FormField>
+        <FormField
+          id="edit-stu-batch"
+          label="Batch"
+          error={errors.batchId?.message}
+          required
+        >
+          <select
+            id="edit-stu-batch"
+            aria-invalid={!!errors.batchId}
+            className={inputCls(!!errors.batchId)}
+            {...register("batchId")}
+          >
+            <option value="">Select batch…</option>
+            {batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        </FormField>
+        <FormField
+          id="edit-stu-admission"
+          label="Admission Number"
+          error={admissionFieldError}
+          required
+          hint="Changing this will reset the student's login password."
+        >
+          <input
+            id="edit-stu-admission"
+            type="text"
+            maxLength={50}
+            aria-invalid={!!admissionFieldError}
+            className={inputCls(!!admissionFieldError)}
+            {...register("admissionNumber")}
+          />
+        </FormField>
+        <FormField
+          id="edit-stu-dob"
+          label="Date of Birth"
+          error={errors.dob?.message}
+          required
+          hint="Changing this will reset the student's login password."
+        >
+          <input
+            id="edit-stu-dob"
+            type="date"
+            aria-invalid={!!errors.dob}
+            className={inputCls(!!errors.dob)}
+            {...register("dob")}
+          />
+        </FormField>
+      </div>
+      <div className="border-t p-4 shrink-0">
+        <SubmitFooter
+          onCancel={onCancel}
+          isLoading={isPending}
+          submitLabel="Save Changes"
+        />
+      </div>
+    </form>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function StudentsPage() {
   const qc = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
+  const [editStudent, setEditStudent] = useState<Student | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [drawerError, setDrawerError] = useState<string | null>(null);
-  // v3.4 CR-08: link student to user account
-  const [linkStudent, setLinkStudent] = useState<Student | null>(null);
-  const [linkUserId, setLinkUserId] = useState("");
-  const [linkError, setLinkError] = useState<string | null>(null);
+  const [drawerAdmissionError, setDrawerAdmissionError] = useState<
+    string | null
+  >(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const { data: studentsData, isLoading } = useQuery({
     queryKey: ["students"],
@@ -190,25 +496,57 @@ export default function StudentsPage() {
   const students = studentsData?.students ?? [];
   const classes = classesData?.classes ?? [];
   const batches = batchesData?.batches ?? [];
-  const classMap = Object.fromEntries(classes.map((c) => [c.id, c.name]));
-  const batchMap = Object.fromEntries(batches.map((b) => [b.id, b.name]));
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["students"] });
 
   const createMut = useMutation({
-    mutationFn: (v: FormValues) => studentsApi.create(v),
-    onSuccess: async () => {
+    mutationFn: (v: CreateFormValues) => studentsApi.create(v),
+    onSuccess: async (data) => {
       await invalidate();
       setCreateOpen(false);
       setDrawerError(null);
+      setDrawerAdmissionError(null);
+      setSuccessMessage(`Student created. Login ID: ${data.student.loginId}`);
     },
     onError: (e) => {
       const { code, message } = parseApiError(e);
-      setDrawerError(
-        code === "CLASS_BATCH_MISMATCH" || code === "INVALID"
-          ? "The selected class does not belong to the selected batch."
-          : message,
-      );
+      if (code === "ADMISSIONNUMBERCONFLICT") {
+        setDrawerAdmissionError(
+          "This admission number is already in use by another student.",
+        );
+        setDrawerError(null);
+      } else if (code === "BATCH_CLASS_MISMATCH" || code === "INVALID") {
+        setDrawerError(
+          "The selected class does not belong to the selected batch.",
+        );
+      } else {
+        setDrawerError(message);
+      }
+    },
+  });
+
+  const editMut = useMutation({
+    mutationFn: (v: EditFormValues) => studentsApi.update(editStudent!.id, v),
+    onSuccess: async () => {
+      await invalidate();
+      setEditStudent(null);
+      setDrawerError(null);
+      setDrawerAdmissionError(null);
+    },
+    onError: (e) => {
+      const { code, message } = parseApiError(e);
+      if (code === "ADMISSIONNUMBERCONFLICT") {
+        setDrawerAdmissionError(
+          "This admission number is already in use by another student.",
+        );
+        setDrawerError(null);
+      } else if (code === "BATCH_CLASS_MISMATCH") {
+        setDrawerError(
+          "The selected class does not belong to the selected batch.",
+        );
+      } else {
+        setDrawerError(message);
+      }
     },
   });
 
@@ -218,7 +556,7 @@ export default function StudentsPage() {
     onError: (e) => {
       const { code } = parseApiError(e);
       setDeleteError(
-        code === "CONFLICT"
+        code === "HAS_REFERENCES" || code === "CONFLICT"
           ? "Cannot delete: student has attendance records."
           : parseApiError(e).message,
       );
@@ -234,21 +572,6 @@ export default function StudentsPage() {
     onError: (e) => setDeleteError(parseApiError(e).message),
   });
 
-  const linkMut = useMutation({
-    mutationFn: () =>
-      studentsApi.linkAccount(linkStudent!.id, { userId: linkUserId }),
-    onSuccess: async () => {
-      await invalidate();
-      setLinkStudent(null);
-      setLinkUserId("");
-      setLinkError(null);
-    },
-    onError: (e) => {
-      const { code, message } = parseApiError(e);
-      setLinkError(code === "NOT_FOUND" ? "User not found." : message);
-    },
-  });
-
   function toggleSelect(id: string, checked: boolean) {
     setSelectedIds((prev) => {
       const s = new Set(prev);
@@ -257,17 +580,36 @@ export default function StudentsPage() {
     });
   }
 
+  function openCreate() {
+    setDrawerError(null);
+    setDrawerAdmissionError(null);
+    setSuccessMessage(null);
+    setCreateOpen(true);
+  }
+
+  function openEdit(student: Student) {
+    setDrawerError(null);
+    setDrawerAdmissionError(null);
+    setEditStudent(student);
+  }
+
   return (
     <div className="p-4 md:p-6">
       <PageHeader
         title="Students"
         subtitle={`${students.length} student${students.length !== 1 ? "s" : ""}`}
-        onAdd={() => {
-          setDrawerError(null);
-          setCreateOpen(true);
-        }}
+        onAdd={openCreate}
         addLabel="Add Student"
       />
+
+      {successMessage && (
+        <div
+          role="status"
+          className="mb-4 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800"
+        >
+          {successMessage}
+        </div>
+      )}
 
       {deleteError && (
         <div
@@ -278,8 +620,9 @@ export default function StudentsPage() {
         </div>
       )}
 
-      <div className="rounded-lg border overflow-hidden">
+      <div className="rounded-lg border overflow-hidden overflow-x-auto">
         <table className="w-full text-sm">
+          <caption className="sr-only">Student list</caption>
           <thead className="bg-muted/50 border-b">
             <tr>
               <Th className="w-10">
@@ -302,21 +645,32 @@ export default function StudentsPage() {
               <Th>Name</Th>
               <Th>Class</Th>
               <Th>Batch</Th>
+              <Th>Admission No.</Th>
+              <Th>DOB</Th>
+              <Th>
+                Login ID
+                <span
+                  className="ml-1 text-xs font-normal text-muted-foreground cursor-help"
+                  title="Share this login ID with the student. They use it as their username. Password is admission number + DOB (DDMMYYYY)."
+                >
+                  ⓘ
+                </span>
+              </Th>
               <Th className="text-right">Actions</Th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={5} className="p-0">
-                  <TableSkeleton rows={8} cols={5} />
+                <td colSpan={8} className="p-0">
+                  <TableSkeleton rows={8} cols={8} />
                 </td>
               </tr>
             )}
             {!isLoading && students.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={8}
                   className="px-4 py-12 text-center text-sm text-muted-foreground"
                 >
                   No students found. Add the first student.
@@ -338,24 +692,28 @@ export default function StudentsPage() {
                 </td>
                 <td className="px-4 py-2.5 font-medium">{student.name}</td>
                 <td className="px-4 py-2.5 text-muted-foreground">
-                  {student.classId
-                    ? (classMap[student.classId] ?? student.classId)
-                    : "—"}
+                  {student.className ?? student.classId}
                 </td>
                 <td className="px-4 py-2.5 text-muted-foreground">
-                  {student.batchId
-                    ? (batchMap[student.batchId] ?? student.batchId)
-                    : "—"}
+                  {student.batchName ?? student.batchId}
+                </td>
+                <td className="px-4 py-2.5 font-mono text-xs">
+                  {student.admissionNumber}
+                </td>
+                <td className="px-4 py-2.5 text-muted-foreground">
+                  {student.dob}
+                </td>
+                <td className="px-4 py-2.5">
+                  <CopyLoginId
+                    loginId={student.loginId}
+                    studentName={student.name}
+                  />
                 </td>
                 <td className="px-4 py-2.5">
                   <div className="flex justify-end gap-1.5">
                     <ActionBtn
-                      onClick={() => {
-                        setLinkUserId("");
-                        setLinkError(null);
-                        setLinkStudent(student);
-                      }}
-                      label={`Link account for ${student.name}`}
+                      onClick={() => openEdit(student)}
+                      label={`Edit ${student.name}`}
                     />
                     <ActionBtn
                       onClick={() => {
@@ -384,75 +742,51 @@ export default function StudentsPage() {
         isDeleting={bulkMut.isPending}
       />
 
+      {/* Create drawer */}
       <Drawer
         open={createOpen}
         title="Add Student"
         onClose={() => setCreateOpen(false)}
         footer={null}
       >
-        <StudentForm
-          onSubmit={(v) => createMut.mutate(v)}
+        <CreateStudentForm
+          onSubmit={(v) => {
+            setDrawerAdmissionError(null);
+            setDrawerError(null);
+            createMut.mutate(v);
+          }}
           onCancel={() => setCreateOpen(false)}
           isPending={createMut.isPending}
           rootError={drawerError}
+          admissionError={drawerAdmissionError}
           classes={classes}
           batches={batches}
         />
       </Drawer>
 
-      {/* Link Account drawer — v3.4 CR-08 */}
+      {/* Edit drawer */}
       <Drawer
-        open={!!linkStudent}
-        title="Link User Account"
-        onClose={() => setLinkStudent(null)}
+        open={!!editStudent}
+        title="Edit Student"
+        onClose={() => setEditStudent(null)}
         footer={null}
       >
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {linkError && <RootError message={linkError} />}
-            <p className="text-sm text-muted-foreground">
-              Link <strong>{linkStudent?.name}</strong> to an existing user
-              account. The user will be able to view their own attendance
-              history.
-            </p>
-            <FormField
-              id="link-user-id"
-              label="User ID"
-              hint="The ID of the user account to associate with this student."
-            >
-              <input
-                id="link-user-id"
-                type="text"
-                value={linkUserId}
-                onChange={(e) => setLinkUserId(e.target.value)}
-                className={inputCls(false)}
-                placeholder="Enter user ID"
-                autoComplete="off"
-              />
-            </FormField>
-          </div>
-          <div className="border-t p-4 shrink-0 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setLinkStudent(null)}
-              disabled={linkMut.isPending}
-              className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setLinkError(null);
-                linkMut.mutate();
-              }}
-              disabled={linkMut.isPending || !linkUserId.trim()}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            >
-              {linkMut.isPending ? "Linking…" : "Link Account"}
-            </button>
-          </div>
-        </div>
+        {editStudent && (
+          <EditStudentForm
+            student={editStudent}
+            onSubmit={(v) => {
+              setDrawerAdmissionError(null);
+              setDrawerError(null);
+              editMut.mutate(v);
+            }}
+            onCancel={() => setEditStudent(null)}
+            isPending={editMut.isPending}
+            rootError={drawerError}
+            admissionError={drawerAdmissionError}
+            classes={classes}
+            batches={batches}
+          />
+        )}
       </Drawer>
     </div>
   );

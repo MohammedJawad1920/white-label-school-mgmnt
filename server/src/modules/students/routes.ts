@@ -5,6 +5,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import {
   listStudents,
   createStudent,
+  updateStudent,
   deleteStudent,
   bulkDeleteStudents,
   linkStudentAccount,
@@ -17,12 +18,14 @@ router.use(tenantContextMiddleware);
 router.delete("/bulk", requireRole("Admin"), asyncHandler(bulkDeleteStudents));
 router.get("/", asyncHandler(listStudents));
 router.post("/", requireRole("Admin"), asyncHandler(createStudent));
-// v3.4 CR-08: link-account must precede /:id
+// v3.4 CR-08: link-account must precede /:id  (DEPRECATED v3.5 — backend retained only)
 router.put(
   "/:studentId/link-account",
   requireRole("Admin"),
   asyncHandler(linkStudentAccount),
 );
+// v3.5 CR-13: update student (must come AFTER /:studentId/link-account)
+router.put("/:id", requireRole("Admin"), asyncHandler(updateStudent));
 router.delete("/:id", requireRole("Admin"), asyncHandler(deleteStudent));
 
 export default router;

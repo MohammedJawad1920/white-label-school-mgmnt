@@ -1,14 +1,14 @@
 openapi: "3.1.0"
 info:
   title: White-Label School Management System
-  version: "3.4.0"
+  version: "3.5.0"
   description: >
     Multi-tenant school management API. Supports SuperAdmin (platform-level)
     and tenant-scoped Admin/Teacher/Student roles.
-    v3.4.0: Student role added; attendance correction (PUT /attendance/{recordId});
-    link-student-account (PUT /students/{studentId}/link-account);
-    reactivate tenant (PUT /super-admin/tenants/{tenantId}/reactivate);
-    createTenant now requires an admin block.
+    v3.5.0 (CR-13): POST /students atomically creates a linked user account;
+    admissionNumber + dob added to Student; GET /users excludes Student-role users;
+    POST /users rejects Student role (INVALIDROLE); PUT /students/:id added;
+    PUT /students/{studentId}/link-account deprecated.
 
 servers:
   - url: http://localhost:3000/api
@@ -138,7 +138,7 @@ components:
 
     Student:
       type: object
-      required: [id, name, classId, batchId]
+      required: [id, name, classId, batchId, admissionNumber, dob, loginId]
       properties:
         id:
           type: string
@@ -147,7 +147,7 @@ components:
         userId:
           type: string
           nullable: true
-          description: Linked user account ID (v3.4 CR-08); null if not yet linked
+          description: Linked user account ID; auto-created on POST /students (v3.5 CR-13)
         classId:
           type: string
         className:
@@ -156,6 +156,19 @@ components:
           type: string
         batchName:
           type: string
+        admissionNumber:
+          type: string
+          maxLength: 50
+          description: Unique admission number within the tenant (v3.5 CR-13)
+        dob:
+          type: string
+          format: date
+          description: Date of birth (YYYY-MM-DD); used to derive login password (v3.5 CR-13)
+        loginId:
+          type: string
+          description: >-
+            Derived login email = {admissionNumber.lower}@{tenantSlug}.local.
+            Share with student — password is admissionNumber + DDMMYYYY(dob). (v3.5 CR-13)
 
     Batch:
       type: object
@@ -1372,15 +1385,19 @@ paths:
 
   /users:
     get:
-      summary: List users
+      summary: List users (Teacher and Admin roles only)
+      description: >-
+        Returns users in this tenant. Student-role users are always excluded
+        (v3.5 CR-13). Use GET /students to list student accounts.
       operationId: listUsers
       tags: [Users]
       parameters:
         - name: role
           in: query
+          description: Filter by role. Only Teacher and Admin are valid (Student excluded).
           schema:
             type: string
-            enum: [Teacher, Admin, TeacherAdmin]
+            enum: [Teacher, Admin]
         - name: search
           in: query
           schema:
@@ -1457,7 +1474,26 @@ paths:
                   user:
                     $ref: "#/components/schemas/User"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Validation error or Student role rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidRole:
+                  summary: Student role rejected
+                  value:
+                    error:
+                      code: INVALIDROLE
+                      message: "Student role cannot be assigned via POST /users. Use POST /students instead."
+                      timestamp: "2026-03-03T07:00:00Z"
+                validation:
+                  summary: Missing required field
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: name, email, and password are required
+                      timestamp: "2026-03-03T07:00:00Z"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1548,7 +1584,7 @@ paths:
                   type: array
                   items:
                     type: string
-                    enum: [Teacher, Admin, Student]
+                    enum: [Teacher, Admin]
                   minItems: 1
                   uniqueItems: true
             examples:
@@ -1650,7 +1686,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
     post:
-      summary: Create student
+      summary: Create student (v3.5)
+      description: >-
+        Atomically creates a users row (roles: ["Student"]) and a students row
+        in a single transaction. admissionNumber must be unique per tenant.
+        Login ID = {admissionNumber.lower}@{tenantSlug}.local.
+        Initial password = admissionNumber + DDMMYYYY(dob). (v3.5 CR-13)
       operationId: createStudent
       tags: [Students]
       requestBody:
@@ -1659,7 +1700,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, classId, batchId]
+              required: [name, classId, batchId, admissionNumber, dob]
               properties:
                 name:
                   type: string
@@ -1668,9 +1709,17 @@ paths:
                   type: string
                 batchId:
                   type: string
+                admissionNumber:
+                  type: string
+                  maxLength: 50
+                  description: Unique admission number within the tenant
+                dob:
+                  type: string
+                  format: date
+                  description: Date of birth in YYYY-MM-DD format
       responses:
         "201":
-          description: Student created
+          description: Student and linked user account created
           content:
             application/json:
               schema:
@@ -1685,6 +1734,17 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Admission number already used in this tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: ADMISSIONNUMBERCONFLICT
+                  message: Admission number already exists for this school
+                  timestamp: "2026-03-03T07:00:00Z"
 
   /students/bulk:
     delete:
@@ -1712,6 +1772,70 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
   /students/{id}:
+    put:
+      summary: Update student (v3.5)
+      description: >-
+        Updates student fields. If admissionNumber or dob changes, the linked
+        user account's password (and email/loginId) is recomputed atomically
+        in the same transaction. (v3.5 CR-13)
+      operationId: updateStudent
+      tags: [Students]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+                classId:
+                  type: string
+                batchId:
+                  type: string
+                admissionNumber:
+                  type: string
+                  maxLength: 50
+                dob:
+                  type: string
+                  format: date
+      responses:
+        "200":
+          description: Student updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [student]
+                properties:
+                  student:
+                    $ref: "#/components/schemas/Student"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Admission number conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: ADMISSIONNUMBERCONFLICT
+                  message: Admission number already exists for this school
+                  timestamp: "2026-03-03T07:00:00Z"
     delete:
       summary: Soft-delete a student
       operationId: deleteStudent
@@ -1734,12 +1858,17 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  # v3.4 CR-08: Link a student record to a user account
+  # v3.4 CR-08: Link a student record to a user account (DEPRECATED in v3.5 CR-13)
   /students/{studentId}/link-account:
     put:
-      summary: Link student record to a user account
+      summary: Link student record to a user account (DEPRECATED)
+      deprecated: true
       operationId: linkStudentAccount
       tags: [Students]
+      description: >-
+        Deprecated in v3.5 (CR-13). POST /students now automatically creates and
+        links a user account. This endpoint is retained in the backend for migration
+        only and is removed from the frontend.
       parameters:
         - name: studentId
           in: path
