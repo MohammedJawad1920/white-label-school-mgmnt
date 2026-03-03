@@ -191,7 +191,10 @@ export default function TimetablePage() {
   }
 
   const isEmpty =
-    !timetableQ.isLoading && !timetableQ.isError && slots.length === 0;
+    !timetableQ.isLoading &&
+    !timetableQ.isError &&
+    slots.length === 0 &&
+    periods.length === 0;
 
   return (
     <div className="p-4 md:p-6">
@@ -305,7 +308,7 @@ export default function TimetablePage() {
       )}
 
       {/* Grid — scrollable horizontally on mobile */}
-      {!timetableQ.isLoading && !timetableQ.isError && slots.length > 0 && (
+      {!timetableQ.isLoading && !timetableQ.isError && periods.length > 0 && (
         <div className="overflow-x-auto -mx-4 md:mx-0 rounded-lg border">
           <div
             role="grid"

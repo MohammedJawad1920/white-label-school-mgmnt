@@ -23,8 +23,11 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
-      # Run migration on first boot
+      # All migrations run in order on first boot (empty volume only)
       - ./src/db/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql
+      - ./src/db/migrations/002_add_student_user_id.sql:/docker-entrypoint-initdb.d/002_add_student_user_id.sql
+      - ./src/db/migrations/003_add_attendance_corrections.sql:/docker-entrypoint-initdb.d/003_add_attendance_corrections.sql
+      - ./src/db/migrations/004_student_admission_dob.sql:/docker-entrypoint-initdb.d/004_student_admission_dob.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
       interval: 5s
