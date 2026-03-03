@@ -21,7 +21,7 @@ const server = app.listen(config.PORT, () => {
       event: "server_started",
       port: config.PORT,
       nodeEnv: config.NODE_ENV,
-      version: "3.3.0",
+      version: "3.5.0",
       timestamp: new Date().toISOString(),
     }),
   );

@@ -19,17 +19,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { attendanceApi } from "@/api/attendance";
 import { parseApiError } from "@/utils/errors";
 import { formatDisplayDate, todayISO } from "@/utils/dates";
+import { StatusBadge } from "@/components/StatusBadge";
 import type { AttendanceRecord } from "@/types/api";
 
 const PAGE_LIMIT = 50;
-
-type StatusLabel = "Present" | "Absent" | "Late";
-
-const STATUS_STYLES: Record<StatusLabel, string> = {
-  Present: "bg-green-100 text-green-800",
-  Absent: "bg-red-100 text-red-800",
-  Late: "bg-yellow-100 text-yellow-800",
-};
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 function TableSkeleton() {
@@ -346,11 +339,7 @@ export default function StudentAttendanceHistoryPage() {
                         P{record.timeSlot.periodNumber}
                       </td>
                       <td className="px-4 py-2.5">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[record.status as StatusLabel] ?? ""}`}
-                        >
-                          {record.status}
-                        </span>
+                        <StatusBadge status={record.status} />
                         {record.correctedAt && (
                           <span className="block text-xs text-muted-foreground mt-0.5">
                             corrected · was {record.originalStatus}

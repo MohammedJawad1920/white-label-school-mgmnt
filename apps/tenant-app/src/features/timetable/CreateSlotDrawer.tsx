@@ -59,21 +59,49 @@ type FormValues = z.infer<typeof schema>;
 interface CreateSlotDrawerProps {
   open: boolean;
   onClose: () => void;
+  /**
+   * When set, the drawer was opened by clicking an empty cell.
+   * dayOfWeek and periodNumber are pre-filled and shown read-only.
+   * Freeze §Screen: Timetable — CR-11: "dayOfWeek + periodNumber pre-filled read-only".
+   */
+  activeCell?: {
+    dayOfWeek: (typeof DAYS)[number];
+    periodNumber: number;
+  } | null;
 }
 
-export function CreateSlotDrawer({ open, onClose }: CreateSlotDrawerProps) {
+export function CreateSlotDrawer({
+  open,
+  onClose,
+  activeCell,
+}: CreateSlotDrawerProps) {
   const queryClient = useQueryClient();
-  // Focus first input when drawer opens (WCAG focus trap)
-  // WHY getElementById: register('classId') already returns a ref prop —
-  // attaching a second ref via useRef would conflict (TS2783).
+  // Reset form and pre-fill activeCell values whenever the drawer opens.
+  // WHY split into two effects: the focus timer fires after state settles;
+  // the reset must happen synchronously on `open` change to avoid a blank
+  // frame where dayOfWeek/periodNumber are empty.
   useEffect(() => {
-    if (open)
+    if (open) {
+      reset({
+        effectiveFrom: todayISO(),
+        classId: "",
+        subjectId: "",
+        teacherId: "",
+        ...(activeCell
+          ? {
+              dayOfWeek: activeCell.dayOfWeek,
+              periodNumber: activeCell.periodNumber,
+            }
+          : {}),
+      });
       setTimeout(() => {
         (
           document.getElementById("classId") as HTMLSelectElement | null
         )?.focus();
       }, 50);
-  }, [open]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, activeCell]);
 
   // ── Data for dropdowns ────────────────────────────────────────────────────
   const { data: classesData } = useQuery({
@@ -320,30 +348,52 @@ export function CreateSlotDrawer({ open, onClose }: CreateSlotDrawerProps) {
               >
                 Day of Week
               </label>
-              <select
-                id="dayOfWeek"
-                aria-describedby={
-                  errors.dayOfWeek ? "dayOfWeek-error" : undefined
-                }
-                aria-invalid={errors.dayOfWeek ? true : undefined}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
-                {...register("dayOfWeek")}
-              >
-                <option value="">Select day…</option>
-                {DAYS.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-              {errors.dayOfWeek && (
-                <p
-                  id="dayOfWeek-error"
-                  role="alert"
-                  className="mt-1 text-xs text-destructive"
-                >
-                  {errors.dayOfWeek.message}
-                </p>
+              {activeCell ? (
+                <>
+                  <input
+                    id="dayOfWeek"
+                    type="text"
+                    readOnly
+                    aria-readonly="true"
+                    aria-describedby="dayOfWeek-hint"
+                    className="w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground cursor-not-allowed"
+                    {...register("dayOfWeek")}
+                  />
+                  <p
+                    id="dayOfWeek-hint"
+                    className="mt-1 text-xs text-muted-foreground"
+                  >
+                    Pre-filled from selected cell · cannot be changed
+                  </p>
+                </>
+              ) : (
+                <>
+                  <select
+                    id="dayOfWeek"
+                    aria-describedby={
+                      errors.dayOfWeek ? "dayOfWeek-error" : undefined
+                    }
+                    aria-invalid={errors.dayOfWeek ? true : undefined}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
+                    {...register("dayOfWeek")}
+                  >
+                    <option value="">Select day…</option>
+                    {DAYS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.dayOfWeek && (
+                    <p
+                      id="dayOfWeek-error"
+                      role="alert"
+                      className="mt-1 text-xs text-destructive"
+                    >
+                      {errors.dayOfWeek.message}
+                    </p>
+                  )}
+                </>
               )}
             </div>
 
@@ -355,34 +405,56 @@ export function CreateSlotDrawer({ open, onClose }: CreateSlotDrawerProps) {
               >
                 Period Number
               </label>
-              <input
-                id="periodNumber"
-                type="number"
-                min={1}
-                aria-describedby={
-                  errors.periodNumber
-                    ? "periodNumber-error"
-                    : "periodNumber-hint"
-                }
-                aria-invalid={errors.periodNumber ? true : undefined}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
-                {...register("periodNumber")}
-              />
-              {errors.periodNumber ? (
-                <p
-                  id="periodNumber-error"
-                  role="alert"
-                  className="mt-1 text-xs text-destructive"
-                >
-                  {errors.periodNumber.message}
-                </p>
+              {activeCell ? (
+                <>
+                  <input
+                    id="periodNumber"
+                    type="text"
+                    readOnly
+                    aria-readonly="true"
+                    aria-describedby="periodNumber-hint"
+                    className="w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground cursor-not-allowed"
+                    {...register("periodNumber")}
+                  />
+                  <p
+                    id="periodNumber-hint"
+                    className="mt-1 text-xs text-muted-foreground"
+                  >
+                    Pre-filled from selected cell · cannot be changed
+                  </p>
+                </>
               ) : (
-                <p
-                  id="periodNumber-hint"
-                  className="mt-1 text-xs text-muted-foreground"
-                >
-                  Must match a configured school period
-                </p>
+                <>
+                  <input
+                    id="periodNumber"
+                    type="number"
+                    min={1}
+                    aria-describedby={
+                      errors.periodNumber
+                        ? "periodNumber-error"
+                        : "periodNumber-hint"
+                    }
+                    aria-invalid={errors.periodNumber ? true : undefined}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
+                    {...register("periodNumber")}
+                  />
+                  {errors.periodNumber ? (
+                    <p
+                      id="periodNumber-error"
+                      role="alert"
+                      className="mt-1 text-xs text-destructive"
+                    >
+                      {errors.periodNumber.message}
+                    </p>
+                  ) : (
+                    <p
+                      id="periodNumber-hint"
+                      className="mt-1 text-xs text-muted-foreground"
+                    >
+                      Must match a configured school period
+                    </p>
+                  )}
+                </>
               )}
             </div>
 

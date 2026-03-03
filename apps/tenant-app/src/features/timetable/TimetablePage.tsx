@@ -127,7 +127,10 @@ export default function TimetablePage() {
   const [filterTeacher, setFilterTeacher] = useState("");
 
   // ── Drawer / Dialog state ──────────────────────────────────────────────────
-  const [createOpen, setCreateOpen] = useState(false);
+  const [activeCell, setActiveCell] = useState<{
+    dayOfWeek: Day;
+    periodNumber: number;
+  } | null>(null);
   const [endSlot, setEndSlot] = useState<TimeSlot | null>(null);
 
   // ── Queries ────────────────────────────────────────────────────────────────
@@ -200,28 +203,6 @@ export default function TimetablePage() {
             Active slot assignments
           </p>
         </div>
-        {isAdmin && (
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            Add Slot
-          </button>
-        )}
       </div>
 
       {/* Filters */}
@@ -315,8 +296,10 @@ export default function TimetablePage() {
       {isEmpty && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <p className="text-sm text-muted-foreground">
-            No timetable entries found. Use filters to adjust
-            {isAdmin ? " or create a new entry." : "."}
+            No timetable entries found.
+            {isAdmin
+              ? " Click an empty cell to add a slot."
+              : " Use filters to adjust."}
           </p>
         </div>
       )}
@@ -377,13 +360,68 @@ export default function TimetablePage() {
                   {/* Day cells */}
                   {activeDays.map((day) => {
                     const cellSlots = grid[period.periodNumber]?.[day] ?? [];
+                    const cellIsEmpty = cellSlots.length === 0;
                     return (
                       <div
                         key={day}
                         role="gridcell"
-                        className="flex-1 min-w-[120px] p-1.5 border-l space-y-1"
-                        aria-label={`${day} Period ${period.periodNumber}`}
+                        className={[
+                          "flex-1 min-w-[120px] p-1.5 border-l space-y-1",
+                          isAdmin && cellIsEmpty
+                            ? "cursor-pointer hover:bg-muted/30 border-dashed transition-colors group"
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        aria-label={
+                          isAdmin && cellIsEmpty
+                            ? `Add slot for ${day} Period ${period.periodNumber}`
+                            : `${day} Period ${period.periodNumber}`
+                        }
+                        tabIndex={isAdmin && cellIsEmpty ? 0 : undefined}
+                        onClick={
+                          isAdmin && cellIsEmpty
+                            ? () =>
+                                setActiveCell({
+                                  dayOfWeek: day,
+                                  periodNumber: period.periodNumber,
+                                })
+                            : undefined
+                        }
+                        onKeyDown={
+                          isAdmin && cellIsEmpty
+                            ? (e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setActiveCell({
+                                    dayOfWeek: day,
+                                    periodNumber: period.periodNumber,
+                                  });
+                                }
+                              }
+                            : undefined
+                        }
                       >
+                        {cellIsEmpty && isAdmin && (
+                          <div
+                            className="flex min-h-[56px] items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity pointer-events-none"
+                            aria-hidden="true"
+                          >
+                            <svg
+                              className="h-5 w-5 text-muted-foreground"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={1.5}
+                                d="M12 4v16m8-8H4"
+                              />
+                            </svg>
+                          </div>
+                        )}
                         {cellSlots.map((slot) => (
                           <SlotCell
                             key={slot.id}
@@ -432,11 +470,12 @@ export default function TimetablePage() {
         </div>
       )}
 
-      {/* Create slot drawer — Admin only */}
+      {/* Create slot drawer — Admin only, triggered by empty cell click (CR-11) */}
       {isAdmin && (
         <CreateSlotDrawer
-          open={createOpen}
-          onClose={() => setCreateOpen(false)}
+          open={activeCell !== null}
+          onClose={() => setActiveCell(null)}
+          activeCell={activeCell}
         />
       )}
 
