@@ -13,6 +13,7 @@
     "migrate:002": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/002_add_student_user_id.sql', {stdio:'inherit', shell:true})\"",
     "migrate:003": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/003_add_attendance_corrections.sql', {stdio:'inherit', shell:true})\"",
     "migrate:004": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/004_student_admission_dob.sql', {stdio:'inherit', shell:true})\"",
+    "migrate:005": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/005_tenant_timezone.sql', {stdio:'inherit', shell:true})\"",
     "mock": "npx @stoplight/prism-cli@5.14.2 mock ./docs/openapi.yaml --port 4010",
     "mock:verbose": "npx @stoplight/prism-cli@5.14.2 mock ./docs/openapi.yaml --port 4010 --errors",
     "test": "jest --runInBand",
