@@ -63,9 +63,13 @@ function fmt(s: StudentFmtRow) {
 const STUDENT_SELECT = `
   SELECT s.id, s.tenant_id, s.name, s.class_id, s.batch_id, s.user_id,
          s.admission_number, s.dob, s.deleted_at, s.created_at, s.updated_at,
-         t.slug AS tenant_slug
+         t.slug AS tenant_slug,
+         c.name AS class_name,
+         b.name AS batch_name
   FROM students s
   JOIN tenants t ON t.id = s.tenant_id
+  LEFT JOIN classes c ON c.id = s.class_id
+  LEFT JOIN batches b ON b.id = s.batch_id
 `;
 
 // ── GET /api/students ────────────────────────────────────────────────────────

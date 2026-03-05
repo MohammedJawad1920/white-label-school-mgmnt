@@ -23,9 +23,14 @@
  *   403 FEATURE_DISABLED → full-page feature-not-enabled state
  *   403 not assigned     → toast "You are not assigned to this class."
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  useQueries,
+} from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { timetableApi } from "@/api/timetable";
 import { studentsApi } from "@/api/students";
@@ -189,6 +194,8 @@ export default function RecordAttendancePage() {
   );
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  // True after 409 — activates per-student PUT mode behind the same UI
+  const [alreadyRecorded, setAlreadyRecorded] = useState(false);
 
   // ── Slot list query ───────────────────────────────────────────────────────
   const slotsQ = useQuery({
@@ -223,6 +230,81 @@ export default function RecordAttendancePage() {
     ? allStudents.filter((s) => s.classId === selectedSlot.classId)
     : [];
 
+  // ── Correction queries — one per student, enabled after 409 ALREADY_RECORDED ───
+  const correctionQueries = useQueries({
+    queries: classStudents.map((student) => ({
+      queryKey: ["student-attendance", student.id, selectedDate, "correction"],
+      queryFn: () =>
+        attendanceApi.getStudentHistory(student.id, {
+          from: selectedDate,
+          to: selectedDate,
+          limit: 10,
+          offset: 0,
+        }),
+      staleTime: 0,
+      enabled: !!selectedSlotId && !!selectedDate && classStudents.length > 0,
+    })),
+  });
+
+  // Map studentId → existing attendance record for this slot+date
+  const correctionRecordMap = new Map<
+    string,
+    { id: string; status: AttendanceStatus }
+  >();
+  correctionQueries.forEach((result, i) => {
+    const student = classStudents[i];
+    if (result.data && student) {
+      const match = result.data.records.find(
+        (r) => r.timeSlot.id === selectedSlotId,
+      );
+      if (match)
+        correctionRecordMap.set(student.id, {
+          id: match.id,
+          status: match.status as AttendanceStatus,
+        });
+    }
+  });
+  const correctionLoading = correctionQueries.some((q) => q.isLoading);
+
+  // Stable key — changes whenever any correction query settles
+  const correctionFetchId = correctionQueries
+    .map((q) => `${q.status}:${q.dataUpdatedAt ?? 0}`)
+    .join(",");
+
+  // Auto-detect already-recorded — sets alreadyRecorded before teacher clicks Save
+  useEffect(() => {
+    if (!selectedSlotId || correctionLoading) return;
+    const hasRecords = correctionQueries.some((result) =>
+      result.data?.records.some((r) => r.timeSlot.id === selectedSlotId),
+    );
+    setAlreadyRecorded(hasRecords);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [correctionFetchId, selectedSlotId, selectedDate]);
+
+  // Auto-seed exceptions + defaultStatus from existing records once loaded
+  useEffect(() => {
+    if (!alreadyRecorded || correctionLoading || correctionRecordMap.size === 0)
+      return;
+    const counts: Record<AttendanceStatus, number> = {
+      Present: 0,
+      Absent: 0,
+      Late: 0,
+    };
+    correctionRecordMap.forEach((r) => {
+      counts[r.status]++;
+    });
+    const mostCommon = Object.entries(counts).sort(
+      (a, b) => b[1] - a[1],
+    )[0]![0] as AttendanceStatus;
+    setDefaultStatus(mostCommon);
+    const seed = new Map<string, AttendanceStatus>();
+    correctionRecordMap.forEach((r, studentId) => {
+      if (r.status !== mostCommon) seed.set(studentId, r.status);
+    });
+    setExceptions(seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alreadyRecorded, correctionLoading]);
+
   // ── Exception handlers ────────────────────────────────────────────────────
   const handleStatusChange = useCallback(
     (studentId: string, status: AttendanceStatus | undefined) => {
@@ -236,18 +318,51 @@ export default function RecordAttendancePage() {
     [],
   );
 
-  // Reset exceptions when slot or defaultStatus changes
+  // Reset all state when slot changes
   function handleSlotChange(slotId: string) {
     setSelectedSlotId(slotId);
     setExceptions(new Map());
     setSubmitError(null);
     setSuccessMsg(null);
+    setAlreadyRecorded(false);
   }
 
   function handleDefaultStatusChange(status: AttendanceStatus) {
     setDefaultStatus(status);
     setExceptions(new Map()); // clear overrides — new default applies to all
   }
+
+  // ── Bulk correction mutation — fires parallel PUTs for all staged changes ──
+  const updateMut = useMutation({
+    mutationFn: () => {
+      const calls = classStudents.flatMap((student) => {
+        const original = correctionRecordMap.get(student.id);
+        if (!original) return [];
+        const desired = exceptions.get(student.id) ?? defaultStatus;
+        if (desired === original.status) return [];
+        return [attendanceApi.correctRecord(original.id, { status: desired })];
+      });
+      if (calls.length === 0) return Promise.resolve([]);
+      return Promise.all(calls);
+    },
+    onSuccess: async (results) => {
+      const updated = Array.isArray(results) ? results.length : 0;
+      setSubmitError(null);
+      setSuccessMsg(
+        updated === 0
+          ? "No changes to save."
+          : `Attendance updated for ${updated} student${
+              updated !== 1 ? "s" : ""
+            }.`,
+      );
+      setAlreadyRecorded(false);
+      await queryClient.invalidateQueries({ queryKey: ["student-attendance"] });
+      await queryClient.invalidateQueries({ queryKey: ["attendance-summary"] });
+    },
+    onError: (err) => {
+      setSubmitError(parseApiError(err).message);
+    },
+  });
 
   // ── Submit mutation ───────────────────────────────────────────────────────
   const mutation = useMutation({
@@ -276,10 +391,12 @@ export default function RecordAttendancePage() {
       const { code, message } = parseApiError(err);
       if (code === "FUTURE_DATE" || code === "INVALID_DATE") {
         setSubmitError("Attendance cannot be recorded for a future date.");
-      } else if (code === "DUPLICATE" || code === "ALREADY_RECORDED") {
-        setSubmitError(
-          "Attendance already recorded for this class, date, and period.",
-        );
+      } else if (
+        code === "DUPLICATE" ||
+        code === "ATTENDANCE_ALREADY_RECORDED"
+      ) {
+        setAlreadyRecorded(true);
+        setSubmitError(null); // UI switches to update mode automatically
       } else if (code === "FORBIDDEN" || code === "NOT_ASSIGNED") {
         setSubmitError("You are not assigned to this class.");
       } else {
@@ -298,7 +415,11 @@ export default function RecordAttendancePage() {
     );
   }
 
-  const canSubmit = !!selectedSlotId && !!selectedDate && !mutation.isPending;
+  const canSubmit =
+    !!selectedSlotId &&
+    !!selectedDate &&
+    !mutation.isPending &&
+    !updateMut.isPending;
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
@@ -364,6 +485,7 @@ export default function RecordAttendancePage() {
               onChange={(e) => {
                 setSelectedDate(e.target.value);
                 setSubmitError(null);
+                setAlreadyRecorded(false);
               }}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
@@ -432,7 +554,7 @@ export default function RecordAttendancePage() {
           </div>
 
           {/* Loading */}
-          {studentsQ.isLoading && (
+          {(studentsQ.isLoading || correctionLoading) && (
             <div aria-busy="true" aria-label="Loading students">
               {Array.from({ length: 5 }).map((_, i) => (
                 <StudentRowSkeleton key={i} />
@@ -441,27 +563,31 @@ export default function RecordAttendancePage() {
           )}
 
           {/* Empty */}
-          {!studentsQ.isLoading && classStudents.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No students found in this class.
-            </div>
-          )}
+          {!studentsQ.isLoading &&
+            !correctionLoading &&
+            classStudents.length === 0 && (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                No students found in this class.
+              </div>
+            )}
 
           {/* Student rows */}
-          {!studentsQ.isLoading && classStudents.length > 0 && (
-            <div role="list" aria-label="Student attendance">
-              {classStudents.map((student) => (
-                <div key={student.id} role="listitem">
-                  <StudentRow
-                    student={student}
-                    defaultStatus={defaultStatus}
-                    exception={exceptions.get(student.id)}
-                    onStatusChange={handleStatusChange}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
+          {!studentsQ.isLoading &&
+            !correctionLoading &&
+            classStudents.length > 0 && (
+              <div role="list" aria-label="Student attendance">
+                {classStudents.map((student) => (
+                  <div key={student.id} role="listitem">
+                    <StudentRow
+                      student={student}
+                      defaultStatus={defaultStatus}
+                      exception={exceptions.get(student.id)}
+                      onStatusChange={handleStatusChange}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
         </div>
       )}
 
@@ -484,18 +610,22 @@ export default function RecordAttendancePage() {
         </div>
       )}
 
-      {/* Submit */}
+      {/* Single action button — label/handler switches based on alreadyRecorded */}
       {selectedSlotId && classStudents.length > 0 && (
         <button
           onClick={() => {
             setSubmitError(null);
             setSuccessMsg(null);
-            mutation.mutate();
+            if (alreadyRecorded) {
+              updateMut.mutate();
+            } else {
+              mutation.mutate();
+            }
           }}
-          disabled={!canSubmit}
+          disabled={!canSubmit || correctionLoading}
           className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 min-h-[48px]"
         >
-          {mutation.isPending ? (
+          {correctionLoading && !alreadyRecorded ? (
             <>
               <svg
                 className="h-4 w-4 animate-spin"
@@ -517,10 +647,40 @@ export default function RecordAttendancePage() {
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                 />
               </svg>
-              Saving…
+              Checking…
             </>
+          ) : mutation.isPending || updateMut.isPending ? (
+            <>
+              <svg
+                className="h-4 w-4 animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
+              </svg>
+              {alreadyRecorded ? "Updating…" : "Saving…"}
+            </>
+          ) : alreadyRecorded ? (
+            `Update Attendance for ${classStudents.length} Student${
+              classStudents.length > 1 ? "s" : ""
+            }`
           ) : (
-            `Save Attendance for ${classStudents.length} Student${classStudents.length > 1 ? "s" : ""}`
+            `Save Attendance for ${classStudents.length} Student${
+              classStudents.length > 1 ? "s" : ""
+            }`
           )}
         </button>
       )}

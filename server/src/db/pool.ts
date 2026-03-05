@@ -8,10 +8,15 @@
  * All modules import `pool` from here. Never create a new Pool elsewhere.
  */
 
-import { Pool, PoolClient } from "pg";
+import { Pool, PoolClient, types } from "pg";
 import dotenv from "dotenv";
 
 dotenv.config();
+
+// Return PostgreSQL DATE columns (OID 1082) as plain YYYY-MM-DD strings.
+// Without this, pg creates a JS Date at local midnight, causing a timezone
+// day-shift when toISOString() converts it back to UTC on non-UTC servers.
+types.setTypeParser(1082, (v: string) => v);
 
 // ── Validate required env vars ───────────────────────────────────────────────
 const DATABASE_URL = process.env["DATABASE_URL"];

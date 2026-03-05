@@ -308,9 +308,9 @@ export async function getStudentAttendance(
   }>(
     `SELECT
        COUNT(*) AS total,
-       COUNT(*) FILTER (WHERE status = 'Present') AS present,
-       COUNT(*) FILTER (WHERE status = 'Absent')  AS absent,
-       COUNT(*) FILTER (WHERE status = 'Late')    AS late
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Present') AS present,
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Absent')  AS absent,
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Late')    AS late
      FROM attendance_records ar
      WHERE ${conditions.join(" AND ")}`,
     params,
@@ -435,9 +435,9 @@ export async function getAttendanceSummary(
   }>(
     `SELECT
        COUNT(*) AS total,
-       COUNT(*) FILTER (WHERE ar.status = 'Present') AS present,
-       COUNT(*) FILTER (WHERE ar.status = 'Absent')  AS absent,
-       COUNT(*) FILTER (WHERE ar.status = 'Late')    AS late
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Present') AS present,
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Absent')  AS absent,
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Late')    AS late
      FROM attendance_records ar
      ${joinClause}
      WHERE ${conditions.join(" AND ")}`,
@@ -461,9 +461,9 @@ export async function getAttendanceSummary(
     `SELECT
        ar.student_id,
        stu.name AS student_name,
-       COUNT(*) FILTER (WHERE ar.status = 'Present') AS present,
-       COUNT(*) FILTER (WHERE ar.status = 'Absent')  AS absent,
-       COUNT(*) FILTER (WHERE ar.status = 'Late')    AS late
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Present') AS present,
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Absent')  AS absent,
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Late')    AS late
      FROM attendance_records ar
      ${joinClause}
      JOIN students stu ON stu.id = ar.student_id
