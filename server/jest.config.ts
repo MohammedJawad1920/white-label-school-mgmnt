@@ -7,7 +7,7 @@ const config: Config = {
   moduleFileExtensions: ["ts", "js", "json"],
   testMatch: ["**/*.test.ts"],
   transform: {
-    "^.+\\.ts$": "ts-jest",
+    "^.+\.ts$": ["ts-jest", { tsconfig: "<rootDir>/tests/tsconfig.json" }],
   },
   // Don't load .env or connect to real DB in unit tests
   clearMocks: true,
