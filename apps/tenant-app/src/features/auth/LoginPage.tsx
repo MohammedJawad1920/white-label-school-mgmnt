@@ -26,10 +26,9 @@ import { parseApiError } from "@/utils/errors";
 
 // ── Zod schema — matches Freeze §Screen validation rules exactly ──────────────
 const loginSchema = z.object({
-  email: z
-    .string()
-    .min(1, "Email is required")
-    .email("Enter a valid email address"),
+  // CR-19: Use z.string().min(1) — NOT .email() — student loginIds
+  // (e.g. 530@greenvalley.local) are pseudo-emails exempt from RFC 5322
+  email: z.string().min(1, "Email is required"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   tenantSlug: z
     .string()
@@ -164,7 +163,7 @@ export default function LoginPage() {
               autoFocus
               aria-describedby={errors.email ? "email-error" : undefined}
               aria-invalid={errors.email ? true : undefined}
-              placeholder="you@school.edu"
+              placeholder="Email or Student Login ID"
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive disabled:opacity-50"
               {...register("email")}
             />

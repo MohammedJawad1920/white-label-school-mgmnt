@@ -41,8 +41,26 @@ export async function tenantLogin(req: Request, res: Response): Promise<void> {
     tenantSlug?: string;
   };
 
-  if (!email || !password || !tenantSlug) {
-    send400(res, "email, password, and tenantSlug are required");
+  // CR-19: Use z.string().min(1) — NOT .email() — because student loginIds
+  // (e.g. 530@greenvalley.local) are pseudo-emails exempt from RFC 5322.
+  if (!email || typeof email !== "string" || email.trim().length === 0) {
+    send400(res, "email is required");
+    return;
+  }
+  if (
+    !password ||
+    typeof password !== "string" ||
+    password.trim().length === 0
+  ) {
+    send400(res, "password is required");
+    return;
+  }
+  if (
+    !tenantSlug ||
+    typeof tenantSlug !== "string" ||
+    tenantSlug.trim().length === 0
+  ) {
+    send400(res, "tenantSlug is required");
     return;
   }
   if (password.length < 8) {

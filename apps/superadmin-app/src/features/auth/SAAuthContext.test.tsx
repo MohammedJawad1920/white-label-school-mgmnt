@@ -1,8 +1,8 @@
 /**
  * Unit tests: SAAuthContext (SuperAdmin session state)
  *
- * Freeze §FE Phase 7 KEY REQUIREMENT:
- *   "SuperAdmin portal must stay isolated — separate auth storage key ('sa_auth').
+ * Freeze §State Management KEY REQUIREMENT:
+ *   "SuperAdmin portal must stay isolated — separate auth storage key ('sa-auth').
  *    Never mix tokens with tenant app ('auth' key)."
  *
  * Tests verify:
@@ -19,7 +19,7 @@ import { useSAAuth } from "@/features/auth/SAAuthContext";
 import * as superAdminAuthApiModule from "@/api/superAdminAuth";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const SA_AUTH_KEY = "sa_auth";
+const SA_AUTH_KEY = "sa-auth";
 const TENANT_AUTH_KEY = "auth";
 
 const MOCK_TOKEN = "test-super-admin-jwt-token";

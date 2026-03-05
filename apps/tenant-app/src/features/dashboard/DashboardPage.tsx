@@ -208,7 +208,8 @@ export default function DashboardPage() {
     );
   }
 
-  // Student view — FE-006: placeholder until student-facing screens are built
+  // Student view — CG-01: own attendance view
+  // NOTE: studentId is not yet in JWT (pending backend CR); show placeholder until resolved.
   if (user?.activeRole === "Student") {
     return (
       <div className="p-4 md:p-6 max-w-3xl mx-auto">
@@ -231,15 +232,14 @@ export default function DashboardPage() {
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={1.5}
-              d="M12 14l9-5-9-5-9 5 9 5zm0 7v-7m0 0l-9-5m9 5l9-5"
+              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
             />
           </svg>
           <p className="text-base font-medium text-muted-foreground">
-            Welcome, {user.name}
+            My Attendance coming soon…
           </p>
           <p className="text-sm text-muted-foreground mt-1">
-            Contact your admin for your attendance records and timetable
-            details.
+            Your personal attendance dashboard is being built.
           </p>
         </div>
       </div>

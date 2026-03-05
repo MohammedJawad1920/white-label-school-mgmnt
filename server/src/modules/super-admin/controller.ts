@@ -51,6 +51,7 @@ function formatTenant(t: TenantRow) {
     name: t.name,
     slug: t.slug,
     status: t.status,
+    timezone: t.timezone,
     deactivatedAt: t.deactivated_at?.toISOString() ?? null,
     createdAt: t.created_at.toISOString(),
     updatedAt: t.updated_at.toISOString(),
@@ -143,7 +144,7 @@ export async function listTenants(req: Request, res: Response): Promise<void> {
     conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const result = await pool.query<TenantRow>(
-    `SELECT id, name, slug, status, deactivated_at, created_at, updated_at
+    `SELECT id, name, slug, status, timezone, deactivated_at, created_at, updated_at
        FROM tenants ${where}
        ORDER BY created_at DESC`,
     params,
@@ -159,12 +160,23 @@ export async function listTenants(req: Request, res: Response): Promise<void> {
 // ═══════════════════════════════════════════════════════════════════
 
 export async function createTenant(req: Request, res: Response): Promise<void> {
-  const { id, name, slug, admin } = req.body as {
+  const { id, name, slug, timezone, admin } = req.body as {
     id?: string;
     name?: string;
     slug?: string;
+    timezone?: string;
     admin?: { name?: string; email?: string; password?: string };
   };
+
+  // CR-17: validate timezone if provided (basic IANA format check)
+  if (
+    timezone !== undefined &&
+    (typeof timezone !== "string" || timezone.trim().length === 0)
+  ) {
+    send400(res, "timezone must be a non-empty IANA timezone string");
+    return;
+  }
+  const resolvedTimezone = timezone?.trim() ?? "Asia/Kolkata";
 
   // ── Validate tenant fields ────────────────────────────────────────
   if (!id || !name || !slug) {
@@ -216,10 +228,10 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
     const { tenant, adminUser } = await withTransaction(async (client) => {
       // 1. Insert tenant
       const tenantResult = await client.query<TenantRow>(
-        `INSERT INTO tenants (id, name, slug, status, created_at, updated_at)
-         VALUES ($1, $2, $3, 'active', NOW(), NOW())
-         RETURNING id, name, slug, status, deactivated_at, created_at, updated_at`,
-        [id, name.trim(), slug.trim()],
+        `INSERT INTO tenants (id, name, slug, status, timezone, created_at, updated_at)
+         VALUES ($1, $2, $3, 'active', $4, NOW(), NOW())
+         RETURNING id, name, slug, status, timezone, deactivated_at, created_at, updated_at`,
+        [id, name.trim(), slug.trim(), resolvedTimezone],
       );
       const newTenant = tenantResult.rows[0];
       if (!newTenant) throw new Error("Tenant insert returned no rows");
@@ -319,14 +331,25 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
 
 export async function updateTenant(req: Request, res: Response): Promise<void> {
   const { tenantId } = req.params as { tenantId: string };
-  const { name, slug } = req.body as { name?: string; slug?: string };
+  const { name, slug, timezone } = req.body as {
+    name?: string;
+    slug?: string;
+    timezone?: string;
+  };
 
-  if (!name && !slug) {
-    send400(res, "At least one of name or slug is required");
+  if (!name && !slug && !timezone) {
+    send400(res, "At least one of name, slug, or timezone is required");
     return;
   }
   if (slug && !/^[a-z0-9-]+$/.test(slug)) {
     send400(res, "slug must be lowercase alphanumeric/dash characters");
+    return;
+  }
+  if (
+    timezone !== undefined &&
+    (typeof timezone !== "string" || timezone.trim().length === 0)
+  ) {
+    send400(res, "timezone must be a non-empty IANA timezone string");
     return;
   }
 
@@ -352,6 +375,10 @@ export async function updateTenant(req: Request, res: Response): Promise<void> {
     setClauses.push(`slug = $${idx++}`);
     params.push(slug.trim());
   }
+  if (timezone) {
+    setClauses.push(`timezone = $${idx++}`);
+    params.push(timezone.trim());
+  }
 
   params.push(tenantId);
 
@@ -359,7 +386,7 @@ export async function updateTenant(req: Request, res: Response): Promise<void> {
     const result = await pool.query<TenantRow>(
       `UPDATE tenants SET ${setClauses.join(", ")}
        WHERE id = $${idx}
-       RETURNING id, name, slug, status, deactivated_at, created_at, updated_at`,
+       RETURNING id, name, slug, status, timezone, deactivated_at, created_at, updated_at`,
       params,
     );
 

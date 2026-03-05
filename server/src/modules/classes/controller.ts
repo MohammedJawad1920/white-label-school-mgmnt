@@ -144,3 +144,62 @@ export async function bulkDeleteClasses(
   );
   res.status(200).json(result);
 }
+
+// PUT /api/classes/:sourceClassId/promote — CR-18
+// Bulk year-end student class promotion. Admin only.
+export async function promoteClass(req: Request, res: Response): Promise<void> {
+  const tenantId = req.tenantId!;
+  const { sourceClassId } = req.params as { sourceClassId: string };
+  const { targetClassId } = req.body as { targetClassId?: string };
+
+  if (!targetClassId) {
+    send400(res, "targetClassId is required");
+    return;
+  }
+  if (sourceClassId === targetClassId) {
+    res.status(400).json({
+      error: {
+        code: "SAME_CLASS",
+        message: "Source and target class cannot be the same",
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
+    });
+    return;
+  }
+
+  // Verify source class exists in tenant
+  const sourceCheck = await pool.query<{ id: string }>(
+    "SELECT id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [sourceClassId, tenantId],
+  );
+  if ((sourceCheck.rowCount ?? 0) === 0) {
+    send404(res, "Source class not found");
+    return;
+  }
+
+  // Verify target class exists in tenant
+  const targetCheck = await pool.query<{ id: string }>(
+    "SELECT id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [targetClassId, tenantId],
+  );
+  if ((targetCheck.rowCount ?? 0) === 0) {
+    send404(res, "Target class not found");
+    return;
+  }
+
+  // Bulk-update all active students in sourceClass to targetClass
+  const updateResult = await pool.query<{ count: string }>(
+    `UPDATE students
+     SET class_id = $1, updated_at = NOW()
+     WHERE class_id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+     RETURNING id`,
+    [targetClassId, sourceClassId, tenantId],
+  );
+
+  res.status(200).json({
+    promoted: updateResult.rowCount ?? 0,
+    sourceClassId,
+    targetClassId,
+  });
+}

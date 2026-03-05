@@ -10,6 +10,7 @@ export interface TenantRow {
   name: string;
   slug: string;
   status: "active" | "inactive";
+  timezone: string; // v3.6 CR-17
   deactivated_at: Date | null;
   created_at: Date;
   updated_at: Date;

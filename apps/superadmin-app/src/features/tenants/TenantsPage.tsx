@@ -40,6 +40,8 @@ const createSchema = z.object({
     .min(1, "Slug is required")
     .max(100)
     .regex(/^[a-z0-9-]+$/, "Lowercase letters, numbers and dash only"),
+  // v3.6 CR-17: optional IANA timezone, defaults to Asia/Kolkata
+  timezone: z.string().min(1).optional().or(z.literal("")),
   // v3.4 CR-06: first admin account
   admin: z.object({
     name: z.string().min(1, "Required").max(255),
@@ -55,6 +57,8 @@ const updateSchema = z.object({
     .regex(/^[a-z0-9-]*$/, "Lowercase letters, numbers and dash only")
     .optional()
     .or(z.literal("")),
+  // v3.6 CR-17
+  timezone: z.string().min(1).optional().or(z.literal("")),
 });
 type CreateFormValues = z.infer<typeof createSchema>;
 type UpdateFormValues = z.infer<typeof updateSchema>;
@@ -373,6 +377,31 @@ function CreateDrawer({ open, onClose }: CreateDrawerProps) {
             <div className="rounded-md bg-muted/60 border px-3 py-2.5 text-xs text-muted-foreground">
               8 default school periods will be seeded automatically on creation.
             </div>
+
+            {/* Timezone (v3.6 CR-17) */}
+            <div>
+              <label
+                htmlFor="tenant-timezone"
+                className="block text-sm font-medium mb-1.5"
+              >
+                Timezone
+              </label>
+              <input
+                id="tenant-timezone"
+                type="text"
+                placeholder="e.g. Asia/Kolkata (default)"
+                aria-describedby="tenant-timezone-hint"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                {...register("timezone")}
+              />
+              <p
+                id="tenant-timezone-hint"
+                className="mt-1 text-xs text-muted-foreground"
+              >
+                IANA timezone string (e.g. Asia/Kolkata, America/New_York).
+                Leave blank to use default.
+              </p>
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 p-4 border-t shrink-0">
@@ -439,7 +468,13 @@ function EditDrawer({ tenant, onClose }: EditDrawerProps) {
     formState: { errors },
   } = useForm<UpdateFormValues>({
     resolver: zodResolver(updateSchema),
-    values: tenant ? { name: tenant.name, slug: tenant.slug } : undefined,
+    values: tenant
+      ? {
+          name: tenant.name,
+          slug: tenant.slug,
+          timezone: tenant.timezone ?? "",
+        }
+      : undefined,
   });
 
   const mutation = useMutation({
@@ -561,6 +596,28 @@ function EditDrawer({ tenant, onClose }: EditDrawerProps) {
               {errors.slug && (
                 <p role="alert" className="mt-1 text-xs text-destructive">
                   {errors.slug.message}
+                </p>
+              )}
+            </div>
+            {/* Timezone (v3.6 CR-17) */}
+            <div>
+              <label
+                htmlFor="edit-timezone"
+                className="block text-sm font-medium mb-1.5"
+              >
+                Timezone
+              </label>
+              <input
+                id="edit-timezone"
+                type="text"
+                placeholder="e.g. Asia/Kolkata"
+                aria-invalid={errors.timezone ? true : undefined}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
+                {...register("timezone")}
+              />
+              {errors.timezone && (
+                <p role="alert" className="mt-1 text-xs text-destructive">
+                  {errors.timezone.message}
                 </p>
               )}
             </div>

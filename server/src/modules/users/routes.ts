@@ -9,6 +9,7 @@ import { requireRole } from "../../middleware/requireRole";
 import { asyncHandler } from "../../utils/asyncHandler";
 import {
   listUsers,
+  getUser,
   createUser,
   updateUserRoles,
   deleteUser,
@@ -20,6 +21,7 @@ router.use(tenantContextMiddleware);
 
 router.delete("/bulk", requireRole("Admin"), asyncHandler(bulkDeleteUsers));
 router.get("/", asyncHandler(listUsers));
+router.get("/:id", requireRole("Admin"), asyncHandler(getUser));
 router.post("/", requireRole("Admin"), asyncHandler(createUser));
 router.put("/:id/roles", requireRole("Admin"), asyncHandler(updateUserRoles));
 router.delete("/:id", requireRole("Admin"), asyncHandler(deleteUser));

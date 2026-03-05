@@ -71,6 +71,32 @@ export async function listUsers(req: Request, res: Response): Promise<void> {
   res.status(200).json({ users: result.rows.map(formatUser) });
 }
 
+// GET /api/users/:id — CR-15 (Admin only; Student-role users return 404)
+export async function getUser(req: Request, res: Response): Promise<void> {
+  const tenantId = req.tenantId!;
+  const { id } = req.params as { id: string };
+
+  const result = await pool.query<UserRow>(
+    `SELECT id, tenant_id, name, email, password_hash, roles, deleted_at, created_at, updated_at
+     FROM users
+     WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+    [id, tenantId],
+  );
+  const user = result.rows[0];
+
+  if (!user) {
+    send404(res, "User not found");
+    return;
+  }
+  // Student-role users are managed exclusively via the Students API
+  if ((user.roles as string[]).includes("Student")) {
+    send404(res, "User not found");
+    return;
+  }
+
+  res.status(200).json({ user: formatUser(user) });
+}
+
 // POST /api/users
 export async function createUser(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;

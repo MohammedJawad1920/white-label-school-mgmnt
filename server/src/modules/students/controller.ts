@@ -100,7 +100,71 @@ export async function listStudents(req: Request, res: Response): Promise<void> {
   );
   res.status(200).json({ students: result.rows.map(fmt) });
 }
+// ── GET /api/students/:id ─────────────────────────────────────────────────
+// CR-15: Admin—any student; Teacher—scoped to class; Student—own record only
+export async function getStudent(req: Request, res: Response): Promise<void> {
+  const tenantId = req.tenantId!;
+  const userId = req.userId!;
+  const userRoles = req.userRoles ?? [];
+  const { id } = req.params as { id: string };
 
+  const result = await pool.query<StudentFmtRow>(
+    `${STUDENT_SELECT}
+     WHERE s.id = $1 AND s.tenant_id = $2 AND s.deleted_at IS NULL`,
+    [id, tenantId],
+  );
+  const student = result.rows[0];
+
+  if (!student) {
+    send404(res, "Student not found");
+    return;
+  }
+
+  // Student role: only own record
+  if (userRoles.includes("Student")) {
+    if (student.user_id !== userId) {
+      res.status(403).json({
+        error: {
+          code: "STUDENT_ACCESS_DENIED",
+          message: "You can only view your own student record",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+    res.status(200).json({ student: fmt(student) });
+    return;
+  }
+
+  // Teacher: scoped to classes they are currently assigned to teach
+  if (userRoles.includes("Teacher") && !userRoles.includes("Admin")) {
+    const classCheck = await pool.query<{ class_id: string }>(
+      `SELECT DISTINCT s2.class_id
+       FROM students s2
+       JOIN timeslots ts ON ts.class_id = s2.class_id
+       WHERE s2.id = $1
+         AND ts.teacher_id = $2
+         AND ts.tenant_id = $3
+         AND ts.deleted_at IS NULL
+         AND ts.effective_to IS NULL`,
+      [id, userId, tenantId],
+    );
+    if ((classCheck.rowCount ?? 0) === 0) {
+      res.status(403).json({
+        error: {
+          code: "STUDENT_ACCESS_DENIED",
+          message: "You can only view students in your assigned classes",
+          details: {},
+          timestamp: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+  }
+
+  res.status(200).json({ student: fmt(student) });
+}
 // ── POST /api/students ───────────────────────────────────────────────────────
 // v3.5 CR-13: atomically creates a users row + students row in one transaction
 export async function createStudent(

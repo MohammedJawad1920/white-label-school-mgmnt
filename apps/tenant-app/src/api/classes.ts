@@ -3,6 +3,7 @@ import type {
   ListClassesResponse,
   CreateClassRequest,
   UpdateClassRequest,
+  PromoteClassResponse,
   Class,
   BulkDeleteRequest,
   BulkDeleteResponse,
@@ -20,5 +21,12 @@ export const classesApi = {
   bulkDelete: (data: BulkDeleteRequest) =>
     apiClient
       .delete<BulkDeleteResponse>("/classes/bulk", { data })
+      .then((r) => r.data),
+  // v3.6 CR-18: year-end student class promotion
+  promote: (sourceClassId: string, targetClassId: string) =>
+    apiClient
+      .put<PromoteClassResponse>(`/classes/${sourceClassId}/promote`, {
+        targetClassId,
+      })
       .then((r) => r.data),
 };

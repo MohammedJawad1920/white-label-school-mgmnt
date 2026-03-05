@@ -211,6 +211,12 @@ export interface CreateClassRequest {
 export interface UpdateClassRequest {
   name?: string;
 }
+// v3.6 CR-18: year-end class promotion
+export interface PromoteClassResponse {
+  promoted: number;
+  sourceClassId: string;
+  targetClassId: string;
+}
 
 // ─── TIMETABLE ───────────────────────────────────────────────────────────────
 export type DayOfWeek =

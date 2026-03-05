@@ -36,17 +36,19 @@ export interface Tenant {
   name: string;
   slug: string;
   status: "active" | "inactive";
+  timezone: string; // v3.6 CR-17
   deactivatedAt: string | null;
   createdAt: string;
 }
 export interface ListTenantsResponse {
   tenants: Tenant[];
 }
-// POST /super-admin/tenants — v3.4 CR-06: admin block required
+// POST /super-admin/tenants — v3.4 CR-06: admin block required; v3.6 CR-17: timezone optional
 export interface CreateTenantRequest {
   id: string;
   name: string;
   slug: string;
+  timezone?: string; // v3.6 CR-17: optional, defaults to Asia/Kolkata
   admin: {
     name: string;
     email: string;
@@ -62,10 +64,11 @@ export interface CreateTenantResponse {
     roles: string[];
   };
 }
-// PUT /super-admin/tenants/:id — name and/or slug
+// PUT /super-admin/tenants/:id — v3.6 CR-17: timezone optional too
 export interface UpdateTenantRequest {
   name?: string;
   slug?: string;
+  timezone?: string; // v3.6 CR-17
 }
 export interface UpdateTenantResponse {
   tenant: Tenant;

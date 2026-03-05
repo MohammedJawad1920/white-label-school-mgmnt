@@ -2,6 +2,7 @@
  * ClassesPage — Freeze §Screen: Class Management
  * TQ key: ['classes']  stale: 2 min
  * Edit/delete buttons have aria-label="Edit {className}" / "Delete {className}"
+ * v3.6 CR-18: Promote button opens dialog to pick target class
  */
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -117,6 +118,11 @@ export default function ClassesPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [drawerError, setDrawerError] = useState<string | null>(null);
 
+  // CR-18: promote dialog state
+  const [promoteSource, setPromoteSource] = useState<Class | null>(null);
+  const [promoteTargetId, setPromoteTargetId] = useState<string>("");
+  const [promoteError, setPromoteError] = useState<string | null>(null);
+
   const { data: classesData, isLoading } = useQuery({
     queryKey: ["classes"],
     queryFn: () => classesApi.list(),
@@ -174,6 +180,26 @@ export default function ClassesPage() {
       setSelectedIds(new Set());
     },
     onError: (e) => setDeleteError(parseApiError(e).message),
+  });
+
+  // CR-18: year-end class promotion mutation
+  const promoteMut = useMutation({
+    mutationFn: () => classesApi.promote(promoteSource!.id, promoteTargetId),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["classes"] });
+      await qc.invalidateQueries({ queryKey: ["students"] });
+      setPromoteSource(null);
+      setPromoteTargetId("");
+      setPromoteError(null);
+    },
+    onError: (e) => {
+      const parsed = parseApiError(e);
+      setPromoteError(
+        parsed.code === "SAME_CLASS"
+          ? "Source and target class cannot be the same."
+          : parsed.message,
+      );
+    },
   });
 
   function toggleSelect(id: string, checked: boolean) {
@@ -270,6 +296,14 @@ export default function ClassesPage() {
                   <div className="flex justify-end gap-1.5">
                     <ActionBtn
                       onClick={() => {
+                        setPromoteError(null);
+                        setPromoteTargetId("");
+                        setPromoteSource(cls);
+                      }}
+                      label={`Promote ${cls.name}`}
+                    />
+                    <ActionBtn
+                      onClick={() => {
                         setDrawerError(null);
                         setEditClass(cls);
                       }}
@@ -332,6 +366,111 @@ export default function ClassesPage() {
           />
         )}
       </Drawer>
+
+      {/* CR-18: Promote Class Dialog */}
+      {promoteSource && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="promote-dialog-title"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setPromoteSource(null);
+              setPromoteError(null);
+            }
+          }}
+        >
+          <div className="bg-background rounded-lg shadow-xl w-full max-w-sm border">
+            <div className="p-4 border-b">
+              <h2 id="promote-dialog-title" className="text-base font-semibold">
+                Promote Students
+              </h2>
+            </div>
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Move all students from{" "}
+                <span className="font-medium text-foreground">
+                  {promoteSource.name}
+                </span>{" "}
+                to another class.
+              </p>
+              <div className="space-y-1">
+                <label
+                  htmlFor="promote-source"
+                  className="block text-sm font-medium"
+                >
+                  Source Class
+                </label>
+                <input
+                  id="promote-source"
+                  type="text"
+                  value={promoteSource.name}
+                  readOnly
+                  className={inputCls(false) + " bg-muted cursor-not-allowed"}
+                />
+              </div>
+              <div className="space-y-1">
+                <label
+                  htmlFor="promote-target"
+                  className="block text-sm font-medium"
+                >
+                  Target Class <span className="text-destructive">*</span>
+                </label>
+                <select
+                  id="promote-target"
+                  value={promoteTargetId}
+                  onChange={(e) => {
+                    setPromoteTargetId(e.target.value);
+                    setPromoteError(null);
+                  }}
+                  className={inputCls(!!promoteError && !promoteTargetId)}
+                >
+                  <option value="">Select target class…</option>
+                  {classes
+                    .filter((c) => c.id !== promoteSource.id)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              {promoteError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {promoteError}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t">
+              <button
+                onClick={() => {
+                  setPromoteSource(null);
+                  setPromoteError(null);
+                  setPromoteTargetId("");
+                }}
+                disabled={promoteMut.isPending}
+                className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!promoteTargetId) {
+                    setPromoteError("Please select a target class.");
+                    return;
+                  }
+                  promoteMut.mutate();
+                }}
+                disabled={promoteMut.isPending || !promoteTargetId}
+                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                {promoteMut.isPending ? "Promoting…" : "Promote"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

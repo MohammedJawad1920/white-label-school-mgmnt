@@ -1,7 +1,7 @@
 /**
  * SAAuthContext — SuperAdmin session state.
  * Mirror of tenant AuthContext but:
- *   - localStorage key: 'sa_auth' (Freeze §FE Phase 7 — isolated key)
+ *   - localStorage key: 'sa-auth' (Freeze §State Management — isolated key)
  *   - Stores SuperAdmin object (not TenantUser)
  *   - Listens for SA_AUTH_EXPIRED (not AUTH_EXPIRED)
  *   - No switchRole (SuperAdmin has one role)
@@ -16,7 +16,7 @@ import React, {
 import type { SuperAdmin } from "@/types/api";
 import { superAdminAuthApi } from "@/api/superAdminAuth";
 
-const SA_AUTH_KEY = "sa_auth";
+const SA_AUTH_KEY = "sa-auth";
 
 interface SAAuthStorage {
   token: string;

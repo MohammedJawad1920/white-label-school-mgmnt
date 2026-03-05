@@ -83,7 +83,7 @@ components:
 
     Tenant:
       type: object
-      required: [id, name, slug, status, createdAt]
+      required: [id, name, slug, status, timezone, createdAt]
       properties:
         id:
           type: string
@@ -94,6 +94,10 @@ components:
         status:
           type: string
           enum: [active, inactive]
+        timezone:
+          type: string
+          description: IANA timezone string (e.g. Asia/Kolkata). v3.6 CR-17.
+          default: Asia/Kolkata
         deactivatedAt:
           type: string
           format: date-time
@@ -707,6 +711,10 @@ paths:
                   type: string
                   maxLength: 100
                   pattern: "^[a-z0-9-]+$"
+                timezone:
+                  type: string
+                  description: IANA timezone string. Defaults to Asia/Kolkata. (v3.6 CR-17)
+                  default: Asia/Kolkata
                 admin:
                   type: object
                   required: [name, email, password]
@@ -802,7 +810,7 @@ paths:
 
   /super-admin/tenants/{tenantId}:
     put:
-      summary: Update tenant name or slug
+      summary: Update tenant name, slug, or timezone
       operationId: updateTenant
       tags: [SuperAdmin]
       parameters:
@@ -825,6 +833,9 @@ paths:
                   type: string
                   maxLength: 100
                   pattern: "^[a-z0-9-]+$"
+                timezone:
+                  type: string
+                  description: IANA timezone string. (v3.6 CR-17)
             examples:
               success:
                 value:
@@ -1539,6 +1550,37 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
   /users/{id}:
+    get:
+      summary: Get a single user by ID (Admin only; Student-role users return 404)
+      description: >-
+        Returns a single non-Student user in the tenant. Student-role users are
+        not accessible via this endpoint — use GET /students/:id instead.
+        v3.6 CR-15.
+      operationId: getUser
+      tags: [Users]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
     delete:
       summary: Soft-delete a user
       operationId: deleteUser
@@ -1772,6 +1814,46 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
   /students/{id}:
+    get:
+      summary: Get a single student by ID (v3.6 CR-15)
+      description: >-
+        Admin: any student in tenant.
+        Teacher: scoped to students in classes they currently teach.
+        Student: own record only (students.userId == req.userId); 403 STUDENT_ACCESS_DENIED otherwise.
+      operationId: getStudent
+      tags: [Students]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Student found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [student]
+                properties:
+                  student:
+                    $ref: "#/components/schemas/Student"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: STUDENT_ACCESS_DENIED
+                  message: You can only view your own student record
+                  timestamp: "2026-03-04T07:00:00Z"
+        "404":
+          $ref: "#/components/responses/NotFound"
     put:
       summary: Update student (v3.5)
       description: >-
@@ -2678,6 +2760,68 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /classes/{sourceClassId}/promote:
+    put:
+      summary: Bulk year-end student class promotion (v3.6 CR-18)
+      description: >-
+        Moves all active (non-deleted) students from sourceClass to targetClass.
+        Admin only. Classes are permanent records; student classId changes annually via this endpoint.
+      operationId: promoteClass
+      tags: [Classes]
+      parameters:
+        - name: sourceClassId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetClassId]
+              properties:
+                targetClassId:
+                  type: string
+            examples:
+              success:
+                value:
+                  targetClassId: CLS-002
+      responses:
+        "200":
+          description: Students promoted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [promoted, sourceClassId, targetClassId]
+                properties:
+                  promoted:
+                    type: integer
+                    description: Number of students moved
+                  sourceClassId:
+                    type: string
+                  targetClassId:
+                    type: string
+        "400":
+          description: Validation error or source == target
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: SAME_CLASS
+                  message: Source and target class cannot be the same
+                  timestamp: "2026-03-04T07:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   # ─────────────────────────────────────────
   # BATCHES
