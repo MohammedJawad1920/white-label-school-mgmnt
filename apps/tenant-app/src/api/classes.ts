@@ -3,7 +3,9 @@ import type {
   ListClassesResponse,
   CreateClassRequest,
   UpdateClassRequest,
-  PromoteClassResponse,
+  PromoteRequest,
+  PromoteResult,
+  GraduateResult,
   Class,
   BulkDeleteRequest,
   BulkDeleteResponse,
@@ -22,11 +24,11 @@ export const classesApi = {
     apiClient
       .delete<BulkDeleteResponse>("/classes/bulk", { data })
       .then((r) => r.data),
-  // v3.6 CR-18: year-end student class promotion
-  promote: (sourceClassId: string, targetClassId: string) =>
+  // v4.0 CR-21: body is a union — either { targetClassId } for promote or { action: "graduate" } for graduation
+  promote: (sourceClassId: string, body: PromoteRequest) =>
     apiClient
-      .put<PromoteClassResponse>(`/classes/${sourceClassId}/promote`, {
-        targetClassId,
-      })
+      .put<
+        PromoteResult | GraduateResult
+      >(`/classes/${sourceClassId}/promote`, body)
       .then((r) => r.data),
 };

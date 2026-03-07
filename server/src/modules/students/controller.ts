@@ -18,11 +18,11 @@ import { pool, withTransaction } from "../../db/pool";
 import { config } from "../../config/env";
 import { send400, send404, send409 } from "../../utils/errors";
 import { bulkSoftDelete } from "../../utils/bulkDelete";
-import { StudentRow, BulkDeleteRequest } from "../../types";
+import { StudentRow, BulkDeleteRequest, StudentStatus } from "../../types";
 
 // ── Row type returned by queries that JOIN on tenants ────────────────────────
 type StudentFmtRow = StudentRow & {
-  class_name?: string;
+  class_name?: string | null;
   batch_name?: string;
   tenant_slug: string;
 };
@@ -46,13 +46,14 @@ function fmt(s: StudentFmtRow) {
     id: s.id,
     tenantId: s.tenant_id,
     name: s.name,
-    classId: s.class_id,
-    className: s.class_name,
+    classId: s.class_id, // v4.0 CR-21: may be null (graduated student)
+    className: s.class_name ?? null, // null when class_id is null
     batchId: s.batch_id,
     batchName: s.batch_name,
     userId: s.user_id ?? null,
     admissionNumber: s.admission_number,
     dob: dobStr,
+    status: s.status, // v4.0 CR-22
     loginId,
     createdAt: s.created_at.toISOString(),
     updatedAt: s.updated_at.toISOString(),
@@ -62,7 +63,7 @@ function fmt(s: StudentFmtRow) {
 // Base SELECT used by all handlers that call fmt()
 const STUDENT_SELECT = `
   SELECT s.id, s.tenant_id, s.name, s.class_id, s.batch_id, s.user_id,
-         s.admission_number, s.dob, s.deleted_at, s.created_at, s.updated_at,
+         s.admission_number, s.dob, s.status, s.deleted_at, s.created_at, s.updated_at,
          t.slug AS tenant_slug,
          c.name AS class_name,
          b.name AS batch_name
@@ -75,10 +76,11 @@ const STUDENT_SELECT = `
 // ── GET /api/students ────────────────────────────────────────────────────────
 export async function listStudents(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;
-  const { classId, batchId, search } = req.query as {
+  const { classId, batchId, search, status } = req.query as {
     classId?: string;
     batchId?: string;
     search?: string;
+    status?: string; // v4.0 CR-22
   };
   const params: unknown[] = [tenantId];
   const conditions = ["s.tenant_id = $1", "s.deleted_at IS NULL"];
@@ -97,6 +99,15 @@ export async function listStudents(req: Request, res: Response): Promise<void> {
     );
     params.push(`%${search}%`);
     idx++;
+  }
+  // v4.0 CR-22: filter by status
+  if (
+    status === "Active" ||
+    status === "DroppedOff" ||
+    status === "Graduated"
+  ) {
+    conditions.push(`s.status = $${idx++}`);
+    params.push(status);
   }
   const result = await pool.query<StudentFmtRow>(
     `${STUDENT_SELECT} WHERE ${conditions.join(" AND ")} ORDER BY s.name ASC`,
@@ -260,30 +271,44 @@ export async function createStudent(
   const userId = `U-${uuidv4()}`;
   const studentId = `STU-${uuidv4()}`;
 
-  await withTransaction(async (client) => {
-    // 1. Create the user row (roles: ["Student"])
-    await client.query(
-      `INSERT INTO users (id, tenant_id, name, email, password_hash, roles, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, '["Student"]'::jsonb, NOW(), NOW())`,
-      [userId, tenantId, name.trim(), loginId, passwordHash],
-    );
-    // 2. Create the student row referencing the new user
-    await client.query(
-      `INSERT INTO students (id, tenant_id, name, class_id, batch_id, user_id,
-                             admission_number, dob, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
-      [
-        studentId,
-        tenantId,
-        name.trim(),
-        classId,
-        batchId,
-        userId,
-        trimmedAdmission,
-        dob,
-      ],
-    );
-  });
+  try {
+    await withTransaction(async (client) => {
+      // 1. Create the user row (roles: ["Student"])
+      await client.query(
+        `INSERT INTO users (id, tenant_id, name, email, password_hash, roles, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, '["Student"]'::jsonb, NOW(), NOW())`,
+        [userId, tenantId, name.trim(), loginId, passwordHash],
+      );
+      // 2. Create the student row referencing the new user
+      await client.query(
+        `INSERT INTO students (id, tenant_id, name, class_id, batch_id, user_id,
+                               admission_number, dob, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
+        [
+          studentId,
+          tenantId,
+          name.trim(),
+          classId,
+          batchId,
+          userId,
+          trimmedAdmission,
+          dob,
+        ],
+      );
+    });
+  } catch (err) {
+    // PG unique_violation (23505): derived loginId already taken by an active user
+    // (e.g. admissionNumber reused after a soft-delete of a previous student).
+    if ((err as { code?: string }).code === "23505") {
+      send409(
+        res,
+        "Admission number already exists for this school",
+        "ADMISSIONNUMBERCONFLICT",
+      );
+      return;
+    }
+    throw err;
+  }
 
   const created = await pool.query<StudentFmtRow>(
     `${STUDENT_SELECT} WHERE s.id = $1 AND s.tenant_id = $2`,
@@ -300,16 +325,37 @@ export async function updateStudent(
 ): Promise<void> {
   const tenantId = req.tenantId!;
   const { id } = req.params as { id: string };
-  const { name, classId, batchId, admissionNumber, dob } = req.body as {
+  const { name, classId, batchId, admissionNumber, dob, status } = req.body as {
     name?: string;
     classId?: string;
     batchId?: string;
     admissionNumber?: string;
     dob?: string;
+    status?: string; // v4.0 CR-22
   };
 
-  if (!name && !classId && !batchId && !admissionNumber && !dob) {
+  if (!name && !classId && !batchId && !admissionNumber && !dob && !status) {
     send400(res, "At least one field must be provided");
+    return;
+  }
+
+  // v4.0 CR-22: Graduated status is system-set only via graduation action; reject here
+  if (status === "Graduated") {
+    send400(
+      res,
+      "status 'Graduated' cannot be set directly. Use the graduation action on the class.",
+      "VALIDATION_ERROR",
+    );
+    return;
+  }
+
+  // Validate status value if provided
+  if (status !== undefined && status !== "Active" && status !== "DroppedOff") {
+    send400(
+      res,
+      "status must be one of: Active, DroppedOff",
+      "VALIDATION_ERROR",
+    );
     return;
   }
 
@@ -407,14 +453,15 @@ export async function updateStudent(
     await client.query(
       `UPDATE students
        SET name = $1, class_id = $2, batch_id = $3,
-           admission_number = $4, dob = $5, updated_at = NOW()
-       WHERE id = $6 AND tenant_id = $7`,
+           admission_number = $4, dob = $5, status = $6, updated_at = NOW()
+       WHERE id = $7 AND tenant_id = $8`,
       [
         finalName,
         finalClassId,
         finalBatchId,
         finalAdmission,
         finalDob,
+        status ?? current.status, // v4.0 CR-22: preserve existing status if not changing
         id,
         tenantId,
       ],

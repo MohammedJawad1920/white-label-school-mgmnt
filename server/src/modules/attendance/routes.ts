@@ -23,7 +23,12 @@ router.use(tenantContextMiddleware);
 router.use(featureGuard("attendance"));
 
 // Teacher records attendance; Admin views summaries
-router.post("/record-class", asyncHandler(recordClassAttendance));
+// D-06 fix: requireRole guard — Students must not be able to record attendance.
+router.post(
+  "/record-class",
+  requireRole("Teacher", "Admin"),
+  asyncHandler(recordClassAttendance),
+);
 router.get(
   "/summary",
   requireRole("Admin"),

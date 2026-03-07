@@ -31,7 +31,8 @@ export function RoleGate({ roles, children, fallback }: RoleGateProps) {
                 Not authorized for current role
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                Switch to Admin to access this page.
+                {/* D-12 fix: dynamic role name per Freeze §FE-AUTH */}
+                Switch to {roles.join(" or ")} to access this page.
               </p>
             </div>
           </div>

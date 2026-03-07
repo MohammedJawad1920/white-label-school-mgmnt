@@ -23,7 +23,7 @@ export async function listBatches(req: Request, res: Response): Promise<void> {
   const { status } = req.query as { status?: string };
   const params: unknown[] = [tenantId];
   let where = "tenant_id = $1 AND deleted_at IS NULL";
-  if (status === "Active" || status === "Archived") {
+  if (status === "Active" || status === "Graduated") {
     where += " AND status = $2";
     params.push(status);
   }
@@ -52,7 +52,7 @@ export async function createBatch(req: Request, res: Response): Promise<void> {
     return;
   }
   const batchStatus: BatchStatus =
-    status === "Archived" ? "Archived" : "Active";
+    status === "Graduated" ? "Graduated" : "Active";
   const id = `B-${uuidv4()}`;
   const result = await pool.query<BatchRow>(
     `INSERT INTO batches (id, tenant_id, name, start_year, end_year, status, created_at, updated_at)
@@ -78,7 +78,7 @@ export async function updateBatch(req: Request, res: Response): Promise<void> {
     sets.push(`name = $${idx++}`);
     params.push(name.trim());
   }
-  if (status === "Active" || status === "Archived") {
+  if (status === "Active" || status === "Graduated") {
     sets.push(`status = $${idx++}`);
     params.push(status);
   }

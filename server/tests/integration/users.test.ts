@@ -230,7 +230,7 @@ describe("PUT /api/users/:id/roles", () => {
       .put(`/api/users/${tenant.adminId}/roles`)
       .set("Authorization", `Bearer ${token}`)
       .send({ roles: ["Teacher"] }); // Remove Admin from self
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("LASTADMIN");
   });
 });

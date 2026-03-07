@@ -139,7 +139,10 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
     send400(res, "role is required");
     return;
   }
-  if (role !== "Teacher" && role !== "Admin") {
+  // D-08 fix: allow all valid tenant roles (Teacher, Admin, Student).
+  // The actual role-possession check happens below after the DB read.
+  const validSwitchRoles: string[] = ["Teacher", "Admin", "Student"];
+  if (!validSwitchRoles.includes(role)) {
     res.status(400).json({
       error: {
         code: "ROLE_NOT_ASSIGNED",

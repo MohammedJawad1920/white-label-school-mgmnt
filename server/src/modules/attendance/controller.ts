@@ -218,13 +218,16 @@ export async function getStudentAttendance(
   const offset = Math.max(parseInt(offsetStr ?? "0", 10), 0);
 
   // Verify student belongs to this tenant + JOIN class for className (Freeze §3.5)
-  const studentResult = await pool.query<StudentRow & { class_name: string }>(
+  // CR-21: LEFT JOIN so graduated students (class_id = NULL) are not excluded (D-02 fix).
+  const studentResult = await pool.query<
+    StudentRow & { class_name: string | null }
+  >(
     `SELECT st.id, st.tenant_id, st.name, st.class_id, st.batch_id,
             st.user_id,
             st.deleted_at, st.created_at, st.updated_at,
             c.name AS class_name
      FROM students st
-     JOIN classes c ON c.id = st.class_id
+     LEFT JOIN classes c ON c.id = st.class_id
      WHERE st.id = $1 AND st.tenant_id = $2 AND st.deleted_at IS NULL`,
     [studentId, tenantId],
   );

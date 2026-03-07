@@ -42,8 +42,10 @@ function maxMonth(): string {
 }
 
 // ── Attendance rate bar ───────────────────────────────────────────────────────
+// WHY no * 100: backend returns attendanceRate as 0–100 percentage (e.g. 75.43),
+// not a 0–1 fraction. Multiplying by 100 would produce values like 7543% (D-03 fix).
 function RateBar({ rate }: { rate: number }) {
-  const pct = Math.round(rate * 100);
+  const pct = Math.round(rate);
   const color =
     pct >= 75 ? "bg-green-500" : pct >= 50 ? "bg-yellow-500" : "bg-red-500";
   return (
@@ -291,7 +293,7 @@ export default function AttendanceSummaryPage() {
                 Overall Attendance Rate
               </span>
               <span className="text-lg font-bold tabular-nums">
-                {Math.round(summary.attendanceRate * 100)}%
+                {Math.round(summary.attendanceRate)}%
               </span>
             </div>
             <RateBar rate={summary.attendanceRate} />

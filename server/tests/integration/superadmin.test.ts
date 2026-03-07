@@ -265,13 +265,13 @@ describe("PUT /api/super-admin/tenants/:id/deactivate + reactivate", () => {
     expect(res.body.tenant.status).toBe("inactive");
   });
 
-  it("deactivating again returns 409 ALREADYINACTIVE", async () => {
+  it("deactivating again returns 409 ALREADY_INACTIVE", async () => {
     if (SKIP) return;
     const res = await makeAgent()
       .put(`/api/super-admin/tenants/${tenant.tenantId}/deactivate`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe("ALREADYINACTIVE");
+    expect(res.body.error.code).toBe("ALREADY_INACTIVE");
   });
 
   it("reactivates an inactive tenant — 200", async () => {
@@ -283,13 +283,13 @@ describe("PUT /api/super-admin/tenants/:id/deactivate + reactivate", () => {
     expect(res.body.tenant.status).toBe("active");
   });
 
-  it("reactivating an active tenant returns 409 ALREADYACTIVE", async () => {
+  it("reactivating an active tenant returns 409 ALREADY_ACTIVE", async () => {
     if (SKIP) return;
     const res = await makeAgent()
       .put(`/api/super-admin/tenants/${tenant.tenantId}/reactivate`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe("ALREADYACTIVE");
+    expect(res.body.error.code).toBe("ALREADY_ACTIVE");
   });
 });
 
@@ -317,9 +317,7 @@ describe("GET/PUT /api/super-admin/tenants/:id/features", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.features)).toBe(true);
-    const keys = (res.body.features as { featureKey: string }[]).map(
-      (f) => f.featureKey,
-    );
+    const keys = (res.body.features as { key: string }[]).map((f) => f.key);
     expect(keys).toContain("timetable");
     expect(keys).toContain("attendance");
   });

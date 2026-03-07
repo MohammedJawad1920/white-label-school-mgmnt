@@ -1,6 +1,6 @@
 /**
  * types/api.ts — LOCKED per Frontend Freeze §3.2
- * All interfaces match OpenAPI v3.5.0 exactly.
+ * All interfaces match OpenAPI v4.0.0 exactly.
  * timestamp is INSIDE error.{} per OpenAPI ErrorResponse schema.
  * Never define API shapes in component files — always import from here.
  *
@@ -10,6 +10,12 @@
  * - New: UpdateStudentRequest/Response
  * - CreateUserRequest.roles: Teacher|Admin only (Student excluded)
  * - UpdateUserRolesRequest.roles: Teacher|Admin only
+ *
+ * v4.0 changes (CR-20 through CR-23):
+ * - CR-20: CreateUserRequest.password optional; CreateUserResponse adds temporaryPassword
+ * - CR-21: Student.classId/className nullable; PromoteRequest union; GraduateResult
+ * - CR-22: Student.status (Active|DroppedOff|Graduated); UpdateStudentRequest.status
+ * - CR-23: Batch.status Archived → Graduated
  */
 
 // ─── ERROR ───────────────────────────────────────────────────────────────────
@@ -94,11 +100,12 @@ export type ManageableUserRole = "Teacher" | "Admin";
 export interface CreateUserRequest {
   name: string;
   email: string;
-  password: string;
+  password?: string; // v4.0 CR-20: optional; omit to auto-generate a temporaryPassword
   roles: Array<ManageableUserRole>;
 }
 export interface CreateUserResponse {
   user: User;
+  temporaryPassword: string | null; // v4.0 CR-20: non-null only when password was auto-generated
 }
 export interface UpdateUserRolesRequest {
   roles: Array<ManageableUserRole>;
@@ -108,16 +115,19 @@ export interface UpdateUserRolesResponse {
 }
 
 // ─── STUDENTS ────────────────────────────────────────────────────────────────
+export type StudentStatus = "Active" | "DroppedOff" | "Graduated"; // v4.0 CR-22
+
 export interface Student {
   id: string;
   name: string;
   userId: string | null; // auto-created on POST /students (v3.5 CR-13)
-  classId: string;
-  className?: string;
+  classId: string | null; // v4.0 CR-21: null when graduated
+  className?: string | null; // v4.0 CR-21: null when graduated
   batchId: string;
   batchName?: string;
   admissionNumber: string; // v3.5 CR-13
   dob: string; // YYYY-MM-DD  (v3.5 CR-13)
+  status: StudentStatus; // v4.0 CR-22
   loginId: string; // {admissionNumber.lower}@{slug}.local  (v3.5 CR-13)
 }
 
@@ -148,18 +158,21 @@ export interface UpdateStudentRequest {
   batchId?: string;
   admissionNumber?: string;
   dob?: string;
+  status?: "Active" | "DroppedOff"; // v4.0 CR-22: Graduated never sent via PUT
 }
 export interface UpdateStudentResponse {
   student: Student;
 }
 
 // ─── BATCHES ─────────────────────────────────────────────────────────────────
+export type BatchStatus = "Active" | "Graduated"; // v4.0 CR-23: Archived renamed to Graduated
+
 export interface Batch {
   id: string;
   name: string;
   startYear: number;
   endYear: number;
-  status: "Active" | "Archived";
+  status: BatchStatus;
 }
 export interface ListBatchesResponse {
   batches: Batch[];
@@ -173,7 +186,7 @@ export interface UpdateBatchRequest {
   name?: string;
   startYear?: number;
   endYear?: number;
-  status?: "Active" | "Archived";
+  status?: BatchStatus; // v4.0 CR-23: Active | Graduated
 }
 
 // ─── SUBJECTS ────────────────────────────────────────────────────────────────
@@ -211,7 +224,23 @@ export interface CreateClassRequest {
 export interface UpdateClassRequest {
   name?: string;
 }
-// v3.6 CR-18: year-end class promotion
+// v4.0 CR-21: promote/graduate union types
+/** Body sent to PUT /classes/{sourceClassId}/promote */
+export type PromoteRequest = { targetClassId: string } | { action: "graduate" };
+
+/** Response when promoting (moving to another class) */
+export interface PromoteResult {
+  updated: number;
+  failed: Array<{ id: string; reason: string }>;
+}
+
+/** Response when graduating (classId set to null, status=Graduated) */
+export interface GraduateResult {
+  graduated: number;
+  failed: Array<{ id: string; reason: string }>;
+}
+
+// Kept for legacy compatibility; superseded by PromoteResult | GraduateResult
 export interface PromoteClassResponse {
   promoted: number;
   sourceClassId: string;

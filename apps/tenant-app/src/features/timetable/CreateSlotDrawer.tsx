@@ -68,12 +68,22 @@ interface CreateSlotDrawerProps {
     dayOfWeek: (typeof DAYS)[number];
     periodNumber: number;
   } | null;
+  /**
+   * Active filter values from TimetablePage used as editable defaults.
+   * activeCell.dayOfWeek always wins over filterDefaults.dayOfWeek.
+   */
+  filterDefaults?: {
+    dayOfWeek?: (typeof DAYS)[number];
+    classId?: string;
+    teacherId?: string;
+  };
 }
 
 export function CreateSlotDrawer({
   open,
   onClose,
   activeCell,
+  filterDefaults,
 }: CreateSlotDrawerProps) {
   const queryClient = useQueryClient();
   // Reset form and pre-fill activeCell values whenever the drawer opens.
@@ -84,15 +94,18 @@ export function CreateSlotDrawer({
     if (open) {
       reset({
         effectiveFrom: todayISO(),
-        classId: "",
+        // Pre-fill from active filters; activeCell overrides dayOfWeek
+        classId: filterDefaults?.classId ?? "",
         subjectId: "",
-        teacherId: "",
+        teacherId: filterDefaults?.teacherId ?? "",
         ...(activeCell
           ? {
               dayOfWeek: activeCell.dayOfWeek,
               periodNumber: activeCell.periodNumber,
             }
-          : {}),
+          : filterDefaults?.dayOfWeek
+            ? { dayOfWeek: filterDefaults.dayOfWeek }
+            : {}),
       });
       setTimeout(() => {
         (
@@ -101,7 +114,7 @@ export function CreateSlotDrawer({
       }, 50);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, activeCell]);
+  }, [open, activeCell, filterDefaults]);
 
   // ── Data for dropdowns ────────────────────────────────────────────────────
   const { data: classesData } = useQuery({
@@ -244,28 +257,58 @@ export function CreateSlotDrawer({
               >
                 Class
               </label>
-              <select
-                id="classId"
-                aria-describedby={errors.classId ? "classId-error" : undefined}
-                aria-invalid={errors.classId ? true : undefined}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
-                {...register("classId")}
-              >
-                <option value="">Select class…</option>
-                {classesData?.classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              {errors.classId && (
-                <p
-                  id="classId-error"
-                  role="alert"
-                  className="mt-1 text-xs text-destructive"
-                >
-                  {errors.classId.message}
-                </p>
+              {filterDefaults?.classId ? (
+                <>
+                  <input
+                    id="classId"
+                    type="text"
+                    readOnly
+                    aria-readonly="true"
+                    aria-describedby="classId-hint"
+                    className="w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground cursor-not-allowed"
+                    value={
+                      classesData?.classes.find(
+                        (c) => c.id === filterDefaults.classId,
+                      )?.name ?? "Loading…"
+                    }
+                  />
+                  {/* Hidden input carries the UUID value for react-hook-form */}
+                  <input type="hidden" {...register("classId")} />
+                  <p
+                    id="classId-hint"
+                    className="mt-1 text-xs text-muted-foreground"
+                  >
+                    Pre-filled from active filter · cannot be changed
+                  </p>
+                </>
+              ) : (
+                <>
+                  <select
+                    id="classId"
+                    aria-describedby={
+                      errors.classId ? "classId-error" : undefined
+                    }
+                    aria-invalid={errors.classId ? true : undefined}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
+                    {...register("classId")}
+                  >
+                    <option value="">Select class…</option>
+                    {classesData?.classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.classId && (
+                    <p
+                      id="classId-error"
+                      role="alert"
+                      className="mt-1 text-xs text-destructive"
+                    >
+                      {errors.classId.message}
+                    </p>
+                  )}
+                </>
               )}
             </div>
 
@@ -313,30 +356,58 @@ export function CreateSlotDrawer({
               >
                 Teacher
               </label>
-              <select
-                id="teacherId"
-                aria-describedby={
-                  errors.teacherId ? "teacherId-error" : undefined
-                }
-                aria-invalid={errors.teacherId ? true : undefined}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
-                {...register("teacherId")}
-              >
-                <option value="">Select teacher…</option>
-                {teachersData?.users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-              {errors.teacherId && (
-                <p
-                  id="teacherId-error"
-                  role="alert"
-                  className="mt-1 text-xs text-destructive"
-                >
-                  {errors.teacherId.message}
-                </p>
+              {filterDefaults?.teacherId ? (
+                <>
+                  <input
+                    id="teacherId"
+                    type="text"
+                    readOnly
+                    aria-readonly="true"
+                    aria-describedby="teacherId-hint"
+                    className="w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground cursor-not-allowed"
+                    value={
+                      teachersData?.users.find(
+                        (u) => u.id === filterDefaults.teacherId,
+                      )?.name ?? "Loading…"
+                    }
+                  />
+                  {/* Hidden input carries the UUID value for react-hook-form */}
+                  <input type="hidden" {...register("teacherId")} />
+                  <p
+                    id="teacherId-hint"
+                    className="mt-1 text-xs text-muted-foreground"
+                  >
+                    Pre-filled from active filter · cannot be changed
+                  </p>
+                </>
+              ) : (
+                <>
+                  <select
+                    id="teacherId"
+                    aria-describedby={
+                      errors.teacherId ? "teacherId-error" : undefined
+                    }
+                    aria-invalid={errors.teacherId ? true : undefined}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
+                    {...register("teacherId")}
+                  >
+                    <option value="">Select teacher…</option>
+                    {teachersData?.users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.teacherId && (
+                    <p
+                      id="teacherId-error"
+                      role="alert"
+                      className="mt-1 text-xs text-destructive"
+                    >
+                      {errors.teacherId.message}
+                    </p>
+                  )}
+                </>
               )}
             </div>
 
@@ -364,6 +435,24 @@ export function CreateSlotDrawer({
                     className="mt-1 text-xs text-muted-foreground"
                   >
                     Pre-filled from selected cell · cannot be changed
+                  </p>
+                </>
+              ) : filterDefaults?.dayOfWeek ? (
+                <>
+                  <input
+                    id="dayOfWeek"
+                    type="text"
+                    readOnly
+                    aria-readonly="true"
+                    aria-describedby="dayOfWeek-hint"
+                    className="w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground cursor-not-allowed"
+                    {...register("dayOfWeek")}
+                  />
+                  <p
+                    id="dayOfWeek-hint"
+                    className="mt-1 text-xs text-muted-foreground"
+                  >
+                    Pre-filled from active filter · cannot be changed
                   </p>
                 </>
               ) : (

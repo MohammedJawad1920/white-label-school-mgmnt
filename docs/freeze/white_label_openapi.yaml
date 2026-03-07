@@ -1,11 +1,12 @@
 openapi: 3.1.0
 info:
   title: White-Label School Management System API
-  version: 3.6.0
+  version: 4.0.0
   description: >
     Backend API for white-label school management system.
-    Freeze v3.6 — IMMUTABLE.
+    Freeze v4.0 — IMMUTABLE.
     All error codes are SNAKE_CASE.
+    Breaking change from v3.6: batch status "Archived" renamed to "Graduated".
 
 servers:
   - url: /api
@@ -43,7 +44,7 @@ components:
         timestamp:
           type: string
           format: date-time
-          example: "2026-03-03T07:00:00Z"
+          example: "2026-03-05T07:00:00Z"
 
     # ─── Tenant ──────────────────────────────────────────
     Tenant:
@@ -95,6 +96,8 @@ components:
           format: date-time
 
     # ─── Student ─────────────────────────────────────────
+    # v4.0 CR-21: classId + className are now nullable (null when Graduated)
+    # v4.0 CR-22: status field added
     Student:
       type: object
       properties:
@@ -104,8 +107,12 @@ components:
           type: string
         classId:
           type: string
+          nullable: true
+          description: "Null when student is Graduated"
         className:
           type: string
+          nullable: true
+          description: "Null when student is Graduated"
         batchId:
           type: string
         batchName:
@@ -115,6 +122,11 @@ components:
         dob:
           type: string
           format: date
+        status:
+          type: string
+          enum: [Active, DroppedOff, Graduated]
+          description: >
+            Active = enrolled. DroppedOff = admin-set. Graduated = system-set only via graduation action.
         loginId:
           type: string
           example: 530@greenvalley.local
@@ -129,6 +141,7 @@ components:
           format: date-time
 
     # ─── Batch ───────────────────────────────────────────
+    # v4.0 CR-23: status enum renamed Archived → Graduated (breaking)
     Batch:
       type: object
       properties:
@@ -142,7 +155,7 @@ components:
           type: integer
         status:
           type: string
-          enum: [Active, Archived]
+          enum: [Active, Graduated]
         createdAt:
           type: string
           format: date-time
@@ -317,6 +330,40 @@ components:
               reason:
                 type: string
 
+    # ─── PromoteResult ───────────────────────────────────
+    # v4.0 CR-21: separate result shape for graduation
+    PromoteResult:
+      type: object
+      properties:
+        updated:
+          type: integer
+          description: Count of students successfully moved (promote action)
+        failed:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              reason:
+                type: string
+
+    GraduateResult:
+      type: object
+      properties:
+        graduated:
+          type: integer
+          description: Count of students successfully graduated
+        failed:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              reason:
+                type: string
+
     # ─── Pagination ──────────────────────────────────────
     Pagination:
       type: object
@@ -427,7 +474,7 @@ paths:
                   code: VALIDATION_ERROR
                   message: email, password, and tenantSlug are required
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
         "401":
           description: Invalid credentials
           content:
@@ -439,7 +486,7 @@ paths:
                   code: UNAUTHORIZED
                   message: Invalid credentials
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
         "403":
           description: Tenant inactive
           content:
@@ -451,7 +498,7 @@ paths:
                   code: TENANT_INACTIVE
                   message: Tenant is inactive
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
         "404":
           description: Tenant not found
           content:
@@ -528,7 +575,7 @@ paths:
                   code: ROLE_NOT_ASSIGNED
                   message: Requested role is not assigned to this user
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
         "403":
           description: Single-role user
           content:
@@ -540,7 +587,7 @@ paths:
                   code: SINGLE_ROLE_USER
                   message: User has only one role, switching not applicable
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   # ════════════════════════════════════════════════════════
   # SUPER ADMIN — AUTH
@@ -718,8 +765,8 @@ paths:
                   status: active
                   timezone: Asia/Kolkata
                   deactivatedAt: null
-                  createdAt: "2026-03-03T07:00:00Z"
-                  updatedAt: "2026-03-03T07:00:00Z"
+                  createdAt: "2026-03-05T07:00:00Z"
+                  updatedAt: "2026-03-05T07:00:00Z"
                 admin:
                   id: U001
                   name: Admin User
@@ -736,7 +783,7 @@ paths:
                   code: VALIDATION_ERROR
                   message: slug must be alphanumeric with hyphens only
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
         "409":
           description: Slug conflict or admin email taken
           content:
@@ -750,14 +797,14 @@ paths:
                       code: CONFLICT
                       message: Tenant slug already exists
                       details: {}
-                    timestamp: "2026-03-03T07:00:00Z"
+                    timestamp: "2026-03-05T07:00:00Z"
                 admin_email_taken:
                   value:
                     error:
                       code: ADMIN_EMAIL_TAKEN
                       message: Admin email already in use
                       details: {}
-                    timestamp: "2026-03-03T07:00:00Z"
+                    timestamp: "2026-03-05T07:00:00Z"
 
   /super-admin/tenants/{tenantId}:
     put:
@@ -834,7 +881,7 @@ paths:
                   code: ALREADY_INACTIVE
                   message: Tenant is already inactive
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   /super-admin/tenants/{tenantId}/reactivate:
     put:
@@ -867,7 +914,7 @@ paths:
                   code: ALREADY_ACTIVE
                   message: Tenant is already active
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   /super-admin/tenants/{tenantId}/features:
     get:
@@ -953,7 +1000,7 @@ paths:
                   code: FEATURE_DEPENDENCY
                   message: Attendance requires timetable to be enabled first
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   # ════════════════════════════════════════════════════════
   # FEATURES (tenant-scoped, read-only)
@@ -1035,7 +1082,7 @@ paths:
                   code: FEATURE_DISABLED
                   message: Timetable feature is not enabled for this tenant
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
     post:
       summary: Create school period (Admin only)
@@ -1085,7 +1132,7 @@ paths:
                   code: PERIOD_TIME_INVALID
                   message: startTime must be before endTime
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
         "409":
           description: Period number already exists
           content:
@@ -1097,7 +1144,7 @@ paths:
                   code: CONFLICT
                   message: Period number 1 already exists for this tenant
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   /school-periods/{id}:
     put:
@@ -1143,12 +1190,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: PERIOD_TIME_INVALID
-                  message: startTime must be before endTime
-                  details: {}
-                timestamp: "2026-03-03T07:00:00Z"
         "404":
           description: Not found
           content:
@@ -1179,7 +1220,7 @@ paths:
                   code: HAS_REFERENCES
                   message: Cannot delete — period is referenced by active timetable slots
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   # ════════════════════════════════════════════════════════
   # TIMETABLE
@@ -1254,7 +1295,7 @@ paths:
                   code: FEATURE_DISABLED
                   message: Timetable feature is not enabled for this tenant
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
     post:
       summary: Create timetable slot (Admin only)
@@ -1312,26 +1353,20 @@ paths:
                       code: PERIOD_NOT_CONFIGURED
                       message: No school period configured for period number 1
                       details: {}
-                    timestamp: "2026-03-03T07:00:00Z"
+                    timestamp: "2026-03-05T07:00:00Z"
                 invalid_teacher:
                   value:
                     error:
                       code: INVALID_TEACHER
                       message: Specified user does not have the Teacher role
                       details: {}
-                    timestamp: "2026-03-03T07:00:00Z"
+                    timestamp: "2026-03-05T07:00:00Z"
         "403":
           description: Feature disabled
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: FEATURE_DISABLED
-                  message: Timetable feature is not enabled for this tenant
-                  details: {}
-                timestamp: "2026-03-03T07:00:00Z"
         "409":
           description: Slot already active for class/day/period
           content:
@@ -1343,7 +1378,7 @@ paths:
                   code: CONFLICT
                   message: An active timetable slot already exists for this class, day, and period
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   /timetable/{timeSlotId}/end:
     put:
@@ -1434,6 +1469,7 @@ paths:
                     createdAt: "2026-01-01T00:00:00Z"
                     updatedAt: "2026-01-01T00:00:00Z"
 
+    # v4.0 CR-20: password is now optional
     post:
       summary: Create user (Admin only) — Student role forbidden
       tags: [Users]
@@ -1443,7 +1479,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, email, password, roles]
+              required: [name, email, roles]
               properties:
                 name:
                   type: string
@@ -1453,6 +1489,9 @@ paths:
                 password:
                   type: string
                   minLength: 8
+                  description: >
+                    Optional. If omitted, a secure temporary password is auto-generated
+                    and returned once in the response as temporaryPassword.
                 roles:
                   type: array
                   minItems: 1
@@ -1460,14 +1499,25 @@ paths:
                     type: string
                     enum: [Teacher, Admin]
                   description: Must NOT contain Student — use POST /students instead
-            example:
-              name: Jane Smith
-              email: jane@school1.com
-              password: securepass1
-              roles: [Teacher]
+            examples:
+              with_password:
+                summary: Explicit password provided
+                value:
+                  name: Jane Smith
+                  email: jane@school1.com
+                  password: securepass1
+                  roles: [Teacher]
+              auto_password:
+                summary: Auto-generate password
+                value:
+                  name: Jane Smith
+                  email: jane@school1.com
+                  roles: [Teacher]
       responses:
         "201":
-          description: User created
+          description: >
+            User created. temporaryPassword is non-null only when password was omitted.
+            It is returned in plaintext once only — never stored, never logged.
           content:
             application/json:
               schema:
@@ -1475,26 +1525,54 @@ paths:
                 properties:
                   user:
                     $ref: '#/components/schemas/User'
-              example:
-                user:
-                  id: U124
-                  name: Jane Smith
-                  email: jane@school1.com
-                  roles: [Teacher]
-                  createdAt: "2026-03-03T07:00:00Z"
-                  updatedAt: "2026-03-03T07:00:00Z"
+                  temporaryPassword:
+                    type: string
+                    nullable: true
+                    description: Present only when password was auto-generated
+              examples:
+                auto_generated:
+                  summary: Password was auto-generated
+                  value:
+                    user:
+                      id: U124
+                      name: Jane Smith
+                      email: jane@school1.com
+                      roles: [Teacher]
+                      createdAt: "2026-03-05T07:00:00Z"
+                      updatedAt: "2026-03-05T07:00:00Z"
+                    temporaryPassword: "aX3!mZ9qR2"
+                explicit_password:
+                  summary: Password was explicitly provided
+                  value:
+                    user:
+                      id: U124
+                      name: Jane Smith
+                      email: jane@school1.com
+                      roles: [Teacher]
+                      createdAt: "2026-03-05T07:00:00Z"
+                      updatedAt: "2026-03-05T07:00:00Z"
+                    temporaryPassword: null
         "400":
-          description: Student role rejected
+          description: Student role rejected or validation error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: INVALID_ROLE
-                  message: Student accounts must be created via the Students page
-                  details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+              examples:
+                invalid_role:
+                  value:
+                    error:
+                      code: INVALID_ROLE
+                      message: Student accounts must be created via the Students page
+                      details: {}
+                    timestamp: "2026-03-05T07:00:00Z"
+                validation_error:
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: password must be at least 8 characters
+                      details: {}
+                    timestamp: "2026-03-05T07:00:00Z"
         "409":
           description: Email already in use
           content:
@@ -1506,7 +1584,7 @@ paths:
                   code: CONFLICT
                   message: Email already in use for this tenant
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   /users/bulk:
     delete:
@@ -1579,7 +1657,7 @@ paths:
                   code: NOT_FOUND
                   message: User not found
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
     delete:
       summary: Soft-delete user (Admin only)
@@ -1604,7 +1682,7 @@ paths:
                   code: HAS_REFERENCES
                   message: Cannot delete user — referenced by timetable or attendance records
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   /users/{id}/roles:
     put:
@@ -1656,7 +1734,7 @@ paths:
                   email: john@school1.com
                   roles: [Admin, Teacher]
                   createdAt: "2026-01-01T00:00:00Z"
-                  updatedAt: "2026-03-03T07:00:00Z"
+                  updatedAt: "2026-03-05T07:00:00Z"
         "403":
           description: Last admin guard triggered
           content:
@@ -1668,7 +1746,7 @@ paths:
                   code: LAST_ADMIN
                   message: Cannot remove Admin role — you are the last admin of this tenant
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
         "404":
           description: Not found
           content:
@@ -1693,6 +1771,13 @@ paths:
           name: batchId
           schema:
             type: string
+        # v4.0 CR-22: status filter added
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [Active, DroppedOff, Graduated]
+          description: Filter by student status
         - in: query
           name: search
           schema:
@@ -1731,6 +1816,7 @@ paths:
                     batchName: Verity
                     admissionNumber: "530"
                     dob: "2003-10-03"
+                    status: Active
                     loginId: 530@greenvalley.local
                     userId: U999
                     createdAt: "2026-01-01T00:00:00Z"
@@ -1792,10 +1878,11 @@ paths:
                   batchName: Verity
                   admissionNumber: "530"
                   dob: "2003-10-03"
+                  status: Active
                   loginId: 530@greenvalley.local
                   userId: U999
-                  createdAt: "2026-03-03T07:00:00Z"
-                  updatedAt: "2026-03-03T07:00:00Z"
+                  createdAt: "2026-03-05T07:00:00Z"
+                  updatedAt: "2026-03-05T07:00:00Z"
         "400":
           description: Batch/class mismatch
           content:
@@ -1807,7 +1894,7 @@ paths:
                   code: CLASS_BATCH_MISMATCH
                   message: Provided batchId does not match the class's batch
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
         "409":
           description: Duplicate admission number
           content:
@@ -1819,7 +1906,7 @@ paths:
                   code: ADMISSION_NUMBER_CONFLICT
                   message: Admission number 530 already exists for this school
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   /students/bulk:
     delete:
@@ -1868,20 +1955,41 @@ paths:
                 properties:
                   student:
                     $ref: '#/components/schemas/Student'
-              example:
-                student:
-                  id: S001
-                  name: Ravi Kumar
-                  classId: C001
-                  className: Grade 10A
-                  batchId: B001
-                  batchName: Verity
-                  admissionNumber: "530"
-                  dob: "2003-10-03"
-                  loginId: 530@greenvalley.local
-                  userId: U999
-                  createdAt: "2026-01-01T00:00:00Z"
-                  updatedAt: "2026-01-01T00:00:00Z"
+              examples:
+                active_student:
+                  summary: Active student
+                  value:
+                    student:
+                      id: S001
+                      name: Ravi Kumar
+                      classId: C001
+                      className: Grade 10A
+                      batchId: B001
+                      batchName: Verity
+                      admissionNumber: "530"
+                      dob: "2003-10-03"
+                      status: Active
+                      loginId: 530@greenvalley.local
+                      userId: U999
+                      createdAt: "2026-01-01T00:00:00Z"
+                      updatedAt: "2026-01-01T00:00:00Z"
+                graduated_student:
+                  summary: Graduated student (classId is null)
+                  value:
+                    student:
+                      id: S001
+                      name: Ravi Kumar
+                      classId: null
+                      className: null
+                      batchId: B001
+                      batchName: Verity
+                      admissionNumber: "530"
+                      dob: "2003-10-03"
+                      status: Graduated
+                      loginId: 530@greenvalley.local
+                      userId: U999
+                      createdAt: "2026-01-01T00:00:00Z"
+                      updatedAt: "2026-03-05T07:00:00Z"
         "403":
           description: Student accessing another student's record
           content:
@@ -1893,7 +2001,7 @@ paths:
                   code: STUDENT_ACCESS_DENIED
                   message: You can only access your own student record
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
         "404":
           description: Not found
           content:
@@ -1901,6 +2009,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+    # v4.0 CR-22: status field added; Graduated is rejected
     put:
       summary: Update student (Admin only)
       tags: [Students]
@@ -1930,9 +2039,15 @@ paths:
                   type: string
                   format: date
                   description: Updating dob re-derives passwordhash and loginId in same transaction
+                status:
+                  type: string
+                  enum: [Active, DroppedOff]
+                  description: >
+                    Only Active and DroppedOff are accepted.
+                    Graduated is system-set only via the graduation action — submitting Graduated returns 400.
             example:
               name: Ravi Kumar Updated
-              dob: "2003-11-05"
+              status: DroppedOff
       responses:
         "200":
           description: Student updated
@@ -1943,6 +2058,20 @@ paths:
                 properties:
                   student:
                     $ref: '#/components/schemas/Student'
+        "400":
+          description: Validation error (including Graduated status attempt)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                graduated_rejected:
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: status "Graduated" can only be set by the graduation action
+                      details: {}
+                    timestamp: "2026-03-05T07:00:00Z"
         "409":
           description: Admission number conflict
           content:
@@ -1954,7 +2083,7 @@ paths:
                   code: ADMISSION_NUMBER_CONFLICT
                   message: Admission number already exists for this school
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
     delete:
       summary: Soft-delete student (Admin only)
@@ -1979,7 +2108,7 @@ paths:
                   code: HAS_REFERENCES
                   message: Cannot delete student — attendance records exist
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   /students/{studentId}/link-account:
     put:
@@ -2019,24 +2148,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: INVALID_USER
-                  message: User does not exist or is invalid
-                  details: {}
-                timestamp: "2026-03-03T07:00:00Z"
         "409":
           description: Student already linked
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: USER_ALREADY_LINKED
-                  message: Student is already linked to a user account
-                  details: {}
-                timestamp: "2026-03-03T07:00:00Z"
 
   /students/{studentId}/attendance:
     get:
@@ -2105,6 +2222,7 @@ paths:
                   batchName: Verity
                   admissionNumber: "530"
                   dob: "2003-10-03"
+                  status: Active
                   loginId: 530@greenvalley.local
                   userId: U999
                   createdAt: "2026-01-01T00:00:00Z"
@@ -2154,7 +2272,7 @@ paths:
                   code: STUDENT_ACCESS_DENIED
                   message: You can only access your own attendance records
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   # ════════════════════════════════════════════════════════
   # CLASSES
@@ -2316,12 +2434,17 @@ paths:
                   code: HAS_REFERENCES
                   message: Cannot delete class — students are assigned to it
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
+  # v4.0 CR-21: promote endpoint extended with graduation action
   /classes/{sourceClassId}/promote:
     put:
-      summary: Bulk promote students to another class — year-end operation (Admin only)
+      summary: Promote students to another class OR graduate them (Admin only)
       tags: [Classes]
+      description: >
+        Accepts one of two mutually exclusive body shapes:
+        (1) { "targetClassId": "..." } — moves all Active students to target class.
+        (2) { "action": "graduate" } — sets classId = null, status = Graduated for all Active students.
       parameters:
         - in: path
           name: sourceClassId
@@ -2333,49 +2456,71 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [targetClassId]
-              properties:
-                targetClassId:
-                  type: string
-                  description: Must be different from sourceClassId and belong to same tenant
-            example:
-              targetClassId: C_GRADE7A
+              oneOf:
+                - title: Promote to class
+                  type: object
+                  required: [targetClassId]
+                  properties:
+                    targetClassId:
+                      type: string
+                      description: Must be different from sourceClassId and belong to same tenant
+                - title: Graduate
+                  type: object
+                  required: [action]
+                  properties:
+                    action:
+                      type: string
+                      enum: [graduate]
+            examples:
+              promote:
+                summary: Promote to next class
+                value:
+                  targetClassId: C_GRADE7A
+              graduate:
+                summary: Graduate all students
+                value:
+                  action: graduate
       responses:
         "200":
-          description: Promotion complete — students moved, batchId unchanged
+          description: Operation complete
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  updated:
-                    type: integer
-                    description: Count of students successfully moved
-                  failed:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                        reason:
-                          type: string
-              example:
-                updated: 42
-                failed: []
+                oneOf:
+                  - $ref: '#/components/schemas/PromoteResult'
+                  - $ref: '#/components/schemas/GraduateResult'
+              examples:
+                promote_success:
+                  summary: Promote success
+                  value:
+                    updated: 42
+                    failed: []
+                graduate_success:
+                  summary: Graduate success
+                  value:
+                    graduated: 38
+                    failed: []
         "400":
-          description: Source and target class are the same
+          description: Validation error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: SAME_CLASS
-                  message: Source and target class cannot be the same
-                  details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+              examples:
+                same_class:
+                  value:
+                    error:
+                      code: SAME_CLASS
+                      message: Source and target class cannot be the same
+                      details: {}
+                    timestamp: "2026-03-05T07:00:00Z"
+                invalid_action:
+                  value:
+                    error:
+                      code: INVALID_PROMOTION_ACTION
+                      message: Provide either targetClassId or action "graduate"
+                      details: {}
+                    timestamp: "2026-03-05T07:00:00Z"
         "404":
           description: Source or target class not found
           content:
@@ -2392,11 +2537,12 @@ paths:
       summary: List batches (Admin, Teacher)
       tags: [Batches]
       parameters:
+        # v4.0 CR-23: enum updated — Archived replaced by Graduated
         - in: query
           name: status
           schema:
             type: string
-            enum: [Active, Archived]
+            enum: [Active, Graduated]
       responses:
         "200":
           description: Batch list
@@ -2506,9 +2652,10 @@ paths:
                   type: integer
                 endYear:
                   type: integer
+                # v4.0 CR-23: Archived removed, Graduated added
                 status:
                   type: string
-                  enum: [Active, Archived]
+                  enum: [Active, Graduated]
       responses:
         "200":
           description: Batch updated
@@ -2549,7 +2696,7 @@ paths:
                   code: HAS_REFERENCES
                   message: Cannot delete batch — classes or students reference it
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   # ════════════════════════════════════════════════════════
   # SUBJECTS
@@ -2706,7 +2853,7 @@ paths:
                   code: HAS_REFERENCES
                   message: Cannot delete subject — referenced by timetable slots
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   # ════════════════════════════════════════════════════════
   # ATTENDANCE
@@ -2804,7 +2951,7 @@ paths:
                   code: FUTURE_DATE
                   message: Attendance cannot be recorded for a future date
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
         "403":
           description: Feature disabled or unauthorized
           content:
@@ -2816,7 +2963,7 @@ paths:
                   code: FEATURE_DISABLED
                   message: Attendance feature is not enabled for this tenant
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
         "409":
           description: Attendance already recorded
           content:
@@ -2828,7 +2975,7 @@ paths:
                   code: CONFLICT
                   message: Attendance already recorded for this timeslot and date
                   details: {}
-                timestamp: "2026-03-03T07:00:00Z"
+                timestamp: "2026-03-05T07:00:00Z"
 
   /attendance/{recordId}:
     put:
@@ -2870,7 +3017,7 @@ paths:
                   originalStatus: Absent
                   status: Present
                   correctedBy: U123
-                  correctedAt: "2026-03-03T07:00:00Z"
+                  correctedAt: "2026-03-05T07:00:00Z"
                   recordedBy: U123
                   recordedAt: "2026-03-01T09:00:00Z"
                   timeSlot:
@@ -2902,14 +3049,14 @@ paths:
                       code: FUTURE_DATE
                       message: Attendance date is in the future
                       details: {}
-                    timestamp: "2026-03-03T07:00:00Z"
+                    timestamp: "2026-03-05T07:00:00Z"
                 same_status:
                   value:
                     error:
                       code: SAME_STATUS
                       message: Correction status matches current effective status
                       details: {}
-                    timestamp: "2026-03-03T07:00:00Z"
+                    timestamp: "2026-03-05T07:00:00Z"
         "403":
           description: Forbidden
           content:
@@ -3016,6 +3163,7 @@ paths:
                       batchName: Verity
                       admissionNumber: "530"
                       dob: "2003-10-03"
+                      status: Active
                       loginId: 530@greenvalley.local
                       userId: U999
                       createdAt: "2026-01-01T00:00:00Z"
@@ -3041,7 +3189,7 @@ tags:
   - name: Students
     description: Student management with auto user account creation
   - name: Classes
-    description: Class management including year-end promote
+    description: Class management including year-end promote and graduation
   - name: Batches
     description: Academic batch/cohort management
   - name: Subjects

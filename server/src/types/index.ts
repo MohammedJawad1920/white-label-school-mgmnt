@@ -1,5 +1,5 @@
 // =====================================================
-// FREEZE v3.4 — Canonical Type Definitions (§3.2)
+// FREEZE v4.0 — Canonical Type Definitions (§3.2)
 // All application code must import from here.
 // =====================================================
 
@@ -43,7 +43,7 @@ export interface BatchRow {
   name: string;
   start_year: number;
   end_year: number;
-  status: "Active" | "Archived";
+  status: "Active" | "Graduated"; // v4.0 CR-23: Archived → Graduated
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -73,11 +73,12 @@ export interface StudentRow {
   id: string;
   tenant_id: string;
   name: string;
-  class_id: string;
+  class_id: string | null; // v4.0 CR-21: nullable — NULL after graduation
   batch_id: string;
   user_id: string | null; // v3.4: nullable FK → users.id
   admission_number: string; // v3.5 CR-13
   dob: Date | string; // v3.5 CR-13: pg DATE — may arrive as Date or ISO string
+  status: "Active" | "DroppedOff" | "Graduated"; // v4.0 CR-22
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -159,7 +160,9 @@ export type FeatureKey = "timetable" | "attendance";
 
 export type TenantStatus = "active" | "inactive";
 
-export type BatchStatus = "Active" | "Archived";
+export type BatchStatus = "Active" | "Graduated"; // v4.0 CR-23: Archived → Graduated
+
+export type StudentStatus = "Active" | "DroppedOff" | "Graduated"; // v4.0 CR-22
 
 // ─── JWT Payload Types ───────────────────────────────────────────────────────
 

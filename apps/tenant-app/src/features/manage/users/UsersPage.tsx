@@ -4,6 +4,7 @@
  *
  * v3.5 CR-12: Admin can now edit their own roles (self-edit permitted).
  * v3.5 CR-13: Student role removed from this page; students managed on Students page.
+ * v4.0 CR-20: password optional on create; temporaryPassword one-time modal on 201.
  *
  * Self-target guard (Freeze §Screen):
  *   - Delete button hidden for current user (self-delete still blocked)
@@ -38,10 +39,16 @@ import type { User } from "@/types/api";
 // Students are managed on the Students page with atomic account creation.
 type Role = "Teacher" | "Admin";
 
+// v4.0 CR-20: password is optional; if left blank, server auto-generates a temporaryPassword
 const createSchema = z.object({
   name: z.string().min(1, "Required").max(255),
   email: z.string().email("Valid email required"),
-  password: z.string().min(8, "Minimum 8 characters"),
+  password: z
+    .string()
+    .optional()
+    .refine((p) => p === undefined || p === "" || p.length >= 8, {
+      message: "Minimum 8 characters (or leave blank to auto-generate)",
+    }),
   roles: z
     .array(z.enum(["Teacher", "Admin"]))
     .min(1, "At least one role required"),
@@ -118,8 +125,7 @@ function CreateUserForm({
           id="usr-password"
           label="Password"
           error={errors.password?.message}
-          required
-          hint="Minimum 8 characters"
+          hint="Leave blank to auto-generate a temporary password"
         >
           <input
             id="usr-password"
@@ -242,7 +248,68 @@ function EditRolesForm({
     </div>
   );
 }
+// ── Temporary Password Modal (CR-20) ───────────────────────────────────────────────────
+function TempPasswordModal({
+  password,
+  onDismiss,
+}: {
+  password: string;
+  onDismiss: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
 
+  function handleCopy() {
+    void navigator.clipboard.writeText(password).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tmp-pwd-title"
+    >
+      <div className="bg-background rounded-lg shadow-xl w-full max-w-sm border">
+        <div className="p-4 border-b">
+          <h2 id="tmp-pwd-title" className="text-base font-semibold">
+            Temporary Password Generated
+          </h2>
+        </div>
+        <div className="p-4 space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Share this password with the user. It will not be shown again.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 rounded-md bg-muted px-3 py-2 text-sm font-mono select-all break-all">
+              {password}
+            </code>
+            <button
+              type="button"
+              onClick={handleCopy}
+              aria-label="Copy temporary password"
+              title={copied ? "Copied!" : "Copy to clipboard"}
+              className="shrink-0 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+        </div>
+        <div className="flex justify-end p-4 border-t">
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function UsersPage() {
   const { user: currentUser } = useAuth();
@@ -255,6 +322,10 @@ export default function UsersPage() {
   const [roleFilter, setRoleFilter] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [drawerError, setDrawerError] = useState<string | null>(null);
+  // v4.0 CR-20: holds auto-generated password for one-time display
+  const [tempPasswordModal, setTempPasswordModal] = useState<string | null>(
+    null,
+  );
   // Track bulk delete failures: id → reason
   const [bulkFailed, setBulkFailed] = useState<Record<string, string>>({});
 
@@ -272,11 +343,22 @@ export default function UsersPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["users"] });
 
   const createMut = useMutation({
-    mutationFn: (v: CreateFormValues) => usersApi.create(v),
-    onSuccess: async () => {
+    mutationFn: (v: CreateFormValues) =>
+      usersApi.create({
+        name: v.name,
+        email: v.email,
+        // CR-20: send undefined (not empty string) when blank → server auto-generates
+        password: v.password && v.password.length > 0 ? v.password : undefined,
+        roles: v.roles,
+      }),
+    onSuccess: async (data) => {
       await invalidate();
       setCreateOpen(false);
       setDrawerError(null);
+      // CR-20: show one-time modal if server returned a temporary password
+      if (data.temporaryPassword) {
+        setTempPasswordModal(data.temporaryPassword);
+      }
     },
     onError: (e) => {
       const { code, message } = parseApiError(e);
@@ -521,6 +603,14 @@ export default function UsersPage() {
         onClear={() => setSelectedIds(new Set())}
         isDeleting={bulkMut.isPending}
       />
+
+      {/* CR-20: Temporary password one-time modal */}
+      {tempPasswordModal && (
+        <TempPasswordModal
+          password={tempPasswordModal}
+          onDismiss={() => setTempPasswordModal(null)}
+        />
+      )}
 
       {/* Create drawer */}
       <Drawer

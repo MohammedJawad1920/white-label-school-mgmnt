@@ -11,6 +11,7 @@ import { superAdminAuthMiddleware } from "../../middleware/superAdminAuth";
 import { asyncHandler } from "../../utils/asyncHandler";
 import {
   superAdminLogin,
+  superAdminLogout,
   listTenants,
   createTenant,
   updateTenant,
@@ -22,8 +23,15 @@ import {
 
 const router = Router();
 
-// ── Auth (no middleware — public endpoint) ────────────────────────
+// ── Auth (no middleware — public endpoint) ──────────────────────────────────
 router.post("/auth/login", asyncHandler(superAdminLogin));
+// D-04 fix: SA logout route — behind superAdminAuthMiddleware so only
+// valid SA tokens can reach it (even though JWT is stateless, aligns with contract).
+router.post(
+  "/auth/logout",
+  superAdminAuthMiddleware,
+  asyncHandler(superAdminLogout),
+);
 
 // ── All routes below require SuperAdmin JWT ───────────────────────
 router.use(superAdminAuthMiddleware);

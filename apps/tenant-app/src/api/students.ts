@@ -7,12 +7,14 @@ import type {
   UpdateStudentResponse,
   BulkDeleteRequest,
   BulkDeleteResponse,
+  StudentStatus,
 } from "@/types/api";
 
 export const studentsApi = {
   list: (params?: {
     classId?: string;
     batchId?: string;
+    status?: StudentStatus; // v4.0 CR-22
     search?: string;
     limit?: number;
     offset?: number;

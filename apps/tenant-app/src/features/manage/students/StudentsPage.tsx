@@ -1,6 +1,6 @@
 /**
  * StudentsPage — Freeze §Screen: Student Management (v3.5 CR-13)
- * TQ key: ['students']  stale: 2 min
+ * TQ key: ['students', statusFilter]  stale: 2 min
  *
  * v3.5 CR-13 changes:
  * - Create form: adds admissionNumber (required, max 50) + dob (required YYYY-MM-DD)
@@ -10,6 +10,12 @@
  * - Table: adds Admission No., DOB, Login ID (read-only + copy button)
  * - Edit drawer: PUT /students/:id; warn when dob/admissionNumber changes
  * - Link Account drawer REMOVED (deprecated v3.5)
+ *
+ * v4.0 CR-21: students.classId is nullable (graduated students have null classId)
+ * v4.0 CR-22: students have a status field (Active | DroppedOff | Graduated)
+ *   - Status filter added to table
+ *   - Status badge per row
+ *   - Edit form: Active/Dropped Off selectable; Graduated is read-only
  *
  * Cross-field validation: batchId must match selectedClass.batchId.
  */
@@ -35,7 +41,7 @@ import {
   RootError,
   inputCls,
 } from "@/components/manage/shared";
-import type { Student, Class, Batch } from "@/types/api";
+import type { Student, Class, Batch, StudentStatus } from "@/types/api";
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 const createSchema = z.object({
@@ -50,15 +56,18 @@ const createSchema = z.object({
 });
 type CreateFormValues = z.infer<typeof createSchema>;
 
+// v4.0 CR-21: classId is nullable for graduated students
 const editSchema = z.object({
   name: z.string().min(1, "Required").max(255),
-  classId: z.string().min(1, "Class is required"),
+  classId: z.string().optional(), // null/empty allowed for Graduated students
   batchId: z.string().min(1, "Batch is required"),
   admissionNumber: z.string().min(1, "Required").max(50, "Max 50 characters"),
   dob: z
     .string()
     .min(1, "Required")
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
+  // v4.0 CR-22: status editable (Active/DroppedOff only; Graduated is server-managed)
+  status: z.enum(["Active", "DroppedOff"]).optional(),
 });
 type EditFormValues = z.infer<typeof editSchema>;
 
@@ -317,12 +326,19 @@ function EditStudentForm({
     resolver: zodResolver(editSchema),
     defaultValues: {
       name: student.name,
-      classId: student.classId,
+      classId: student.classId ?? "", // v4.0 CR-21: classId is nullable
       batchId: student.batchId,
       admissionNumber: student.admissionNumber,
       dob: student.dob,
+      status:
+        student.status === "Graduated"
+          ? undefined
+          : (student.status as "Active" | "DroppedOff"),
     },
   });
+
+  // v4.0 CR-22: Graduated students are read-only (status is server-managed)
+  const isGraduated = student.status === "Graduated";
 
   const currentAdmission = watch("admissionNumber");
   const currentDob = watch("dob");
@@ -383,23 +399,27 @@ function EditStudentForm({
           id="edit-stu-class"
           label="Class"
           error={errors.classId?.message}
-          required
+          required={!isGraduated}
         >
-          <select
-            id="edit-stu-class"
-            aria-invalid={!!errors.classId}
-            className={inputCls(!!errors.classId)}
-            {...register("classId", {
-              onChange: (e) => handleClassChange(e.target.value),
-            })}
-          >
-            <option value="">Select class…</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          {isGraduated ? (
+            <p className="text-sm text-muted-foreground py-1">— (graduated)</p>
+          ) : (
+            <select
+              id="edit-stu-class"
+              aria-invalid={!!errors.classId}
+              className={inputCls(!!errors.classId)}
+              {...register("classId", {
+                onChange: (e) => handleClassChange(e.target.value),
+              })}
+            >
+              <option value="">Select class…</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          )}
         </FormField>
         <FormField
           id="edit-stu-batch"
@@ -452,6 +472,24 @@ function EditStudentForm({
             {...register("dob")}
           />
         </FormField>
+        {/* v4.0 CR-22: status field (Active/DroppedOff only; Graduated is read-only) */}
+        {!isGraduated && (
+          <FormField
+            id="edit-stu-status"
+            label="Status"
+            error={errors.status?.message}
+          >
+            <select
+              id="edit-stu-status"
+              aria-invalid={!!errors.status}
+              className={inputCls(!!errors.status)}
+              {...register("status")}
+            >
+              <option value="Active">Active</option>
+              <option value="DroppedOff">Dropped Off</option>
+            </select>
+          </FormField>
+        )}
       </div>
       <div className="border-t p-4 shrink-0">
         <SubmitFooter
@@ -476,10 +514,12 @@ export default function StudentsPage() {
     string | null
   >(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // v4.0 CR-22: status filter
+  const [statusFilter, setStatusFilter] = useState<StudentStatus | "">("");
 
   const { data: studentsData, isLoading } = useQuery({
-    queryKey: ["students"],
-    queryFn: () => studentsApi.list(),
+    queryKey: ["students", statusFilter],
+    queryFn: () => studentsApi.list({ status: statusFilter || undefined }),
     staleTime: 2 * 60 * 1000,
   });
   const { data: classesData } = useQuery({
@@ -526,7 +566,17 @@ export default function StudentsPage() {
   });
 
   const editMut = useMutation({
-    mutationFn: (v: EditFormValues) => studentsApi.update(editStudent!.id, v),
+    mutationFn: (v: EditFormValues) =>
+      studentsApi.update(editStudent!.id, {
+        ...v,
+        // CR-21: omit classId if blank (graduated student)
+        classId: v.classId || undefined,
+        // CR-22: only send status if provided and not Graduated
+        status:
+          v.status === "Active" || v.status === "DroppedOff"
+            ? v.status
+            : undefined,
+      }),
     onSuccess: async () => {
       await invalidate();
       setEditStudent(null);
@@ -602,6 +652,26 @@ export default function StudentsPage() {
         addLabel="Add Student"
       />
 
+      {/* v4.0 CR-22: Status filter */}
+      <div className="mb-4 flex items-center gap-2">
+        <label htmlFor="stu-status-filter" className="text-sm font-medium">
+          Status
+        </label>
+        <select
+          id="stu-status-filter"
+          value={statusFilter}
+          onChange={(e) =>
+            setStatusFilter(e.target.value as StudentStatus | "")
+          }
+          className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="">All</option>
+          <option value="Active">Active</option>
+          <option value="DroppedOff">Dropped Off</option>
+          <option value="Graduated">Graduated</option>
+        </select>
+      </div>
+
       {successMessage && (
         <div
           role="status"
@@ -643,6 +713,7 @@ export default function StudentsPage() {
                 />
               </Th>
               <Th>Name</Th>
+              <Th>Status</Th>
               <Th>Class</Th>
               <Th>Batch</Th>
               <Th>Admission No.</Th>
@@ -662,15 +733,15 @@ export default function StudentsPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={8} className="p-0">
-                  <TableSkeleton rows={8} cols={8} />
+                <td colSpan={9} className="p-0">
+                  <TableSkeleton rows={8} cols={9} />
                 </td>
               </tr>
             )}
             {!isLoading && students.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-4 py-12 text-center text-sm text-muted-foreground"
                 >
                   No students found. Add the first student.
@@ -691,8 +762,27 @@ export default function StudentsPage() {
                   />
                 </td>
                 <td className="px-4 py-2.5 font-medium">{student.name}</td>
+                {/* v4.0 CR-22: status badge */}
+                <td className="px-4 py-2.5">
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                      student.status === "Active"
+                        ? "bg-green-100 text-green-800"
+                        : student.status === "DroppedOff"
+                          ? "bg-red-100 text-red-800"
+                          : "bg-purple-100 text-purple-800"
+                    }`}
+                  >
+                    {student.status === "DroppedOff"
+                      ? "Dropped Off"
+                      : student.status}
+                  </span>
+                </td>
+                {/* v4.0 CR-21: classId can be null for graduated students */}
                 <td className="px-4 py-2.5 text-muted-foreground">
-                  {student.className ?? student.classId}
+                  {student.classId === null
+                    ? "—"
+                    : (student.className ?? student.classId)}
                 </td>
                 <td className="px-4 py-2.5 text-muted-foreground">
                   {student.batchName ?? student.batchId}

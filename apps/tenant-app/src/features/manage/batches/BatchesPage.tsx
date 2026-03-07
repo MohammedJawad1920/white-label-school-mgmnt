@@ -31,7 +31,7 @@ const schema = z
     name: z.string().min(1, "Required").max(100),
     startYear: z.coerce.number().int().min(2000).max(2100),
     endYear: z.coerce.number().int().min(2000).max(2100),
-    status: z.enum(["Active", "Archived"]),
+    status: z.enum(["Active", "Graduated"]), // v4.0 CR-23
   })
   .refine((d) => d.endYear > d.startYear, {
     message: "End year must be after start year",
@@ -130,7 +130,7 @@ function BatchForm({
             {...register("status")}
           >
             <option value="Active">Active</option>
-            <option value="Archived">Archived</option>
+            <option value="Graduated">Graduated</option>
           </select>
         </FormField>
       </div>
@@ -299,7 +299,7 @@ export default function BatchesPage() {
                     className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                       batch.status === "Active"
                         ? "bg-green-100 text-green-800"
-                        : "bg-muted text-muted-foreground"
+                        : "bg-purple-100 text-purple-800"
                     }`}
                   >
                     {batch.status}
@@ -367,7 +367,7 @@ export default function BatchesPage() {
               name: editBatch.name,
               startYear: editBatch.startYear,
               endYear: editBatch.endYear,
-              status: editBatch.status as "Active" | "Archived",
+              status: editBatch.status as "Active" | "Graduated",
             }}
             onSubmit={(v) => updateMut.mutate(v)}
             onCancel={() => setEditBatch(null)}

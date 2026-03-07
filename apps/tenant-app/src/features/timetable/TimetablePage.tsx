@@ -479,6 +479,11 @@ export default function TimetablePage() {
           open={activeCell !== null}
           onClose={() => setActiveCell(null)}
           activeCell={activeCell}
+          filterDefaults={{
+            dayOfWeek: filterDay || undefined,
+            classId: filterClassId || undefined,
+            teacherId: filterTeacher || undefined,
+          }}
         />
       )}
 

@@ -140,7 +140,7 @@ describe("POST /api/timetable", () => {
         effectiveFrom: "2024-06-01",
       });
     expect(res.status).toBe(201);
-    const slot = res.body.timeslot;
+    const slot = res.body.timeSlot;
     expect(slot).toHaveProperty("startTime");
     expect(slot).toHaveProperty("endTime");
     expect(slot).toHaveProperty("label");
@@ -217,7 +217,7 @@ describe("PUT /api/timetable/:id/end (versioning)", () => {
         periodNumber: tenant.periodNumber,
         effectiveFrom: "2024-01-01",
       });
-    timeslotId = res.body.timeslot.id as string;
+    timeslotId = res.body.timeSlot.id as string;
   });
 
   afterAll(async () => {
@@ -233,7 +233,7 @@ describe("PUT /api/timetable/:id/end (versioning)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ effectiveTo: endDate });
     expect(res.status).toBe(200);
-    expect(res.body.timeslot.effectiveTo).toBe(endDate);
+    expect(res.body.timeSlot.effectiveTo).toBe(endDate);
   });
 
   it("returns 404 for unknown timeslot", async () => {

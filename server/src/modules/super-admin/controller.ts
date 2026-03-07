@@ -114,8 +114,19 @@ export async function superAdminLogin(
   });
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// GET /api/super-admin/tenants
+// ═══════════════════════════════════════════════════════════════════// POST /api/super-admin/auth/logout
+// D-04 fix: JWT is stateless (no server-side session); logout is a client-only
+// operation (clear localStorage). This endpoint exists to satisfy the OpenAPI
+// contract and allow clients to call a canonical logout URL.
+// ═══════════════════════════════════════════════════════════════
+export async function superAdminLogout(
+  _req: Request,
+  res: Response,
+): Promise<void> {
+  res.status(204).send();
+}
+
+// ═══════════════════════════════════════════════════════════════// GET /api/super-admin/tenants
 // ═══════════════════════════════════════════════════════════════════
 
 export async function listTenants(req: Request, res: Response): Promise<void> {
@@ -259,6 +270,20 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
       // 4. Create first Admin user (CR-06)
       // WHY inside transaction: if user creation fails (e.g. duplicate email)
       // the whole tenant + periods + features must roll back.
+
+      // Pre-check: admin email must be globally unique across ALL tenants.
+      // The DB unique index only covers (tenant_id, email) so a cross-tenant
+      // duplicate would silently succeed — catch it here first.
+      const emailCheck = await client.query<{ count: string }>(
+        `SELECT COUNT(*) AS count FROM users WHERE email = $1 AND deleted_at IS NULL`,
+        [admin.email!.toLowerCase().trim()],
+      );
+      if (parseInt(emailCheck.rows[0]?.count ?? "0", 10) > 0) {
+        throw Object.assign(new Error("ADMIN_EMAIL_TAKEN"), {
+          isSentinel: true,
+        });
+      }
+
       let newAdmin: UserRow;
       try {
         const adminResult = await client.query<UserRow>(
@@ -634,10 +659,28 @@ export async function toggleTenantFeature(
     [id, tenantId, featureKey, enabled],
   );
 
+  // D-07 fix: return full Feature shape per OpenAPI (key, name, enabled, enabledAt)
+  // by joining the features table which holds the displayable feature name.
+  const featureResult = await pool.query<{
+    key: string;
+    name: string;
+    enabled: boolean;
+    enabled_at: Date | null;
+  }>(
+    `SELECT f.key, f.name, tf.enabled, tf.enabled_at
+     FROM features f
+     JOIN tenant_features tf ON tf.tenant_id = $1 AND tf.feature_key = f.key
+     WHERE f.key = $2`,
+    [tenantId, featureKey],
+  );
+  const feat = featureResult.rows[0]!;
+
   res.status(200).json({
     feature: {
-      key: featureKey,
-      enabled,
+      key: feat.key,
+      name: feat.name,
+      enabled: feat.enabled,
+      enabledAt: feat.enabled_at?.toISOString() ?? null,
     },
   });
 }

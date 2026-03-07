@@ -94,7 +94,7 @@ describe("POST /api/auth/login", () => {
       tenantSlug: tenant.tenantSlug,
     });
     expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe("TENANTINACTIVE");
+    expect(res.body.error.code).toBe("TENANT_INACTIVE");
     // Restore
     await testPool.query(
       "UPDATE tenants SET status = 'active', deactivated_at = NULL WHERE id = $1",
@@ -158,7 +158,7 @@ describe("POST /api/auth/switch-role", () => {
     tenant = await createTestTenant();
 
     // Create a Teacher+Admin user
-    const uid = `U-MR-${Date.now()}`;
+    const uid = `u-mr-${Date.now()}`;
     const bcrypt = (await import("bcryptjs")).default;
     const hash = await bcrypt.hash(tenant.adminPassword, 10);
     await testPool.query(
@@ -201,13 +201,24 @@ describe("POST /api/auth/switch-role", () => {
     expect(res.body).toHaveProperty("token");
   });
 
-  it("returns 400 ROLENOTASSIGNED when role not in user roles", async () => {
+  it("returns 400 ROLE_NOT_ASSIGNED when multi-role user requests unassigned role", async () => {
+    if (SKIP) return;
+    // multiRoleToken user has ["Admin","Teacher"] — "Student" is not assigned
+    const res = await makeAgent()
+      .post("/api/auth/switch-role")
+      .set("Authorization", `Bearer ${multiRoleToken}`)
+      .send({ role: "Student" });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("ROLE_NOT_ASSIGNED");
+  });
+
+  it("returns 403 SINGLE_ROLE_USER when user only has one role", async () => {
     if (SKIP) return;
     const res = await makeAgent()
       .post("/api/auth/switch-role")
       .set("Authorization", `Bearer ${singleRoleToken}`)
-      .send({ role: "Student" });
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe("ROLENOTASSIGNED");
+      .send({ role: "Teacher" });
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("SINGLE_ROLE_USER");
   });
 });

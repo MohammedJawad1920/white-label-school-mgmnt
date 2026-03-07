@@ -104,7 +104,7 @@ async function scaffoldAttendanceData(
       periodNumber: tenant.periodNumber,
       effectiveFrom: "2024-01-01",
     });
-  const timeslotId = tsRes.body.timeslot.id as string;
+  const timeslotId = tsRes.body.timeSlot.id as string;
 
   return { timeslotId, studentId, classId };
 }
@@ -226,7 +226,7 @@ describe("GET /api/students/:studentId/attendance", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.records)).toBe(true);
-    expect(res.body).toHaveProperty("total");
+    expect(res.body).toHaveProperty("pagination.total");
     expect(res.body.records.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -265,13 +265,14 @@ describe("GET /api/attendance/summary", () => {
     await cleanupTenant(tenant.tenantId);
   });
 
-  it("returns 200 with summary array", async () => {
+  it("returns 200 with summary object and byStudent array", async () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get("/api/attendance/summary?from=2024-11-01&to=2024-11-30")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("summary");
-    expect(Array.isArray(res.body.summary)).toBe(true);
+    expect(res.body.summary).toHaveProperty("totalRecords");
+    expect(Array.isArray(res.body.byStudent)).toBe(true);
   });
 });

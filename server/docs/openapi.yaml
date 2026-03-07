@@ -1,14 +1,14 @@
 openapi: "3.1.0"
 info:
   title: White-Label School Management System
-  version: "3.5.0"
+  version: "4.0.0"
   description: >
     Multi-tenant school management API. Supports SuperAdmin (platform-level)
     and tenant-scoped Admin/Teacher/Student roles.
-    v3.5.0 (CR-13): POST /students atomically creates a linked user account;
-    admissionNumber + dob added to Student; GET /users excludes Student-role users;
-    POST /users rejects Student role (INVALIDROLE); PUT /students/:id added;
-    PUT /students/{studentId}/link-account deprecated.
+    v4.0.0 (CR-20): POST /users password optional; returns temporaryPassword.
+    v4.0.0 (CR-21): students.classId nullable; PUT /classes/{id}/promote supports action:graduate.
+    v4.0.0 (CR-22): students.status field (Active|DroppedOff|Graduated).
+    v4.0.0 (CR-23): batches.status Archived renamed to Graduated.
 
 servers:
   - url: http://localhost:3000/api
@@ -142,7 +142,7 @@ components:
 
     Student:
       type: object
-      required: [id, name, classId, batchId, admissionNumber, dob, loginId]
+      required: [id, name, batchId, admissionNumber, dob, loginId, status]
       properties:
         id:
           type: string
@@ -154,8 +154,11 @@ components:
           description: Linked user account ID; auto-created on POST /students (v3.5 CR-13)
         classId:
           type: string
+          nullable: true
+          description: "v4.0 CR-21: null when student is graduated"
         className:
           type: string
+          nullable: true
         batchId:
           type: string
         batchName:
@@ -168,6 +171,10 @@ components:
           type: string
           format: date
           description: Date of birth (YYYY-MM-DD); used to derive login password (v3.5 CR-13)
+        status:
+          type: string
+          enum: [Active, DroppedOff, Graduated]
+          description: "v4.0 CR-22: Graduated is system-set only via graduation action"
         loginId:
           type: string
           description: >-
@@ -188,7 +195,7 @@ components:
           type: integer
         status:
           type: string
-          enum: [Active, Archived]
+          enum: [Active, Graduated] # v4.0 CR-23: Archived renamed to Graduated
 
     Subject:
       type: object
@@ -1449,7 +1456,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, email, password, roles]
+              required: [name, email, roles]
               properties:
                 name:
                   type: string
@@ -1460,6 +1467,7 @@ paths:
                 password:
                   type: string
                   minLength: 8
+                  description: "v4.0 CR-20: optional; if omitted a temporary password is auto-generated and returned once in the response"
                 roles:
                   type: array
                   items:
@@ -1467,12 +1475,19 @@ paths:
                     enum: [Teacher, Admin]
                   minItems: 1
             examples:
-              success:
+              withPassword:
+                summary: Explicit password
                 value:
                   name: Jane Smith
                   email: jane@school1.com
                   password: securepass1
                   roles: [Teacher]
+              withoutPassword:
+                summary: Auto-generate temporary password
+                value:
+                  name: Bob Jones
+                  email: bob@school1.com
+                  roles: [Admin]
       responses:
         "201":
           description: User created
@@ -1480,10 +1495,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [user]
+                required: [user, temporaryPassword]
                 properties:
                   user:
                     $ref: "#/components/schemas/User"
+                  temporaryPassword:
+                    type: string
+                    nullable: true
+                    description: "v4.0 CR-20: the auto-generated password returned once; null if caller supplied their own password"
         "400":
           description: Validation error or Student role rejected
           content:
@@ -1690,6 +1709,12 @@ paths:
           in: query
           schema:
             type: string
+        - name: status
+          in: query
+          description: "v4.0 CR-22: filter by student status"
+          schema:
+            type: string
+            enum: [Active, DroppedOff, Graduated]
         - name: search
           in: query
           schema:
@@ -2763,10 +2788,11 @@ paths:
 
   /classes/{sourceClassId}/promote:
     put:
-      summary: Bulk year-end student class promotion (v3.6 CR-18)
+      summary: Bulk year-end student class promotion or graduation (v4.0 CR-21)
       description: >-
-        Moves all active (non-deleted) students from sourceClass to targetClass.
-        Admin only. Classes are permanent records; student classId changes annually via this endpoint.
+        Promote: moves all Active students from sourceClass to targetClass (classId updates).
+        Graduate: sets classId = NULL and status = Graduated on all Active students in sourceClass.
+        Admin only.
       operationId: promoteClass
       tags: [Classes]
       parameters:
@@ -2780,42 +2806,89 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [targetClassId]
-              properties:
-                targetClassId:
-                  type: string
+              oneOf:
+                - type: object
+                  required: [targetClassId]
+                  properties:
+                    targetClassId:
+                      type: string
+                  description: Move students to another class
+                - type: object
+                  required: [action]
+                  properties:
+                    action:
+                      type: string
+                      enum: [graduate]
+                  description: Graduate all students (sets classId=null, status=Graduated)
             examples:
-              success:
+              promote:
+                summary: Promote to another class
                 value:
                   targetClassId: CLS-002
+              graduate:
+                summary: Graduate all students
+                value:
+                  action: graduate
       responses:
         "200":
-          description: Students promoted
+          description: Students promoted or graduated
           content:
             application/json:
               schema:
-                type: object
-                required: [promoted, sourceClassId, targetClassId]
-                properties:
-                  promoted:
-                    type: integer
-                    description: Number of students moved
-                  sourceClassId:
-                    type: string
-                  targetClassId:
-                    type: string
+                oneOf:
+                  - type: object
+                    description: Promote result
+                    required: [updated, failed]
+                    properties:
+                      updated:
+                        type: integer
+                        description: Number of students moved
+                      failed:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            reason:
+                              type: string
+                  - type: object
+                    description: Graduate result
+                    required: [graduated, failed]
+                    properties:
+                      graduated:
+                        type: integer
+                        description: Number of students graduated
+                      failed:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            reason:
+                              type: string
         "400":
-          description: Validation error or source == target
+          description: Validation error, source == target, or invalid action
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-              example:
-                error:
-                  code: SAME_CLASS
-                  message: Source and target class cannot be the same
-                  timestamp: "2026-03-04T07:00:00Z"
+              examples:
+                sameClass:
+                  summary: Same source and target
+                  value:
+                    error:
+                      code: SAME_CLASS
+                      message: Source and target class cannot be the same
+                      timestamp: "2026-03-04T07:00:00Z"
+                invalidAction:
+                  summary: Neither targetClassId nor action:graduate provided
+                  value:
+                    error:
+                      code: INVALID_PROMOTION_ACTION
+                      message: Request body must contain either targetClassId or action:graduate
+                      timestamp: "2026-03-04T07:00:00Z"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2931,7 +3004,7 @@ paths:
                   type: string
                 status:
                   type: string
-                  enum: [Active, Archived]
+                  enum: [Active, Graduated] # v4.0 CR-23
       responses:
         "200":
           description: Batch updated

@@ -3,6 +3,7 @@
  * TQ key: ['classes']  stale: 2 min
  * Edit/delete buttons have aria-label="Edit {className}" / "Delete {className}"
  * v3.6 CR-18: Promote button opens dialog to pick target class
+ * v4.0 CR-21: Promote dialog gains "Graduate all students" option
  */
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -25,7 +26,7 @@ import {
   RootError,
   inputCls,
 } from "@/components/manage/shared";
-import type { Class } from "@/types/api";
+import type { Class, PromoteRequest } from "@/types/api";
 
 const schema = z.object({
   name: z.string().min(1, "Required").max(255),
@@ -118,10 +119,17 @@ export default function ClassesPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [drawerError, setDrawerError] = useState<string | null>(null);
 
-  // CR-18: promote dialog state
+  // CR-18 / CR-21: promote dialog state
   const [promoteSource, setPromoteSource] = useState<Class | null>(null);
   const [promoteTargetId, setPromoteTargetId] = useState<string>("");
   const [promoteError, setPromoteError] = useState<string | null>(null);
+  // v4.0 CR-21: promote action — promote to class or graduate all
+  const [promoteAction, setPromoteAction] = useState<"promote" | "graduate">(
+    "promote",
+  );
+  const [promoteSuccessMsg, setPromoteSuccessMsg] = useState<string | null>(
+    null,
+  );
 
   const { data: classesData, isLoading } = useQuery({
     queryKey: ["classes"],
@@ -182,23 +190,37 @@ export default function ClassesPage() {
     onError: (e) => setDeleteError(parseApiError(e).message),
   });
 
-  // CR-18: year-end class promotion mutation
+  // CR-18 / CR-21: year-end class promotion mutation
   const promoteMut = useMutation({
-    mutationFn: () => classesApi.promote(promoteSource!.id, promoteTargetId),
-    onSuccess: async () => {
+    mutationFn: () => {
+      const body: PromoteRequest =
+        promoteAction === "graduate"
+          ? { action: "graduate" }
+          : { targetClassId: promoteTargetId };
+      return classesApi.promote(promoteSource!.id, body);
+    },
+    onSuccess: async (data) => {
       await qc.invalidateQueries({ queryKey: ["classes"] });
       await qc.invalidateQueries({ queryKey: ["students"] });
       setPromoteSource(null);
       setPromoteTargetId("");
       setPromoteError(null);
+      setPromoteAction("promote");
+      if ("graduated" in data) {
+        setPromoteSuccessMsg(`${data.graduated} student(s) graduated.`);
+      } else {
+        setPromoteSuccessMsg(`${data.updated} student(s) moved.`);
+      }
     },
     onError: (e) => {
       const parsed = parseApiError(e);
-      setPromoteError(
-        parsed.code === "SAME_CLASS"
-          ? "Source and target class cannot be the same."
-          : parsed.message,
-      );
+      if (parsed.code === "SAME_CLASS") {
+        setPromoteError("Source and target class cannot be the same.");
+      } else if (parsed.code === "INVALID_PROMOTION_ACTION") {
+        setPromoteError("Invalid promotion action.");
+      } else {
+        setPromoteError(parsed.message);
+      }
     },
   });
 
@@ -221,6 +243,22 @@ export default function ClassesPage() {
         }}
         addLabel="New Class"
       />
+
+      {promoteSuccessMsg && (
+        <div
+          role="status"
+          className="mb-4 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800"
+        >
+          {promoteSuccessMsg}
+          <button
+            type="button"
+            onClick={() => setPromoteSuccessMsg(null)}
+            className="ml-2 text-green-700 underline text-xs"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {deleteError && (
         <div
@@ -367,7 +405,7 @@ export default function ClassesPage() {
         )}
       </Drawer>
 
-      {/* CR-18: Promote Class Dialog */}
+      {/* CR-18 / CR-21: Promote / Graduate Class Dialog */}
       {promoteSource && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -378,23 +416,57 @@ export default function ClassesPage() {
             if (e.key === "Escape") {
               setPromoteSource(null);
               setPromoteError(null);
+              setPromoteAction("promote");
             }
           }}
         >
           <div className="bg-background rounded-lg shadow-xl w-full max-w-sm border">
             <div className="p-4 border-b">
               <h2 id="promote-dialog-title" className="text-base font-semibold">
-                Promote Students
+                Promote / Graduate Students
               </h2>
             </div>
             <div className="p-4 space-y-4">
               <p className="text-sm text-muted-foreground">
-                Move all students from{" "}
+                Choose an action for all students in{" "}
                 <span className="font-medium text-foreground">
                   {promoteSource.name}
-                </span>{" "}
-                to another class.
+                </span>
+                .
               </p>
+              {/* v4.0 CR-21: radio group — promote vs graduate */}
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">Action</legend>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="promoteAction"
+                    value="promote"
+                    checked={promoteAction === "promote"}
+                    onChange={() => {
+                      setPromoteAction("promote");
+                      setPromoteError(null);
+                    }}
+                    className="accent-primary"
+                  />
+                  Move to another class
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="promoteAction"
+                    value="graduate"
+                    checked={promoteAction === "graduate"}
+                    onChange={() => {
+                      setPromoteAction("graduate");
+                      setPromoteTargetId("");
+                      setPromoteError(null);
+                    }}
+                    className="accent-primary"
+                  />
+                  Graduate all students
+                </label>
+              </fieldset>
               <div className="space-y-1">
                 <label
                   htmlFor="promote-source"
@@ -410,32 +482,35 @@ export default function ClassesPage() {
                   className={inputCls(false) + " bg-muted cursor-not-allowed"}
                 />
               </div>
-              <div className="space-y-1">
-                <label
-                  htmlFor="promote-target"
-                  className="block text-sm font-medium"
-                >
-                  Target Class <span className="text-destructive">*</span>
-                </label>
-                <select
-                  id="promote-target"
-                  value={promoteTargetId}
-                  onChange={(e) => {
-                    setPromoteTargetId(e.target.value);
-                    setPromoteError(null);
-                  }}
-                  className={inputCls(!!promoteError && !promoteTargetId)}
-                >
-                  <option value="">Select target class…</option>
-                  {classes
-                    .filter((c) => c.id !== promoteSource.id)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
+              {/* Only show target class select when promoting (not graduating) */}
+              {promoteAction === "promote" && (
+                <div className="space-y-1">
+                  <label
+                    htmlFor="promote-target"
+                    className="block text-sm font-medium"
+                  >
+                    Target Class <span className="text-destructive">*</span>
+                  </label>
+                  <select
+                    id="promote-target"
+                    value={promoteTargetId}
+                    onChange={(e) => {
+                      setPromoteTargetId(e.target.value);
+                      setPromoteError(null);
+                    }}
+                    className={inputCls(!!promoteError && !promoteTargetId)}
+                  >
+                    <option value="">Select target class…</option>
+                    {classes
+                      .filter((c) => c.id !== promoteSource.id)
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
               {promoteError && (
                 <p role="alert" className="text-xs text-destructive">
                   {promoteError}
@@ -448,6 +523,7 @@ export default function ClassesPage() {
                   setPromoteSource(null);
                   setPromoteError(null);
                   setPromoteTargetId("");
+                  setPromoteAction("promote");
                 }}
                 disabled={promoteMut.isPending}
                 className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
@@ -456,16 +532,25 @@ export default function ClassesPage() {
               </button>
               <button
                 onClick={() => {
-                  if (!promoteTargetId) {
+                  if (promoteAction === "promote" && !promoteTargetId) {
                     setPromoteError("Please select a target class.");
                     return;
                   }
                   promoteMut.mutate();
                 }}
-                disabled={promoteMut.isPending || !promoteTargetId}
+                disabled={
+                  promoteMut.isPending ||
+                  (promoteAction === "promote" && !promoteTargetId)
+                }
                 className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               >
-                {promoteMut.isPending ? "Promoting…" : "Promote"}
+                {promoteMut.isPending
+                  ? promoteAction === "graduate"
+                    ? "Graduating…"
+                    : "Promoting…"
+                  : promoteAction === "graduate"
+                    ? "Graduate All"
+                    : "Promote"}
               </button>
             </div>
           </div>

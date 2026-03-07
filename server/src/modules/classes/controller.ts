@@ -5,12 +5,17 @@ import { send400, send404 } from "../../utils/errors";
 import { bulkSoftDelete } from "../../utils/bulkDelete";
 import { ClassRow, BulkDeleteRequest } from "../../types";
 
-function fmt(c: ClassRow) {
+// D-09 fix: accept optional batch_name from a JOIN so all class responses
+// include batchName per the OpenAPI Class schema.
+type ClassWithBatch = ClassRow & { batch_name?: string | null };
+
+function fmt(c: ClassWithBatch) {
   return {
     id: c.id,
     tenantId: c.tenant_id,
     name: c.name,
     batchId: c.batch_id,
+    batchName: c.batch_name ?? null,
     createdAt: c.created_at.toISOString(),
     updatedAt: c.updated_at.toISOString(),
   };
@@ -20,14 +25,17 @@ export async function listClasses(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;
   const { batchId } = req.query as { batchId?: string };
   const params: unknown[] = [tenantId];
-  let where = "tenant_id = $1 AND deleted_at IS NULL";
+  let where = "c.tenant_id = $1 AND c.deleted_at IS NULL";
   if (batchId) {
-    where += " AND batch_id = $2";
+    where += " AND c.batch_id = $2";
     params.push(batchId);
   }
-  const result = await pool.query<ClassRow>(
-    `SELECT id, tenant_id, name, batch_id, deleted_at, created_at, updated_at
-     FROM classes WHERE ${where} ORDER BY name ASC`,
+  const result = await pool.query<ClassWithBatch>(
+    `SELECT c.id, c.tenant_id, c.name, c.batch_id, c.deleted_at, c.created_at, c.updated_at,
+            b.name AS batch_name
+     FROM classes c
+     LEFT JOIN batches b ON b.id = c.batch_id AND b.deleted_at IS NULL
+     WHERE ${where} ORDER BY c.name ASC`,
     params,
   );
   res.status(200).json({ classes: result.rows.map(fmt) });
@@ -41,8 +49,8 @@ export async function createClass(req: Request, res: Response): Promise<void> {
     return;
   }
   // Verify batch exists in this tenant
-  const batchCheck = await pool.query<{ id: string }>(
-    "SELECT id FROM batches WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+  const batchCheck = await pool.query<{ id: string; name: string }>(
+    "SELECT id, name FROM batches WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
     [batchId, tenantId],
   );
   if ((batchCheck.rowCount ?? 0) === 0) {
@@ -56,7 +64,10 @@ export async function createClass(req: Request, res: Response): Promise<void> {
      RETURNING id, tenant_id, name, batch_id, deleted_at, created_at, updated_at`,
     [id, tenantId, name.trim(), batchId],
   );
-  res.status(201).json({ class: fmt(result.rows[0]!) });
+  const batchName = batchCheck.rows[0]!.name;
+  res
+    .status(201)
+    .json({ class: fmt({ ...result.rows[0]!, batch_name: batchName }) });
 }
 
 export async function updateClass(req: Request, res: Response): Promise<void> {
@@ -77,7 +88,16 @@ export async function updateClass(req: Request, res: Response): Promise<void> {
     send404(res, "Class not found");
     return;
   }
-  res.status(200).json({ class: fmt(result.rows[0]!) });
+  const updated = result.rows[0]!;
+  const batchRow = await pool.query<{ name: string }>(
+    "SELECT name FROM batches WHERE id = $1 AND deleted_at IS NULL",
+    [updated.batch_id],
+  );
+  res
+    .status(200)
+    .json({
+      class: fmt({ ...updated, batch_name: batchRow.rows[0]?.name ?? null }),
+    });
 }
 
 export async function deleteClass(req: Request, res: Response): Promise<void> {
@@ -145,18 +165,41 @@ export async function bulkDeleteClasses(
   res.status(200).json(result);
 }
 
-// PUT /api/classes/:sourceClassId/promote — CR-18
-// Bulk year-end student class promotion. Admin only.
+// PUT /api/classes/:sourceClassId/promote — v4.0 CR-21
+// Bulk year-end student class promotion OR graduation. Admin only.
+// Body: { targetClassId: string } → promote   (updates class_id)
+//       { action: "graduate" }  → graduate  (sets class_id = NULL, status = 'Graduated')
 export async function promoteClass(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;
   const { sourceClassId } = req.params as { sourceClassId: string };
-  const { targetClassId } = req.body as { targetClassId?: string };
+  const body = req.body as
+    | { targetClassId?: string; action?: string }
+    | undefined;
 
-  if (!targetClassId) {
-    send400(res, "targetClassId is required");
+  const hasTargetClassId =
+    body && "targetClassId" in body && typeof body.targetClassId === "string";
+  const isGraduate = body && "action" in body && body.action === "graduate";
+
+  // CR-21: must be one or the other — reject both absent or invalid combos
+  if (!hasTargetClassId && !isGraduate) {
+    res.status(400).json({
+      error: {
+        code: "INVALID_PROMOTION_ACTION",
+        message:
+          'Request body must contain either targetClassId (string) or action: "graduate"',
+        details: {},
+        timestamp: new Date().toISOString(),
+      },
+    });
     return;
   }
-  if (sourceClassId === targetClassId) {
+
+  const targetClassId = hasTargetClassId
+    ? (body as { targetClassId: string }).targetClassId
+    : null;
+
+  // SAME_CLASS guard (promote only)
+  if (hasTargetClassId && sourceClassId === targetClassId) {
     res.status(400).json({
       error: {
         code: "SAME_CLASS",
@@ -178,28 +221,40 @@ export async function promoteClass(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // Verify target class exists in tenant
-  const targetCheck = await pool.query<{ id: string }>(
-    "SELECT id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
-    [targetClassId, tenantId],
-  );
-  if ((targetCheck.rowCount ?? 0) === 0) {
-    send404(res, "Target class not found");
-    return;
+  if (isGraduate) {
+    // ── GRADUATION: set class_id = NULL, status = 'Graduated' for Active students ──
+    const graduateResult = await pool.query<{ id: string }>(
+      `UPDATE students
+       SET class_id = NULL, status = 'Graduated', updated_at = NOW()
+       WHERE class_id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status = 'Active'
+       RETURNING id`,
+      [sourceClassId, tenantId],
+    );
+    res.status(200).json({
+      graduated: graduateResult.rowCount ?? 0,
+      failed: [],
+    });
+  } else {
+    // ── PROMOTE: move students to targetClass ─────────────────────────────────────
+    const existingTarget = await pool.query<{ id: string }>(
+      "SELECT id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+      [targetClassId, tenantId],
+    );
+    if ((existingTarget.rowCount ?? 0) === 0) {
+      send404(res, "Target class not found");
+      return;
+    }
+
+    const promoteResult = await pool.query<{ id: string }>(
+      `UPDATE students
+       SET class_id = $1, updated_at = NOW()
+       WHERE class_id = $2 AND tenant_id = $3 AND deleted_at IS NULL AND status = 'Active'
+       RETURNING id`,
+      [targetClassId, sourceClassId, tenantId],
+    );
+    res.status(200).json({
+      updated: promoteResult.rowCount ?? 0,
+      failed: [],
+    });
   }
-
-  // Bulk-update all active students in sourceClass to targetClass
-  const updateResult = await pool.query<{ count: string }>(
-    `UPDATE students
-     SET class_id = $1, updated_at = NOW()
-     WHERE class_id = $2 AND tenant_id = $3 AND deleted_at IS NULL
-     RETURNING id`,
-    [targetClassId, sourceClassId, tenantId],
-  );
-
-  res.status(200).json({
-    promoted: updateResult.rowCount ?? 0,
-    sourceClassId,
-    targetClassId,
-  });
 }
