@@ -1,391 +1,46 @@
 openapi: 3.1.0
 info:
   title: White-Label School Management System API
-  version: 4.0.0
-  description: >
-    Backend API for white-label school management system.
-    Freeze v4.0 — IMMUTABLE.
-    All error codes are SNAKE_CASE.
-    Breaking change from v3.6: batch status "Archived" renamed to "Graduated".
+  version: 4.2.0
+  description: Backend API for white-label school management system with timetable scheduling and attendance tracking
+  contact:
+    name: API Support
 
 servers:
-  - url: /api
-    description: Application base path
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://api.example.com/api
+    description: Production server
 
-security:
-  - bearerAuth: []
-
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-
-  schemas:
-
-    # ─── Error ───────────────────────────────────────────
-    Error:
-      type: object
-      required: [error, timestamp]
-      properties:
-        error:
-          type: object
-          required: [code, message, details]
-          properties:
-            code:
-              type: string
-              example: NOT_FOUND
-            message:
-              type: string
-              example: Resource not found
-            details:
-              type: object
-        timestamp:
-          type: string
-          format: date-time
-          example: "2026-03-05T07:00:00Z"
-
-    # ─── Tenant ──────────────────────────────────────────
-    Tenant:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        slug:
-          type: string
-        status:
-          type: string
-          enum: [active, inactive]
-        timezone:
-          type: string
-          example: Asia/Kolkata
-        deactivatedAt:
-          type: string
-          format: date-time
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
-    # ─── User ────────────────────────────────────────────
-    User:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        email:
-          type: string
-        roles:
-          type: array
-          items:
-            type: string
-            enum: [Teacher, Admin]
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
-    # ─── Student ─────────────────────────────────────────
-    # v4.0 CR-21: classId + className are now nullable (null when Graduated)
-    # v4.0 CR-22: status field added
-    Student:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        classId:
-          type: string
-          nullable: true
-          description: "Null when student is Graduated"
-        className:
-          type: string
-          nullable: true
-          description: "Null when student is Graduated"
-        batchId:
-          type: string
-        batchName:
-          type: string
-        admissionNumber:
-          type: string
-        dob:
-          type: string
-          format: date
-        status:
-          type: string
-          enum: [Active, DroppedOff, Graduated]
-          description: >
-            Active = enrolled. DroppedOff = admin-set. Graduated = system-set only via graduation action.
-        loginId:
-          type: string
-          example: 530@greenvalley.local
-        userId:
-          type: string
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
-    # ─── Batch ───────────────────────────────────────────
-    # v4.0 CR-23: status enum renamed Archived → Graduated (breaking)
-    Batch:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        startYear:
-          type: integer
-        endYear:
-          type: integer
-        status:
-          type: string
-          enum: [Active, Graduated]
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
-    # ─── Subject ─────────────────────────────────────────
-    Subject:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        code:
-          type: string
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
-    # ─── Class ───────────────────────────────────────────
-    Class:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        batchId:
-          type: string
-        batchName:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
-    # ─── SchoolPeriod ────────────────────────────────────
-    SchoolPeriod:
-      type: object
-      properties:
-        id:
-          type: string
-        periodNumber:
-          type: integer
-        label:
-          type: string
-        startTime:
-          type: string
-          example: "08:00"
-        endTime:
-          type: string
-          example: "08:45"
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
-    # ─── TimeSlot ────────────────────────────────────────
-    TimeSlot:
-      type: object
-      properties:
-        id:
-          type: string
-        classId:
-          type: string
-        className:
-          type: string
-        subjectId:
-          type: string
-        subjectName:
-          type: string
-        teacherId:
-          type: string
-        teacherName:
-          type: string
-        dayOfWeek:
-          type: string
-          enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
-        periodNumber:
-          type: integer
-        startTime:
-          type: string
-          example: "08:00"
-        endTime:
-          type: string
-          example: "08:45"
-        label:
-          type: string
-        effectiveFrom:
-          type: string
-          format: date
-        effectiveTo:
-          type: string
-          format: date
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-
-    # ─── AttendanceRecord ────────────────────────────────
-    AttendanceRecord:
-      type: object
-      properties:
-        id:
-          type: string
-        date:
-          type: string
-          format: date
-        originalStatus:
-          type: string
-          enum: [Present, Absent, Late]
-        status:
-          type: string
-          enum: [Present, Absent, Late]
-          description: Effective status — correctedStatus if exists, else originalStatus
-        correctedBy:
-          type: string
-          nullable: true
-        correctedAt:
-          type: string
-          format: date-time
-          nullable: true
-        timeSlot:
-          $ref: '#/components/schemas/TimeSlot'
-        recordedBy:
-          type: string
-        recordedAt:
-          type: string
-          format: date-time
-
-    # ─── Feature ─────────────────────────────────────────
-    Feature:
-      type: object
-      properties:
-        id:
-          type: string
-        key:
-          type: string
-          enum: [timetable, attendance]
-        name:
-          type: string
-        description:
-          type: string
-        enabled:
-          type: boolean
-
-    # ─── BulkResult ──────────────────────────────────────
-    BulkResult:
-      type: object
-      properties:
-        deleted:
-          type: array
-          items:
-            type: string
-        failed:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-              reason:
-                type: string
-
-    # ─── PromoteResult ───────────────────────────────────
-    # v4.0 CR-21: separate result shape for graduation
-    PromoteResult:
-      type: object
-      properties:
-        updated:
-          type: integer
-          description: Count of students successfully moved (promote action)
-        failed:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-              reason:
-                type: string
-
-    GraduateResult:
-      type: object
-      properties:
-        graduated:
-          type: integer
-          description: Count of students successfully graduated
-        failed:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-              reason:
-                type: string
-
-    # ─── Pagination ──────────────────────────────────────
-    Pagination:
-      type: object
-      properties:
-        limit:
-          type: integer
-        offset:
-          type: integer
-        total:
-          type: integer
+tags:
+  - name: Auth
+    description: Authentication endpoints
+  - name: SuperAdmin
+    description: Platform-level administration
+  - name: Features
+    description: Feature flag management
+  - name: Users
+    description: User management
+  - name: Batches
+    description: Batch management
+  - name: Subjects
+    description: Subject management
+  - name: Classes
+    description: Class management
+  - name: Students
+    description: Student management
+  - name: SchoolPeriods
+    description: School period configuration
+  - name: Timetable
+    description: Timetable management
+  - name: Attendance
+    description: Attendance tracking
 
 paths:
-
-  # ════════════════════════════════════════════════════════
-  # AUTHENTICATION
-  # ════════════════════════════════════════════════════════
-
   /auth/login:
     post:
-      summary: Authenticate tenant user
-      tags: [Authentication]
-      security: []
+      summary: Tenant user login
+      tags: [Auth]
       requestBody:
         required: true
         content:
@@ -396,37 +51,13 @@ paths:
               properties:
                 email:
                   type: string
-                  description: >
-                    For regular users: email address.
-                    For Students: loginId pseudo-email (e.g. 530@greenvalley.local).
-                    Validated as plain string — NOT RFC 5322 enforced.
-                  example: john@school1.com
+                  format: email
                 password:
                   type: string
-                  minLength: 8
-                  description: >
-                    For Students: admissionNumber + DDMMYYYY(dob)
-                  example: password123
                 tenantSlug:
                   type: string
-                  minLength: 1
-                  maxLength: 100
-                  example: greenvalley
-            examples:
-              regular_user:
-                summary: Admin/Teacher login
-                value:
-                  email: john@school1.com
-                  password: password123
-                  tenantSlug: greenvalley
-              student:
-                summary: Student login
-                value:
-                  email: 530@greenvalley.local
-                  password: "53003102003"
-                  tenantSlug: greenvalley
       responses:
-        "200":
+        '200':
           description: Login successful
           content:
             application/json:
@@ -436,110 +67,50 @@ paths:
                   token:
                     type: string
                   user:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                      tenantId:
-                        type: string
-                      name:
-                        type: string
-                      email:
-                        type: string
-                      roles:
-                        type: array
-                        items:
-                          type: string
-                          enum: [Teacher, Admin, Student]
-                      activeRole:
-                        type: string
-                        enum: [Teacher, Admin, Student]
-              example:
-                token: eyJhbGciOiJIUzI1NiJ9.example
-                user:
-                  id: U123
-                  tenantId: T001
-                  name: John Doe
-                  email: john@school1.com
-                  roles: [Admin]
-                  activeRole: Admin
-        "400":
-          description: Missing required fields
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: VALIDATION_ERROR
-                  message: email, password, and tenantSlug are required
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-        "401":
-          description: Invalid credentials
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: UNAUTHORIZED
-                  message: Invalid credentials
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-        "403":
-          description: Tenant inactive
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: TENANT_INACTIVE
-                  message: Tenant is inactive
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-        "404":
-          description: Tenant not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /auth/logout:
     post:
-      summary: Logout current session
-      tags: [Authentication]
+      summary: Logout (client-side token discard, server no-op)
+      tags: [Auth]
+      security:
+        - BearerAuth: []
       responses:
-        "204":
-          description: Logged out
-        "401":
-          description: Unauthorized
+        '200':
+          description: Logout acknowledged
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Logged out successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /auth/switch-role:
     post:
-      summary: Switch active role context (multi-role users)
-      tags: [Authentication]
+      summary: Switch active role
+      tags: [Auth]
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [role]
+              required: [activeRole]
               properties:
-                role:
+                activeRole:
                   type: string
                   enum: [Teacher, Admin, Student]
-            example:
-              role: Teacher
       responses:
-        "200":
-          description: Role switched — new token issued
+        '200':
+          description: Role switched
           content:
             application/json:
               schema:
@@ -547,57 +118,17 @@ paths:
                 properties:
                   token:
                     type: string
-                  user:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                      roles:
-                        type: array
-                        items:
-                          type: string
-                      activeRole:
-                        type: string
-              example:
-                token: eyJhbGciOiJIUzI1NiJ9.switched
-                user:
-                  id: U123
-                  roles: [Admin, Teacher]
-                  activeRole: Teacher
-        "400":
-          description: Role not assigned to user
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: ROLE_NOT_ASSIGNED
-                  message: Requested role is not assigned to this user
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-        "403":
-          description: Single-role user
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: SINGLE_ROLE_USER
-                  message: User has only one role, switching not applicable
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-  # ════════════════════════════════════════════════════════
-  # SUPER ADMIN — AUTH
-  # ════════════════════════════════════════════════════════
+                  activeRole:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /super-admin/auth/login:
     post:
       summary: SuperAdmin login
       tags: [SuperAdmin]
-      security: []
       requestBody:
         required: true
         content:
@@ -611,11 +142,8 @@ paths:
                   format: email
                 password:
                   type: string
-            example:
-              email: admin@platform.com
-              password: supersecret123
       responses:
-        "200":
+        '200':
           description: Login successful
           content:
             application/json:
@@ -625,47 +153,24 @@ paths:
                   token:
                     type: string
                   superAdmin:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                      name:
-                        type: string
-                      email:
-                        type: string
-              example:
-                token: eyJhbGciOiJIUzI1NiJ9.superadmin
-                superAdmin:
-                  id: SA001
-                  name: Platform Admin
-                  email: admin@platform.com
-        "401":
-          description: Invalid credentials
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  # ════════════════════════════════════════════════════════
-  # SUPER ADMIN — TENANTS
-  # ════════════════════════════════════════════════════════
+                    $ref: '#/components/schemas/SuperAdmin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /super-admin/tenants:
     get:
-      summary: List all tenants
+      summary: List tenants
       tags: [SuperAdmin]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: query
-          name: status
+        - name: status
+          in: query
           schema:
             type: string
-            enum: [active, inactive]
-        - in: query
-          name: search
-          schema:
-            type: string
+            enum: [active, inactive, all]
       responses:
-        "200":
+        '200':
           description: Tenant list
           content:
             application/json:
@@ -676,36 +181,19 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Tenant'
-              example:
-                tenants:
-                  - id: T001
-                    name: Green Valley School
-                    slug: greenvalley
-                    status: active
-                    timezone: Asia/Kolkata
-                    deactivatedAt: null
-                    createdAt: "2026-01-01T00:00:00Z"
-                    updatedAt: "2026-01-01T00:00:00Z"
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
     post:
-      summary: Create new tenant
+      summary: Create tenant
       tags: [SuperAdmin]
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [id, name, slug, admin]
+              required: [name, slug, timezone, adminName, adminEmail, adminPassword]
               properties:
-                id:
-                  type: string
                 name:
                   type: string
                 slug:
@@ -713,29 +201,15 @@ paths:
                 timezone:
                   type: string
                   default: Asia/Kolkata
-                admin:
-                  type: object
-                  required: [name, email, password]
-                  properties:
-                    name:
-                      type: string
-                    email:
-                      type: string
-                      format: email
-                    password:
-                      type: string
-                      minLength: 8
-            example:
-              id: T002
-              name: Sunrise Academy
-              slug: sunrise
-              timezone: Asia/Kolkata
-              admin:
-                name: Admin User
-                email: admin@sunrise.com
-                password: securepass1
+                adminName:
+                  type: string
+                adminEmail:
+                  type: string
+                  format: email
+                adminPassword:
+                  type: string
       responses:
-        "201":
+        '201':
           description: Tenant created
           content:
             application/json:
@@ -745,74 +219,42 @@ paths:
                   tenant:
                     $ref: '#/components/schemas/Tenant'
                   admin:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                      name:
-                        type: string
-                      email:
-                        type: string
-                      roles:
-                        type: array
-                        items:
-                          type: string
-              example:
-                tenant:
-                  id: T002
-                  name: Sunrise Academy
-                  slug: sunrise
-                  status: active
-                  timezone: Asia/Kolkata
-                  deactivatedAt: null
-                  createdAt: "2026-03-05T07:00:00Z"
-                  updatedAt: "2026-03-05T07:00:00Z"
-                admin:
-                  id: U001
-                  name: Admin User
-                  email: admin@sunrise.com
-                  roles: [Admin]
-        "400":
-          description: Validation error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: VALIDATION_ERROR
-                  message: slug must be alphanumeric with hyphens only
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-        "409":
-          description: Slug conflict or admin email taken
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                slug_conflict:
-                  value:
-                    error:
-                      code: CONFLICT
-                      message: Tenant slug already exists
-                      details: {}
-                    timestamp: "2026-03-05T07:00:00Z"
-                admin_email_taken:
-                  value:
-                    error:
-                      code: ADMIN_EMAIL_TAKEN
-                      message: Admin email already in use
-                      details: {}
-                    timestamp: "2026-03-05T07:00:00Z"
+                    $ref: '#/components/schemas/User'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /super-admin/tenants/{tenantId}:
-    put:
-      summary: Update tenant details
+    get:
+      summary: Get tenant
       tags: [SuperAdmin]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: path
-          name: tenantId
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tenant details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant:
+                    $ref: '#/components/schemas/Tenant'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update tenant
+      tags: [SuperAdmin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
           required: true
           schema:
             type: string
@@ -822,19 +264,13 @@ paths:
           application/json:
             schema:
               type: object
-              minProperties: 1
               properties:
                 name:
                   type: string
-                slug:
-                  type: string
                 timezone:
                   type: string
-            example:
-              name: Sunrise Academy Updated
-              timezone: America/New_York
       responses:
-        "200":
+        '200':
           description: Tenant updated
           content:
             application/json:
@@ -843,25 +279,21 @@ paths:
                 properties:
                   tenant:
                     $ref: '#/components/schemas/Tenant'
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
 
   /super-admin/tenants/{tenantId}/deactivate:
-    put:
+    post:
       summary: Deactivate tenant
       tags: [SuperAdmin]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: path
-          name: tenantId
+        - name: tenantId
+          in: path
           required: true
           schema:
             type: string
       responses:
-        "200":
+        '200':
           description: Tenant deactivated
           content:
             application/json:
@@ -870,31 +302,21 @@ paths:
                 properties:
                   tenant:
                     $ref: '#/components/schemas/Tenant'
-        "409":
-          description: Already inactive
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: ALREADY_INACTIVE
-                  message: Tenant is already inactive
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
 
   /super-admin/tenants/{tenantId}/reactivate:
-    put:
+    post:
       summary: Reactivate tenant
       tags: [SuperAdmin]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: path
-          name: tenantId
+        - name: tenantId
+          in: path
           required: true
           schema:
             type: string
       responses:
-        "200":
+        '200':
           description: Tenant reactivated
           content:
             application/json:
@@ -903,32 +325,22 @@ paths:
                 properties:
                   tenant:
                     $ref: '#/components/schemas/Tenant'
-        "409":
-          description: Already active
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: ALREADY_ACTIVE
-                  message: Tenant is already active
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
 
   /super-admin/tenants/{tenantId}/features:
     get:
-      summary: List tenant feature flags
+      summary: List tenant features
       tags: [SuperAdmin]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: path
-          name: tenantId
+        - name: tenantId
+          in: path
           required: true
           schema:
             type: string
       responses:
-        "200":
-          description: Feature list
+        '200':
+          description: Features list
           content:
             application/json:
               schema:
@@ -937,36 +349,25 @@ paths:
                   features:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Feature'
-              example:
-                features:
-                  - id: F001
-                    key: timetable
-                    name: Timetable Management
-                    description: Create and manage class schedules
-                    enabled: true
-                  - id: F002
-                    key: attendance
-                    name: Attendance Tracking
-                    description: Record and view student attendance
-                    enabled: true
+                      $ref: '#/components/schemas/TenantFeature'
 
   /super-admin/tenants/{tenantId}/features/{featureKey}:
     put:
-      summary: Enable or disable a tenant feature
+      summary: Toggle tenant feature
       tags: [SuperAdmin]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: path
-          name: tenantId
+        - name: tenantId
+          in: path
           required: true
           schema:
             type: string
-        - in: path
-          name: featureKey
+        - name: featureKey
+          in: path
           required: true
           schema:
             type: string
-            enum: [timetable, attendance]
       requestBody:
         required: true
         content:
@@ -977,42 +378,28 @@ paths:
               properties:
                 enabled:
                   type: boolean
-            example:
-              enabled: true
       responses:
-        "200":
-          description: Feature updated
+        '200':
+          description: Feature toggled
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   feature:
-                    $ref: '#/components/schemas/Feature'
-        "400":
-          description: Feature dependency violation
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: FEATURE_DEPENDENCY
-                  message: Attendance requires timetable to be enabled first
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-  # ════════════════════════════════════════════════════════
-  # FEATURES (tenant-scoped, read-only)
-  # ════════════════════════════════════════════════════════
+                    $ref: '#/components/schemas/TenantFeature'
+        '400':
+          $ref: '#/components/responses/ValidationError'
 
   /features:
     get:
-      summary: List enabled features for current tenant (Admin only)
+      summary: List enabled features
       tags: [Features]
+      security:
+        - BearerAuth: []
       responses:
-        "200":
-          description: Feature list
+        '200':
+          description: Enabled features
           content:
             application/json:
               schema:
@@ -1021,72 +408,977 @@ paths:
                   features:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Feature'
-              example:
-                features:
-                  - id: F001
-                    key: timetable
-                    name: Timetable Management
-                    description: Create and manage class schedules
-                    enabled: true
-        "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                      $ref: '#/components/schemas/TenantFeature'
 
-  # ════════════════════════════════════════════════════════
-  # SCHOOL PERIODS
-  # ════════════════════════════════════════════════════════
-
-  /school-periods:
+  /users:
     get:
-      summary: List school periods (Teacher, Admin, Student)
-      tags: [SchoolPeriods]
+      summary: List users (excludes Student role)
+      tags: [Users]
+      security:
+        - BearerAuth: []
       responses:
-        "200":
-          description: Period list
+        '200':
+          description: User list
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  periods:
+                  users:
                     type: array
                     items:
-                      $ref: '#/components/schemas/SchoolPeriod'
-              example:
-                periods:
-                  - id: SP001
-                    periodNumber: 1
-                    label: Period 1
-                    startTime: "08:00"
-                    endTime: "08:45"
-                    createdAt: "2026-01-01T00:00:00Z"
-                    updatedAt: "2026-01-01T00:00:00Z"
-        "403":
-          description: Feature disabled
+                      $ref: '#/components/schemas/User'
+    post:
+      summary: Create user (Admin/Teacher only)
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, roles]
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  description: Optional. Auto-generated if omitted.
+                roles:
+                  type: array
+                  items:
+                    type: string
+                    enum: [Teacher, Admin]
+      responses:
+        '201':
+          description: User created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: FEATURE_DISABLED
-                  message: Timetable feature is not enabled for this tenant
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  temporaryPassword:
+                    type: string
+                    nullable: true
+        '409':
+          $ref: '#/components/responses/Conflict'
 
+  /users/{userId}:
+    get:
+      summary: Get user
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update user
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+    delete:
+      summary: Soft-delete user
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: User deleted
+
+  /users/{userId}/roles:
+    put:
+      summary: Update user roles
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties:
+                roles:
+                  type: array
+                  items:
+                    type: string
+                    enum: [Teacher, Admin]
+      responses:
+        '200':
+          description: Roles updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /users/bulk:
     post:
-      summary: Create school period (Admin only)
+      summary: Bulk soft-delete users
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userIds]
+              properties:
+                userIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Bulk delete result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletedCount:
+                    type: integer
+
+  /batches:
+    get:
+      summary: List batches
+      tags: [Batches]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Active, Graduated, all]
+      responses:
+        '200':
+          description: Batch list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batches:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Batch'
+    post:
+      summary: Create batch
+      tags: [Batches]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, startYear, endYear]
+              properties:
+                name:
+                  type: string
+                startYear:
+                  type: integer
+                endYear:
+                  type: integer
+      responses:
+        '201':
+          description: Batch created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch:
+                    $ref: '#/components/schemas/Batch'
+
+  /batches/{batchId}:
+    get:
+      summary: Get batch
+      tags: [Batches]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Batch details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch:
+                    $ref: '#/components/schemas/Batch'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update batch
+      tags: [Batches]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                status:
+                  type: string
+                  enum: [Active, Graduated]
+      responses:
+        '200':
+          description: Batch updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch:
+                    $ref: '#/components/schemas/Batch'
+    delete:
+      summary: Soft-delete batch
+      tags: [Batches]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Batch deleted
+
+  /batches/bulk:
+    post:
+      summary: Bulk soft-delete batches
+      tags: [Batches]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [batchIds]
+              properties:
+                batchIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Bulk delete result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletedCount:
+                    type: integer
+
+  /subjects:
+    get:
+      summary: List subjects
+      tags: [Subjects]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Subject list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subjects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Subject'
+    post:
+      summary: Create subject
+      tags: [Subjects]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                code:
+                  type: string
+      responses:
+        '201':
+          description: Subject created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject:
+                    $ref: '#/components/schemas/Subject'
+
+  /subjects/{subjectId}:
+    get:
+      summary: Get subject
+      tags: [Subjects]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Subject details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject:
+                    $ref: '#/components/schemas/Subject'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update subject
+      tags: [Subjects]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                code:
+                  type: string
+      responses:
+        '200':
+          description: Subject updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject:
+                    $ref: '#/components/schemas/Subject'
+    delete:
+      summary: Soft-delete subject
+      tags: [Subjects]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Subject deleted
+
+  /subjects/bulk:
+    post:
+      summary: Bulk soft-delete subjects
+      tags: [Subjects]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectIds]
+              properties:
+                subjectIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Bulk delete result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletedCount:
+                    type: integer
+
+  /classes:
+    get:
+      summary: List classes
+      tags: [Classes]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Class list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  classes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Class'
+    post:
+      summary: Create class
+      tags: [Classes]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, batchId]
+              properties:
+                name:
+                  type: string
+                batchId:
+                  type: string
+      responses:
+        '201':
+          description: Class created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  class:
+                    $ref: '#/components/schemas/Class'
+
+  /classes/{classId}:
+    get:
+      summary: Get class
+      tags: [Classes]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Class details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  class:
+                    $ref: '#/components/schemas/Class'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update class
+      tags: [Classes]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Class updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  class:
+                    $ref: '#/components/schemas/Class'
+    delete:
+      summary: Soft-delete class
+      tags: [Classes]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Class deleted
+
+  /classes/{sourceClassId}/promote:
+    put:
+      summary: Promote or graduate students
+      tags: [Classes]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sourceClassId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [targetClassId]
+                  properties:
+                    targetClassId:
+                      type: string
+                - type: object
+                  required: [action]
+                  properties:
+                    action:
+                      type: string
+                      enum: [graduate]
+      responses:
+        '200':
+          description: Promotion result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  promotedCount:
+                    type: integer
+                  failed:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        studentId:
+                          type: string
+                        reason:
+                          type: string
+
+  /classes/bulk:
+    post:
+      summary: Bulk soft-delete classes
+      tags: [Classes]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [classIds]
+              properties:
+                classIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Bulk delete result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletedCount:
+                    type: integer
+
+  /students:
+    get:
+      summary: List students
+      tags: [Students]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: classId
+          in: query
+          schema:
+            type: string
+        - name: batchId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Active, DroppedOff, Graduated, all]
+      responses:
+        '200':
+          description: Student list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  students:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Student'
+    post:
+      summary: Create student with auto-generated account
+      tags: [Students]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, classId, batchId, admissionNumber, dob]
+              properties:
+                name:
+                  type: string
+                classId:
+                  type: string
+                  nullable: true
+                batchId:
+                  type: string
+                admissionNumber:
+                  type: string
+                dob:
+                  type: string
+                  format: date
+      responses:
+        '201':
+          description: Student created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  student:
+                    $ref: '#/components/schemas/Student'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /students/{studentId}:
+    get:
+      summary: Get student
+      tags: [Students]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Student details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  student:
+                    $ref: '#/components/schemas/Student'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update student (cannot set status=Graduated)
+      tags: [Students]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                admissionNumber:
+                  type: string
+                dob:
+                  type: string
+                  format: date
+                status:
+                  type: string
+                  enum: [Active, DroppedOff]
+      responses:
+        '200':
+          description: Student updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  student:
+                    $ref: '#/components/schemas/Student'
+    delete:
+      summary: Soft-delete student
+      tags: [Students]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Student deleted
+
+  /students/{studentId}/attendance:
+    get:
+      summary: Get student attendance history
+      tags: [Students]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Attendance records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attendance:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AttendanceRecord'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /students/{studentId}/attendance/summary:
+    get:
+      summary: Get student attendance summary for a month
+      tags: [Students]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        '200':
+          description: Attendance summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    $ref: '#/components/schemas/AttendanceSummary'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /students/bulk:
+    post:
+      summary: Bulk soft-delete students
+      tags: [Students]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentIds]
+              properties:
+                studentIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Bulk delete result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletedCount:
+                    type: integer
+
+  /school-periods:
+    get:
+      summary: List school periods
       tags: [SchoolPeriods]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: School period list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schoolPeriods:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SchoolPeriod'
+    post:
+      summary: Create school period
+      tags: [SchoolPeriods]
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -1102,57 +1394,55 @@ paths:
                   type: string
                 startTime:
                   type: string
-                  example: "08:00"
+                  format: time
                 endTime:
                   type: string
-                  example: "08:45"
-            example:
-              periodNumber: 1
-              label: Period 1
-              startTime: "08:00"
-              endTime: "08:45"
+                  format: time
       responses:
-        "201":
-          description: Period created
+        '201':
+          description: School period created
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  period:
+                  schoolPeriod:
                     $ref: '#/components/schemas/SchoolPeriod'
-        "400":
-          description: Invalid time range
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: PERIOD_TIME_INVALID
-                  message: startTime must be before endTime
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-        "409":
-          description: Period number already exists
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: CONFLICT
-                  message: Period number 1 already exists for this tenant
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
+        '409':
+          $ref: '#/components/responses/Conflict'
 
-  /school-periods/{id}:
-    put:
-      summary: Update school period (Admin only)
+  /school-periods/{periodId}:
+    get:
+      summary: Get school period
       tags: [SchoolPeriods]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: path
-          name: id
+        - name: periodId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: School period details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schoolPeriod:
+                    $ref: '#/components/schemas/SchoolPeriod'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update school period
+      tags: [SchoolPeriods]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: periodId
+          in: path
           required: true
           schema:
             type: string
@@ -1162,102 +1452,75 @@ paths:
           application/json:
             schema:
               type: object
-              minProperties: 1
               properties:
                 label:
                   type: string
                 startTime:
                   type: string
+                  format: time
                 endTime:
                   type: string
-            example:
-              label: Morning Period 1
-              startTime: "08:00"
-              endTime: "08:50"
+                  format: time
       responses:
-        "200":
-          description: Period updated
+        '200':
+          description: School period updated
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  period:
+                  schoolPeriod:
                     $ref: '#/components/schemas/SchoolPeriod'
-        "400":
-          description: Invalid time range
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
     delete:
-      summary: Delete school period (Admin only)
+      summary: Delete school period
       tags: [SchoolPeriods]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: path
-          name: id
+        - name: periodId
+          in: path
           required: true
           schema:
             type: string
       responses:
-        "204":
-          description: Period deleted
-        "409":
-          description: Referenced by active timeslots
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: HAS_REFERENCES
-                  message: Cannot delete — period is referenced by active timetable slots
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-  # ════════════════════════════════════════════════════════
-  # TIMETABLE
-  # ════════════════════════════════════════════════════════
+        '204':
+          description: School period deleted
 
   /timetable:
     get:
-      summary: Get timetable (Teacher, Admin, Student)
+      summary: Get timetable
+      description: 'Returns timeslots matching filters. status=Active (default): returns where effectiveto IS NULL OR effectiveto >= queryDate. status=All: returns all non-deleted timeslots.'
       tags: [Timetable]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: query
-          name: date
+        - name: date
+          in: query
           schema:
             type: string
             format: date
-        - in: query
-          name: dayOfWeek
+        - name: dayOfWeek
+          in: query
           schema:
             type: string
             enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
-        - in: query
-          name: teacherId
+        - name: teacherId
+          in: query
           schema:
             type: string
-        - in: query
-          name: classId
+        - name: classId
+          in: query
           schema:
             type: string
-        - in: query
-          name: status
+        - name: status
+          in: query
           schema:
             type: string
             enum: [Active, All]
             default: Active
       responses:
-        "200":
-          description: Timetable entries
+        '200':
+          description: Timetable data
           content:
             application/json:
               schema:
@@ -1267,39 +1530,13 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/TimeSlot'
-              example:
-                timetable:
-                  - id: TS001
-                    classId: C001
-                    className: Grade 10A
-                    subjectId: SUB001
-                    subjectName: Mathematics
-                    teacherId: U123
-                    teacherName: John Doe
-                    dayOfWeek: Monday
-                    periodNumber: 1
-                    startTime: "08:00"
-                    endTime: "08:45"
-                    label: Period 1
-                    effectiveFrom: "2026-01-01"
-                    effectiveTo: null
-                    createdAt: "2026-01-01T00:00:00Z"
-        "403":
-          description: Feature disabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: FEATURE_DISABLED
-                  message: Timetable feature is not enabled for this tenant
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
-      summary: Create timetable slot (Admin only)
+      summary: Create timeslot
       tags: [Timetable]
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -1323,15 +1560,8 @@ paths:
                 effectiveFrom:
                   type: string
                   format: date
-            example:
-              classId: C001
-              subjectId: SUB001
-              teacherId: U123
-              dayOfWeek: Monday
-              periodNumber: 1
-              effectiveFrom: "2026-01-01"
       responses:
-        "201":
+        '201':
           description: Timeslot created
           content:
             application/json:
@@ -1340,53 +1570,18 @@ paths:
                 properties:
                   timeSlot:
                     $ref: '#/components/schemas/TimeSlot'
-        "400":
-          description: Period not configured or invalid teacher
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                period_not_configured:
-                  value:
-                    error:
-                      code: PERIOD_NOT_CONFIGURED
-                      message: No school period configured for period number 1
-                      details: {}
-                    timestamp: "2026-03-05T07:00:00Z"
-                invalid_teacher:
-                  value:
-                    error:
-                      code: INVALID_TEACHER
-                      message: Specified user does not have the Teacher role
-                      details: {}
-                    timestamp: "2026-03-05T07:00:00Z"
-        "403":
-          description: Feature disabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        "409":
-          description: Slot already active for class/day/period
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: CONFLICT
-                  message: An active timetable slot already exists for this class, day, and period
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /timetable/{timeSlotId}/end:
     put:
-      summary: End a timetable slot (Admin only)
+      summary: End timeslot
       tags: [Timetable]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: path
-          name: timeSlotId
+        - name: timeSlotId
+          in: path
           required: true
           schema:
             type: string
@@ -1401,10 +1596,8 @@ paths:
                 effectiveTo:
                   type: string
                   format: date
-            example:
-              effectiveTo: "2026-03-31"
       responses:
-        "200":
+        '200':
           description: Timeslot ended
           content:
             application/json:
@@ -1412,1474 +1605,28 @@ paths:
                 type: object
                 properties:
                   timeSlot:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                      effectiveTo:
-                        type: string
-                        format: date
-              example:
-                timeSlot:
-                  id: TS001
-                  effectiveTo: "2026-03-31"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  # ════════════════════════════════════════════════════════
-  # USERS
-  # ════════════════════════════════════════════════════════
-
-  /users:
-    get:
-      summary: List users — Teacher/Admin only, Students excluded (Admin only)
-      tags: [Users]
-      parameters:
-        - in: query
-          name: role
-          schema:
-            type: string
-            enum: [Teacher, Admin]
-        - in: query
-          name: search
-          schema:
-            type: string
-      responses:
-        "200":
-          description: User list (Student-role users never returned)
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  users:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/User'
-              example:
-                users:
-                  - id: U123
-                    name: John Doe
-                    email: john@school1.com
-                    roles: [Teacher]
-                    createdAt: "2026-01-01T00:00:00Z"
-                    updatedAt: "2026-01-01T00:00:00Z"
-
-    # v4.0 CR-20: password is now optional
-    post:
-      summary: Create user (Admin only) — Student role forbidden
-      tags: [Users]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, email, roles]
-              properties:
-                name:
-                  type: string
-                email:
-                  type: string
-                  format: email
-                password:
-                  type: string
-                  minLength: 8
-                  description: >
-                    Optional. If omitted, a secure temporary password is auto-generated
-                    and returned once in the response as temporaryPassword.
-                roles:
-                  type: array
-                  minItems: 1
-                  items:
-                    type: string
-                    enum: [Teacher, Admin]
-                  description: Must NOT contain Student — use POST /students instead
-            examples:
-              with_password:
-                summary: Explicit password provided
-                value:
-                  name: Jane Smith
-                  email: jane@school1.com
-                  password: securepass1
-                  roles: [Teacher]
-              auto_password:
-                summary: Auto-generate password
-                value:
-                  name: Jane Smith
-                  email: jane@school1.com
-                  roles: [Teacher]
-      responses:
-        "201":
-          description: >
-            User created. temporaryPassword is non-null only when password was omitted.
-            It is returned in plaintext once only — never stored, never logged.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  user:
-                    $ref: '#/components/schemas/User'
-                  temporaryPassword:
-                    type: string
-                    nullable: true
-                    description: Present only when password was auto-generated
-              examples:
-                auto_generated:
-                  summary: Password was auto-generated
-                  value:
-                    user:
-                      id: U124
-                      name: Jane Smith
-                      email: jane@school1.com
-                      roles: [Teacher]
-                      createdAt: "2026-03-05T07:00:00Z"
-                      updatedAt: "2026-03-05T07:00:00Z"
-                    temporaryPassword: "aX3!mZ9qR2"
-                explicit_password:
-                  summary: Password was explicitly provided
-                  value:
-                    user:
-                      id: U124
-                      name: Jane Smith
-                      email: jane@school1.com
-                      roles: [Teacher]
-                      createdAt: "2026-03-05T07:00:00Z"
-                      updatedAt: "2026-03-05T07:00:00Z"
-                    temporaryPassword: null
-        "400":
-          description: Student role rejected or validation error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                invalid_role:
-                  value:
-                    error:
-                      code: INVALID_ROLE
-                      message: Student accounts must be created via the Students page
-                      details: {}
-                    timestamp: "2026-03-05T07:00:00Z"
-                validation_error:
-                  value:
-                    error:
-                      code: VALIDATION_ERROR
-                      message: password must be at least 8 characters
-                      details: {}
-                    timestamp: "2026-03-05T07:00:00Z"
-        "409":
-          description: Email already in use
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: CONFLICT
-                  message: Email already in use for this tenant
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-  /users/bulk:
-    delete:
-      summary: Bulk delete users (Admin only)
-      tags: [Users]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ids]
-              properties:
-                ids:
-                  type: array
-                  items:
-                    type: string
-                  maxItems: 100
-            example:
-              ids: [U123, U124]
-      responses:
-        "200":
-          description: Bulk delete result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BulkResult'
-              example:
-                deleted: [U123]
-                failed:
-                  - id: U124
-                    reason: HAS_REFERENCES
-
-  /users/{id}:
-    get:
-      summary: Get single user by ID (Admin only) — Student-role users return 404
-      tags: [Users]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: User found
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  user:
-                    $ref: '#/components/schemas/User'
-              example:
-                user:
-                  id: U123
-                  name: John Doe
-                  email: john@school1.com
-                  roles: [Teacher]
-                  createdAt: "2026-01-01T00:00:00Z"
-                  updatedAt: "2026-01-01T00:00:00Z"
-        "404":
-          description: Not found (or is Student-role user)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: NOT_FOUND
-                  message: User not found
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-    delete:
-      summary: Soft-delete user (Admin only)
-      tags: [Users]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: User deleted
-        "409":
-          description: Referenced by timeslots or attendance records
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: HAS_REFERENCES
-                  message: Cannot delete user — referenced by timetable or attendance records
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-  /users/{id}/roles:
-    put:
-      summary: Update user roles (Admin only — self-edit allowed, LAST_ADMIN guard applies)
-      tags: [Users]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [roles]
-              properties:
-                roles:
-                  type: array
-                  minItems: 1
-                  items:
-                    type: string
-                    enum: [Teacher, Admin, Student]
-            examples:
-              add_teacher:
-                summary: Add Teacher role to self
-                value:
-                  roles: [Admin, Teacher]
-              remove_admin_blocked:
-                summary: Remove own Admin role (will fail if last admin)
-                value:
-                  roles: [Teacher]
-      responses:
-        "200":
-          description: Roles updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  user:
-                    $ref: '#/components/schemas/User'
-              example:
-                user:
-                  id: U123
-                  name: John Doe
-                  email: john@school1.com
-                  roles: [Admin, Teacher]
-                  createdAt: "2026-01-01T00:00:00Z"
-                  updatedAt: "2026-03-05T07:00:00Z"
-        "403":
-          description: Last admin guard triggered
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: LAST_ADMIN
-                  message: Cannot remove Admin role — you are the last admin of this tenant
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  # ════════════════════════════════════════════════════════
-  # STUDENTS
-  # ════════════════════════════════════════════════════════
-
-  /students:
-    get:
-      summary: List students (Admin — all; Teacher — own classes)
-      tags: [Students]
-      parameters:
-        - in: query
-          name: classId
-          schema:
-            type: string
-        - in: query
-          name: batchId
-          schema:
-            type: string
-        # v4.0 CR-22: status filter added
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [Active, DroppedOff, Graduated]
-          description: Filter by student status
-        - in: query
-          name: search
-          schema:
-            type: string
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            default: 50
-        - in: query
-          name: offset
-          schema:
-            type: integer
-            default: 0
-      responses:
-        "200":
-          description: Student list with pagination
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  students:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Student'
-                  pagination:
-                    $ref: '#/components/schemas/Pagination'
-              example:
-                students:
-                  - id: S001
-                    name: Ravi Kumar
-                    classId: C001
-                    className: Grade 10A
-                    batchId: B001
-                    batchName: Verity
-                    admissionNumber: "530"
-                    dob: "2003-10-03"
-                    status: Active
-                    loginId: 530@greenvalley.local
-                    userId: U999
-                    createdAt: "2026-01-01T00:00:00Z"
-                    updatedAt: "2026-01-01T00:00:00Z"
-                pagination:
-                  limit: 50
-                  offset: 0
-                  total: 1
-
-    post:
-      summary: Create student (Admin only) — atomically creates linked user account
-      tags: [Students]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, classId, batchId, admissionNumber, dob]
-              properties:
-                name:
-                  type: string
-                  maxLength: 255
-                classId:
-                  type: string
-                batchId:
-                  type: string
-                  description: Must match classId's batch
-                admissionNumber:
-                  type: string
-                  description: Unique per tenant (active records)
-                dob:
-                  type: string
-                  format: date
-                  description: Date of birth — used to derive login password
-            example:
-              name: Ravi Kumar
-              classId: C001
-              batchId: B001
-              admissionNumber: "530"
-              dob: "2003-10-03"
-      responses:
-        "201":
-          description: Student created with linked user account
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  student:
-                    $ref: '#/components/schemas/Student'
-              example:
-                student:
-                  id: S001
-                  name: Ravi Kumar
-                  classId: C001
-                  className: Grade 10A
-                  batchId: B001
-                  batchName: Verity
-                  admissionNumber: "530"
-                  dob: "2003-10-03"
-                  status: Active
-                  loginId: 530@greenvalley.local
-                  userId: U999
-                  createdAt: "2026-03-05T07:00:00Z"
-                  updatedAt: "2026-03-05T07:00:00Z"
-        "400":
-          description: Batch/class mismatch
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: CLASS_BATCH_MISMATCH
-                  message: Provided batchId does not match the class's batch
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-        "409":
-          description: Duplicate admission number
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: ADMISSION_NUMBER_CONFLICT
-                  message: Admission number 530 already exists for this school
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-  /students/bulk:
-    delete:
-      summary: Bulk delete students (Admin only)
-      tags: [Students]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ids]
-              properties:
-                ids:
-                  type: array
-                  items:
-                    type: string
-                  maxItems: 100
-            example:
-              ids: [S001, S002]
-      responses:
-        "200":
-          description: Bulk delete result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BulkResult'
-
-  /students/{id}:
-    get:
-      summary: Get single student (Admin — any; Teacher — own classes; Student — own record only)
-      tags: [Students]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Student found
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  student:
-                    $ref: '#/components/schemas/Student'
-              examples:
-                active_student:
-                  summary: Active student
-                  value:
-                    student:
-                      id: S001
-                      name: Ravi Kumar
-                      classId: C001
-                      className: Grade 10A
-                      batchId: B001
-                      batchName: Verity
-                      admissionNumber: "530"
-                      dob: "2003-10-03"
-                      status: Active
-                      loginId: 530@greenvalley.local
-                      userId: U999
-                      createdAt: "2026-01-01T00:00:00Z"
-                      updatedAt: "2026-01-01T00:00:00Z"
-                graduated_student:
-                  summary: Graduated student (classId is null)
-                  value:
-                    student:
-                      id: S001
-                      name: Ravi Kumar
-                      classId: null
-                      className: null
-                      batchId: B001
-                      batchName: Verity
-                      admissionNumber: "530"
-                      dob: "2003-10-03"
-                      status: Graduated
-                      loginId: 530@greenvalley.local
-                      userId: U999
-                      createdAt: "2026-01-01T00:00:00Z"
-                      updatedAt: "2026-03-05T07:00:00Z"
-        "403":
-          description: Student accessing another student's record
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: STUDENT_ACCESS_DENIED
-                  message: You can only access your own student record
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-    # v4.0 CR-22: status field added; Graduated is rejected
-    put:
-      summary: Update student (Admin only)
-      tags: [Students]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                name:
-                  type: string
-                classId:
-                  type: string
-                batchId:
-                  type: string
-                admissionNumber:
-                  type: string
-                dob:
-                  type: string
-                  format: date
-                  description: Updating dob re-derives passwordhash and loginId in same transaction
-                status:
-                  type: string
-                  enum: [Active, DroppedOff]
-                  description: >
-                    Only Active and DroppedOff are accepted.
-                    Graduated is system-set only via the graduation action — submitting Graduated returns 400.
-            example:
-              name: Ravi Kumar Updated
-              status: DroppedOff
-      responses:
-        "200":
-          description: Student updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  student:
-                    $ref: '#/components/schemas/Student'
-        "400":
-          description: Validation error (including Graduated status attempt)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                graduated_rejected:
-                  value:
-                    error:
-                      code: VALIDATION_ERROR
-                      message: status "Graduated" can only be set by the graduation action
-                      details: {}
-                    timestamp: "2026-03-05T07:00:00Z"
-        "409":
-          description: Admission number conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: ADMISSION_NUMBER_CONFLICT
-                  message: Admission number already exists for this school
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-    delete:
-      summary: Soft-delete student (Admin only)
-      tags: [Students]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: Student deleted
-        "409":
-          description: Has attendance records
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: HAS_REFERENCES
-                  message: Cannot delete student — attendance records exist
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-  /students/{studentId}/link-account:
-    put:
-      summary: "[DEPRECATED v3.5] Link student to user account — migration use only"
-      tags: [Students]
-      deprecated: true
-      parameters:
-        - in: path
-          name: studentId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [userId]
-              properties:
-                userId:
-                  type: string
-                  nullable: true
-      responses:
-        "200":
-          description: Account linked
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  student:
-                    $ref: '#/components/schemas/Student'
-        "400":
-          description: Invalid userId
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        "409":
-          description: Student already linked
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /students/{studentId}/attendance:
-    get:
-      summary: Get student attendance history
-      tags: [Attendance]
-      parameters:
-        - in: path
-          name: studentId
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: from
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: to
-          schema:
-            type: string
-            format: date
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            default: 50
-        - in: query
-          name: offset
-          schema:
-            type: integer
-            default: 0
-      responses:
-        "200":
-          description: Attendance records
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  student:
-                    $ref: '#/components/schemas/Student'
-                  records:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/AttendanceRecord'
-                  summary:
-                    type: object
-                    properties:
-                      total:
-                        type: integer
-                      present:
-                        type: integer
-                      absent:
-                        type: integer
-                      late:
-                        type: integer
-                  pagination:
-                    $ref: '#/components/schemas/Pagination'
-              example:
-                student:
-                  id: S001
-                  name: Ravi Kumar
-                  classId: C001
-                  className: Grade 10A
-                  batchId: B001
-                  batchName: Verity
-                  admissionNumber: "530"
-                  dob: "2003-10-03"
-                  status: Active
-                  loginId: 530@greenvalley.local
-                  userId: U999
-                  createdAt: "2026-01-01T00:00:00Z"
-                  updatedAt: "2026-01-01T00:00:00Z"
-                records:
-                  - id: AR001
-                    date: "2026-03-01"
-                    originalStatus: Absent
-                    status: Present
-                    correctedBy: U123
-                    correctedAt: "2026-03-02T08:00:00Z"
-                    recordedBy: U123
-                    recordedAt: "2026-03-01T09:00:00Z"
-                    timeSlot:
-                      id: TS001
-                      classId: C001
-                      className: Grade 10A
-                      subjectId: SUB001
-                      subjectName: Mathematics
-                      teacherId: U123
-                      teacherName: John Doe
-                      dayOfWeek: Monday
-                      periodNumber: 1
-                      startTime: "08:00"
-                      endTime: "08:45"
-                      label: Period 1
-                      effectiveFrom: "2026-01-01"
-                      effectiveTo: null
-                      createdAt: "2026-01-01T00:00:00Z"
-                summary:
-                  total: 20
-                  present: 18
-                  absent: 1
-                  late: 1
-                pagination:
-                  limit: 50
-                  offset: 0
-                  total: 20
-        "403":
-          description: Student access denied
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: STUDENT_ACCESS_DENIED
-                  message: You can only access your own attendance records
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-  # ════════════════════════════════════════════════════════
-  # CLASSES
-  # ════════════════════════════════════════════════════════
-
-  /classes:
-    get:
-      summary: List classes (Admin, Teacher)
-      tags: [Classes]
-      parameters:
-        - in: query
-          name: batchId
-          schema:
-            type: string
-        - in: query
-          name: search
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Class list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  classes:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Class'
-              example:
-                classes:
-                  - id: C001
-                    name: Grade 10A
-                    batchId: B001
-                    batchName: Verity
-                    createdAt: "2026-01-01T00:00:00Z"
-                    updatedAt: "2026-01-01T00:00:00Z"
-
-    post:
-      summary: Create class (Admin only)
-      tags: [Classes]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, batchId]
-              properties:
-                name:
-                  type: string
-                batchId:
-                  type: string
-            example:
-              name: Grade 10A
-              batchId: B001
-      responses:
-        "201":
-          description: Class created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  class:
-                    $ref: '#/components/schemas/Class'
-        "409":
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /classes/bulk:
-    delete:
-      summary: Bulk delete classes (Admin only)
-      tags: [Classes]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ids]
-              properties:
-                ids:
-                  type: array
-                  items:
-                    type: string
-                  maxItems: 100
-      responses:
-        "200":
-          description: Bulk delete result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BulkResult'
-
-  /classes/{id}:
-    put:
-      summary: Update class (Admin only)
-      tags: [Classes]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                name:
-                  type: string
-                batchId:
-                  type: string
-      responses:
-        "200":
-          description: Class updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  class:
-                    $ref: '#/components/schemas/Class'
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-    delete:
-      summary: Soft-delete class (Admin only)
-      tags: [Classes]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: Class deleted
-        "409":
-          description: Has references
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: HAS_REFERENCES
-                  message: Cannot delete class — students are assigned to it
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-  # v4.0 CR-21: promote endpoint extended with graduation action
-  /classes/{sourceClassId}/promote:
-    put:
-      summary: Promote students to another class OR graduate them (Admin only)
-      tags: [Classes]
-      description: >
-        Accepts one of two mutually exclusive body shapes:
-        (1) { "targetClassId": "..." } — moves all Active students to target class.
-        (2) { "action": "graduate" } — sets classId = null, status = Graduated for all Active students.
-      parameters:
-        - in: path
-          name: sourceClassId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              oneOf:
-                - title: Promote to class
-                  type: object
-                  required: [targetClassId]
-                  properties:
-                    targetClassId:
-                      type: string
-                      description: Must be different from sourceClassId and belong to same tenant
-                - title: Graduate
-                  type: object
-                  required: [action]
-                  properties:
-                    action:
-                      type: string
-                      enum: [graduate]
-            examples:
-              promote:
-                summary: Promote to next class
-                value:
-                  targetClassId: C_GRADE7A
-              graduate:
-                summary: Graduate all students
-                value:
-                  action: graduate
-      responses:
-        "200":
-          description: Operation complete
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: '#/components/schemas/PromoteResult'
-                  - $ref: '#/components/schemas/GraduateResult'
-              examples:
-                promote_success:
-                  summary: Promote success
-                  value:
-                    updated: 42
-                    failed: []
-                graduate_success:
-                  summary: Graduate success
-                  value:
-                    graduated: 38
-                    failed: []
-        "400":
-          description: Validation error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                same_class:
-                  value:
-                    error:
-                      code: SAME_CLASS
-                      message: Source and target class cannot be the same
-                      details: {}
-                    timestamp: "2026-03-05T07:00:00Z"
-                invalid_action:
-                  value:
-                    error:
-                      code: INVALID_PROMOTION_ACTION
-                      message: Provide either targetClassId or action "graduate"
-                      details: {}
-                    timestamp: "2026-03-05T07:00:00Z"
-        "404":
-          description: Source or target class not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  # ════════════════════════════════════════════════════════
-  # BATCHES
-  # ════════════════════════════════════════════════════════
-
-  /batches:
-    get:
-      summary: List batches (Admin, Teacher)
-      tags: [Batches]
-      parameters:
-        # v4.0 CR-23: enum updated — Archived replaced by Graduated
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [Active, Graduated]
-      responses:
-        "200":
-          description: Batch list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  batches:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Batch'
-              example:
-                batches:
-                  - id: B001
-                    name: Verity
-                    startYear: 2025
-                    endYear: 2030
-                    status: Active
-                    createdAt: "2026-01-01T00:00:00Z"
-                    updatedAt: "2026-01-01T00:00:00Z"
-
-    post:
-      summary: Create batch (Admin only)
-      tags: [Batches]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, startYear, endYear]
-              properties:
-                name:
-                  type: string
-                startYear:
-                  type: integer
-                endYear:
-                  type: integer
-            example:
-              name: Verity
-              startYear: 2025
-              endYear: 2030
-      responses:
-        "201":
-          description: Batch created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  batch:
-                    $ref: '#/components/schemas/Batch'
-        "409":
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /batches/bulk:
-    delete:
-      summary: Bulk delete batches (Admin only)
-      tags: [Batches]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ids]
-              properties:
-                ids:
-                  type: array
-                  items:
-                    type: string
-                  maxItems: 100
-      responses:
-        "200":
-          description: Bulk delete result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BulkResult'
-
-  /batches/{id}:
-    put:
-      summary: Update batch (Admin only)
-      tags: [Batches]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                name:
-                  type: string
-                startYear:
-                  type: integer
-                endYear:
-                  type: integer
-                # v4.0 CR-23: Archived removed, Graduated added
-                status:
-                  type: string
-                  enum: [Active, Graduated]
-      responses:
-        "200":
-          description: Batch updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  batch:
-                    $ref: '#/components/schemas/Batch'
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-    delete:
-      summary: Soft-delete batch (Admin only)
-      tags: [Batches]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: Batch deleted
-        "409":
-          description: Has references
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: HAS_REFERENCES
-                  message: Cannot delete batch — classes or students reference it
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-  # ════════════════════════════════════════════════════════
-  # SUBJECTS
-  # ════════════════════════════════════════════════════════
-
-  /subjects:
-    get:
-      summary: List subjects (Admin, Teacher)
-      tags: [Subjects]
-      parameters:
-        - in: query
-          name: search
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Subject list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  subjects:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Subject'
-              example:
-                subjects:
-                  - id: SUB001
-                    name: Mathematics
-                    code: MATH
-                    createdAt: "2026-01-01T00:00:00Z"
-                    updatedAt: "2026-01-01T00:00:00Z"
-
-    post:
-      summary: Create subject (Admin only)
-      tags: [Subjects]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name:
-                  type: string
-                code:
-                  type: string
-            example:
-              name: Mathematics
-              code: MATH
-      responses:
-        "201":
-          description: Subject created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  subject:
-                    $ref: '#/components/schemas/Subject'
-        "409":
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /subjects/bulk:
-    delete:
-      summary: Bulk delete subjects (Admin only)
-      tags: [Subjects]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ids]
-              properties:
-                ids:
-                  type: array
-                  items:
-                    type: string
-                  maxItems: 100
-      responses:
-        "200":
-          description: Bulk delete result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BulkResult'
-
-  /subjects/{id}:
-    put:
-      summary: Update subject (Admin only)
-      tags: [Subjects]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                name:
-                  type: string
-                code:
-                  type: string
-      responses:
-        "200":
-          description: Subject updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  subject:
-                    $ref: '#/components/schemas/Subject'
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-    delete:
-      summary: Soft-delete subject (Admin only)
-      tags: [Subjects]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: Subject deleted
-        "409":
-          description: Referenced by timetable slots
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: HAS_REFERENCES
-                  message: Cannot delete subject — referenced by timetable slots
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-
-  # ════════════════════════════════════════════════════════
-  # ATTENDANCE
-  # ════════════════════════════════════════════════════════
+                    $ref: '#/components/schemas/TimeSlot'
 
   /attendance/record-class:
     post:
-      summary: Record attendance for entire class (Teacher own classes, Admin all)
+      summary: Record class attendance
       tags: [Attendance]
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [timeSlotId, date, defaultStatus]
+              required: [timeSlotId, date, attendance]
               properties:
                 timeSlotId:
                   type: string
                 date:
                   type: string
                   format: date
-                defaultStatus:
-                  type: string
-                  enum: [Present, Absent, Late]
-                exceptions:
+                attendance:
                   type: array
                   items:
                     type: object
@@ -2890,15 +1637,8 @@ paths:
                       status:
                         type: string
                         enum: [Present, Absent, Late]
-            example:
-              timeSlotId: TS001
-              date: "2026-03-03"
-              defaultStatus: Present
-              exceptions:
-                - studentId: S002
-                  status: Absent
       responses:
-        "201":
+        '201':
           description: Attendance recorded
           content:
             application/json:
@@ -2907,83 +1647,29 @@ paths:
                 properties:
                   recorded:
                     type: integer
-                  present:
-                    type: integer
-                  absent:
-                    type: integer
-                  late:
-                    type: integer
-                  date:
-                    type: string
-                    format: date
-                  timeSlot:
-                    $ref: '#/components/schemas/TimeSlot'
-              example:
-                recorded: 30
-                present: 29
-                absent: 1
-                late: 0
-                date: "2026-03-03"
-                timeSlot:
-                  id: TS001
-                  classId: C001
-                  className: Grade 10A
-                  subjectId: SUB001
-                  subjectName: Mathematics
-                  teacherId: U123
-                  teacherName: John Doe
-                  dayOfWeek: Monday
-                  periodNumber: 1
-                  startTime: "08:00"
-                  endTime: "08:45"
-                  label: Period 1
-                  effectiveFrom: "2026-01-01"
-                  effectiveTo: null
-                  createdAt: "2026-01-01T00:00:00Z"
-        "400":
-          description: Future date
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: FUTURE_DATE
-                  message: Attendance cannot be recorded for a future date
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-        "403":
-          description: Feature disabled or unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: FEATURE_DISABLED
-                  message: Attendance feature is not enabled for this tenant
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
-        "409":
-          description: Attendance already recorded
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error:
-                  code: CONFLICT
-                  message: Attendance already recorded for this timeslot and date
-                  details: {}
-                timestamp: "2026-03-05T07:00:00Z"
+                  failed:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        studentId:
+                          type: string
+                        reason:
+                          type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /attendance/{recordId}:
     put:
-      summary: Correct attendance record (Teacher own-class, Admin any)
+      summary: Correct attendance record
       tags: [Attendance]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: path
-          name: recordId
+        - name: recordId
+          in: path
           required: true
           schema:
             type: string
@@ -2993,16 +1679,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [status]
+              required: [correctedStatus]
               properties:
-                status:
+                correctedStatus:
                   type: string
                   enum: [Present, Absent, Late]
-            example:
-              status: Present
       responses:
-        "200":
-          description: Attendance corrected — original status preserved
+        '200':
+          description: Attendance corrected
           content:
             application/json:
               schema:
@@ -3010,189 +1694,457 @@ paths:
                 properties:
                   record:
                     $ref: '#/components/schemas/AttendanceRecord'
-              example:
-                record:
-                  id: AR001
-                  date: "2026-03-01"
-                  originalStatus: Absent
-                  status: Present
-                  correctedBy: U123
-                  correctedAt: "2026-03-05T07:00:00Z"
-                  recordedBy: U123
-                  recordedAt: "2026-03-01T09:00:00Z"
-                  timeSlot:
-                    id: TS001
-                    classId: C001
-                    className: Grade 10A
-                    subjectId: SUB001
-                    subjectName: Mathematics
-                    teacherId: U123
-                    teacherName: John Doe
-                    dayOfWeek: Monday
-                    periodNumber: 1
-                    startTime: "08:00"
-                    endTime: "08:45"
-                    label: Period 1
-                    effectiveFrom: "2026-01-01"
-                    effectiveTo: null
-                    createdAt: "2026-01-01T00:00:00Z"
-        "400":
-          description: Future date or same status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                future_date:
-                  value:
-                    error:
-                      code: FUTURE_DATE
-                      message: Attendance date is in the future
-                      details: {}
-                    timestamp: "2026-03-05T07:00:00Z"
-                same_status:
-                  value:
-                    error:
-                      code: SAME_STATUS
-                      message: Correction status matches current effective status
-                      details: {}
-                    timestamp: "2026-03-05T07:00:00Z"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        "404":
-          description: Record not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /attendance/summary:
     get:
-      summary: Attendance summary by class and date range (Admin only)
+      summary: Get class attendance summary by date range
       tags: [Attendance]
+      security:
+        - BearerAuth: []
       parameters:
-        - in: query
-          name: classId
+        - name: classId
+          in: query
           required: true
           schema:
             type: string
-        - in: query
-          name: from
+        - name: from
+          in: query
           required: true
           schema:
             type: string
             format: date
-        - in: query
-          name: to
+        - name: to
+          in: query
           required: true
           schema:
             type: string
             format: date
       responses:
-        "200":
-          description: Attendance summary
+        '200':
+          description: Class attendance summary
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  class:
-                    $ref: '#/components/schemas/Class'
-                  period:
+                  summary:
                     type: object
                     properties:
+                      classId:
+                        type: string
+                      className:
+                        type: string
                       from:
                         type: string
                         format: date
                       to:
                         type: string
                         format: date
-                  summary:
-                    type: object
-                    properties:
-                      totalSessions:
+                      totalStudents:
                         type: integer
-                      present:
+                      totalClasses:
                         type: integer
-                      absent:
-                        type: integer
-                      late:
-                        type: integer
-                  byStudent:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        student:
-                          $ref: '#/components/schemas/Student'
-                        present:
-                          type: integer
-                        absent:
-                          type: integer
-                        late:
-                          type: integer
-                        attendancePercent:
-                          type: number
-              example:
-                class:
-                  id: C001
-                  name: Grade 10A
-                  batchId: B001
-                  batchName: Verity
-                  createdAt: "2026-01-01T00:00:00Z"
-                  updatedAt: "2026-01-01T00:00:00Z"
-                period:
-                  from: "2026-03-01"
-                  to: "2026-03-31"
-                summary:
-                  totalSessions: 80
-                  present: 72
-                  absent: 5
-                  late: 3
-                byStudent:
-                  - student:
-                      id: S001
-                      name: Ravi Kumar
-                      classId: C001
-                      className: Grade 10A
-                      batchId: B001
-                      batchName: Verity
-                      admissionNumber: "530"
-                      dob: "2003-10-03"
-                      status: Active
-                      loginId: 530@greenvalley.local
-                      userId: U999
-                      createdAt: "2026-01-01T00:00:00Z"
-                      updatedAt: "2026-01-01T00:00:00Z"
-                    present: 18
-                    absent: 1
-                    late: 1
-                    attendancePercent: 95.0
+                      averageAttendanceRate:
+                        type: number
+                        format: float
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
-tags:
-  - name: Authentication
-    description: Tenant user auth — login, logout, role switching
-  - name: SuperAdmin
-    description: Platform-level tenant and feature management
-  - name: Features
-    description: Tenant feature flag read (Admin only)
-  - name: SchoolPeriods
-    description: Dynamic per-tenant period configuration
-  - name: Timetable
-    description: Immutable versioned class schedule management
-  - name: Users
-    description: Teacher/Admin user management — Students excluded
-  - name: Students
-    description: Student management with auto user account creation
-  - name: Classes
-    description: Class management including year-end promote and graduation
-  - name: Batches
-    description: Academic batch/cohort management
-  - name: Subjects
-    description: Subject catalog management
-  - name: Attendance
-    description: Attendance recording, correction, and summary
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive]
+        timezone:
+          type: string
+        deactivatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SuperAdmin:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [Teacher, Admin, Student]
+        activeRole:
+          type: string
+          enum: [Teacher, Admin, Student]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Batch:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        startYear:
+          type: integer
+        endYear:
+          type: integer
+        status:
+          type: string
+          enum: [Active, Graduated]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Subject:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Class:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        batchId:
+          type: string
+        batchName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Student:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        classId:
+          type: string
+          nullable: true
+        className:
+          type: string
+          nullable: true
+        batchId:
+          type: string
+        batchName:
+          type: string
+        userId:
+          type: string
+          nullable: true
+        admissionNumber:
+          type: string
+        dob:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [Active, DroppedOff, Graduated]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SchoolPeriod:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        periodNumber:
+          type: integer
+        label:
+          type: string
+        startTime:
+          type: string
+          format: time
+        endTime:
+          type: string
+          format: time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TimeSlot:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        classId:
+          type: string
+        className:
+          type: string
+        subjectId:
+          type: string
+        subjectName:
+          type: string
+        teacherId:
+          type: string
+        teacherName:
+          type: string
+        dayOfWeek:
+          type: string
+          enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+        periodNumber:
+          type: integer
+        periodLabel:
+          type: string
+        startTime:
+          type: string
+          format: time
+        endTime:
+          type: string
+          format: time
+        effectiveFrom:
+          type: string
+          format: date
+        effectiveTo:
+          type: string
+          format: date
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AttendanceRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        studentId:
+          type: string
+        studentName:
+          type: string
+        timeSlotId:
+          type: string
+        date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [Present, Absent, Late]
+        recordedBy:
+          type: string
+        recordedAt:
+          type: string
+          format: date-time
+        correctedStatus:
+          type: string
+          enum: [Present, Absent, Late]
+          nullable: true
+        correctedBy:
+          type: string
+          nullable: true
+        correctedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    AttendanceSummary:
+      type: object
+      properties:
+        studentId:
+          type: string
+        year:
+          type: integer
+        month:
+          type: integer
+        totalClasses:
+          type: integer
+        present:
+          type: integer
+        absent:
+          type: integer
+        late:
+          type: integer
+        attendancePercentage:
+          type: number
+          format: float
+
+    TenantFeature:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        featureKey:
+          type: string
+        enabled:
+          type: boolean
+        enabledAt:
+          type: string
+          format: date-time
+          nullable: true
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+                  details:
+                    type: object

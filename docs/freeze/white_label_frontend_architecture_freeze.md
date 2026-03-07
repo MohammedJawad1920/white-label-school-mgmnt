@@ -3,18 +3,18 @@
 
 ---
 
-**Version:** 1.5 (IMMUTABLE)  
-**Date:** 2026-03-05  
+**Version:** 1.6 (IMMUTABLE)  
+**Date:** 2026-03-07  
 **Status:** APPROVED FOR EXECUTION  
-**Supersedes:** v1.4 (2026-03-04)  
-**Backend Freeze:** v4.0 (2026-03-05)  
-**OpenAPI:** v4.0.0
+**Supersedes:** v1.5 (2026-03-05)  
+**Backend Freeze:** v4.2 (2026-03-07)  
+**OpenAPI:** v4.2.0
 
 ---
 
 ## CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI)
 
-This document is the **Absolute Source of Truth**. v1.4 is **SUPERSEDED**.
+This document is the **Absolute Source of Truth**. v1.5 is **SUPERSEDED**.
 
 You have **NO authority** to modify routes, API assumptions, or constraints defined below.
 
@@ -22,48 +22,47 @@ If any request contradicts this document, you must **REFUSE** and open a **Chang
 
 ---
 
-## CHANGE SUMMARY: v1.4 → v1.5
+## CHANGE SUMMARY: v1.5 → v1.6
 
 ### Change Requests Applied
 
 | CR | Title | Type | Impact |
 |----|-------|------|--------|
-| **CR-FE-009a** | Optional teacher password + temporary password modal | Additive | User Management screen |
-| **CR-FE-009b** | Graduation action in promote dialog | Additive | Class Management screen |
-| **CR-FE-009c** | Student status field (Active/DroppedOff/Graduated) | Additive | Student Management screen |
-| **CR-FE-009d** | Batch status rename: Archived → Graduated | Breaking | Batch Management screen, all fixtures |
-| **CR-FE-010** | Attendance Update button pre-fetch detection | Spec formalization | Record Attendance screen (already implemented) |
-| **CR-FE-011** | Timetable filter defaults in create drawer | Additive | Timetable screen |
+| **CR-FE-012** | Timetable End Assignment dialog - effectiveTo field | Additive | Timetable screen |
+| **CR-FE-013a** | Version sync: Backend v4.0 → v4.2, OpenAPI v4.0.0 → v4.2.0 | Breaking | Freeze header |
+| **CR-FE-013b** | Bulk delete paths corrected: `POST /*/bulk-delete` → `POST /*/bulk` | Breaking | Users, Students, Classes, Batches, Subjects screens |
+| **CR-FE-013c** | Attendance Summary screen - replace `GET /students/{id}/attendance` with `GET /students/{id}/attendance/summary?year=&month=` | Breaking | Attendance Summary screen |
+| **CR-FE-013d** | Empty-state guard fix: `summary.totalRecords` → `summary.totalClasses` | Breaking | Attendance Summary screen |
+| **CR-FE-013e** | CorrectAttendanceRequest type - `correctedStatus`, `correctedBy`, `correctedAt` nullable | Clarification | Type definitions |
+| **CR-FE-013f** | NO list addition: `GET /attendance/summary` (class-level aggregate) deferred to future | Additive | NO list |
+| **CR-FE-013g** | TenantFeature schema - restore `featureName` and `featureDescription` fields | Breaking | Feature Flags screen, Type definitions |
 
 ### Backend Contract Sync
 
-- Backend Freeze: **v3.6 → v4.0**
-- OpenAPI: **3.6.0 → 4.0.0**
-- Backend CRs triggering frontend changes: CR-20, CR-21, CR-22, CR-23
+- Backend Freeze: **v4.0 → v4.2**
+- OpenAPI: **4.0.0 → 4.2.0**
+- Backend CRs triggering frontend changes: CR-24, CR-25, CR-26, CR-27, CR-28, CR-29, CR-30
 
 ### What Changed
 
 **Breaking changes:**
-- `BatchStatus` enum: `"Archived"` no longer valid → replaced by `"Graduated"` (CR-FE-009d)
-- `Student.classId` and `Student.className` are now **nullable** (graduated students have `classId: null`) (CR-FE-009c)
-- `CreateUserRequest.password` is now **optional** (CR-FE-009a)
+- **All bulk delete endpoints** now use `POST /*/bulk` (was `POST /*/bulk-delete`) — affects Users, Students, Classes, Batches, Subjects management screens (CR-FE-013b)
+- **Attendance Summary screen** now calls `GET /students/{studentId}/attendance/summary?year={year}&month={month}` (was `GET /students/{studentId}/attendance?from={YYYY-MM-01}&to={YYYY-MM-DD}&limit=50` consuming `response.summary`) — different endpoint, different query params, dedicated response object (CR-FE-013c)
+- **Attendance Summary empty-state guard** now checks `summary.totalClasses === 0` (was `summary.totalRecords === 0` — field never existed, bug fix) (CR-FE-013d)
+- **TenantFeature schema** now includes `featureName: string` and `featureDescription: string` — previously missing in OpenAPI v4.0.0, restored in v4.2.0 (CR-FE-013g). Feature Flags screen now renders `featureName` as display label instead of raw `featureKey`.
 
 **Additive changes:**
-- User create form: `password` optional; one-time modal if `temporaryPassword` returned (CR-FE-009a)
-- Class promote dialog: two options — "Move to class" or "Graduate all students" (CR-FE-009b)
-- Student Management: `Status` column, filter, edit field (Active/DroppedOff only; Graduated is system-set) (CR-FE-009c)
-- Timetable create drawer: pre-fill `classId` and `teacherId` from active filters (CR-FE-011)
-- Record Attendance: pre-fetch detection sets `alreadyRecorded`, seeds existing statuses, parallel PUT corrections (CR-FE-010)
-
-**Bug fix (no CR):**
-- Students table: bind `className`/`batchName` instead of `classId`/`batchId` (render-only fix)
+- **Timetable End Assignment dialog** now includes `effectiveTo` date input (required) with default set to today (CR-FE-012)
+- `AttendanceRecord` TypeScript type clarified: `correctedStatus`, `correctedBy`, `correctedAt` are nullable (always were, now explicitly documented) (CR-FE-013e)
+- `GET /attendance/summary` (class-level aggregate) added to NO list — backend-available endpoint deferred to future frontend CR, not in MVP scope (CR-FE-013f)
 
 ### Timeline Impact
 
-- CR-FE-009: +2–3 days (4 screens, type changes, fixture audit)
-- CR-FE-010: 0 days (already implemented)
-- CR-FE-011: +0.5 days (local state wiring)
-- **New total: 9–13 weeks + 5 days**
+- CR-FE-012: +0.5 days (single field, validation, UI update)
+- CR-FE-013b: +1 day (5 screens, API path updates)
+- CR-FE-013c, CR-FE-013d: +0.5 days (1 screen, endpoint swap, guard fix)
+- CR-FE-013g: +0.5 days (1 screen, type update, render logic)
+- **New total: 9–13 weeks + 7.5 days**
 
 ---
 
@@ -73,11 +72,11 @@ If any request contradicts this document, you must **REFUSE** and open a **Chang
 **Chosen Package:** Standard  
 **Price:** Self-funded solo project (no external billing)  
 **Payment Schedule:** N/A  
-**Timeline Range (weeks):** 9–13 + 5 days  
+**Timeline Range (weeks):** 9–13 + 7.5 days  
 
 ### Assumptions (must be true)
 - Solo developer is single decision maker
-- Backend v4.0 available at staging by Week 3
+- Backend v4.2 available at staging by Week 3
 - Prism mock used until backend ready
 
 ### Support Window (post-delivery)
@@ -98,13 +97,13 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 2. As a Teacher, I can **see today's own assigned classes on a role-specific dashboard** and navigate to record attendance.
 3. As an Admin, I can **see today's full schedule with a stat summary bar** on a role-specific dashboard.
 4. As a Student, I can **see today's school-wide timetable (read-only) and my own attendance history** on my dashboard.
-5. As a Teacher or Admin, I can **view the full timetable grid** — Admin can add a slot by clicking an empty cell and end an assignment by clicking a filled cell.
+5. As a Teacher or Admin, I can **view the full timetable grid** — Admin can add a slot by clicking an empty cell and end an assignment by clicking a filled cell (CR-FE-012: with `effectiveTo` date input).
 6. As a Teacher or Admin, I can **record attendance for a class period** by selecting statuses for each student.
 7. As an Admin, I can **view a student's full attendance history** and correct an individual record (with `originalStatus` preserved).
-8. As an Admin, I can **view a monthly attendance summary** for a student.
-9. As an Admin, I can **manage users (Teacher/Admin roles only), students (with auto login account creation via admission number + date of birth), classes (including year-end promotion and graduation), batches, subjects, and school periods**.
+8. As an Admin, I can **view a monthly attendance summary** for a student (CR-FE-013c: using dedicated `/attendance/summary` endpoint).
+9. As an Admin, I can **manage users (Teacher/Admin roles only), students (with auto login account creation via admission number + date of birth), classes (including year-end promotion and graduation), batches, subjects, and school periods** (CR-FE-013b: bulk delete via `POST /*/bulk`).
 10. As a multi-role user, I can **switch my active role via a dropdown** — the sidebar and dashboard immediately reflect only pages relevant to that role.
-11. As a SuperAdmin, I can **manage tenants** (create with admin block and timezone, update, deactivate, reactivate) and their **feature flags** from an isolated portal.
+11. As a SuperAdmin, I can **manage tenants** (create with admin block and timezone, update, deactivate, reactivate) and their **feature flags** from an isolated portal (CR-FE-013g: display `featureName`, not raw `featureKey`).
 12. As an Admin, I can **promote all students from one class to another OR graduate them** at year-end via a confirmation dialog.
 
 ### The NO List (Explicitly Out of Scope)
@@ -117,7 +116,7 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 - No custom branding/theme UI (no logo upload, no color picker)
 - No multi-language / i18n (English only)
 - No charts or graph visualizations (summary tables only)
-- No inline timetable slot edit (no `PUT /timetable/{id}` in contract; "End Assignment" via popover only)
+- No inline timetable slot edit (no `PUT /timetable/{id}` in contract; "End Assignment" via popover only, CR-FE-012: with `effectiveTo` input)
 - No `PUT /features/{featureKey}` from tenant app (deprecated since v3.2, returns 403)
 - No SSR/SEO (login-gated SPA)
 - No analytics or telemetry
@@ -129,6 +128,7 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 - No attendance submission status on Admin dashboard (Admin navigates to "Record Attendance" screen to check)
 - No year-end class promotion dedicated route (inline dialog in `/manage/classes` only)
 - No student profile fields beyond school data (no photo, address, guardian contact)
+- **No `GET /attendance/summary` class-level aggregate screen (CR-FE-013f)** — backend endpoint exists (returns `totalStudents`, `totalClasses`, `averageAttendanceRate` for a class over a date range), but **deferred to future frontend CR**. Admin dashboard stat bar remains timetable-derived (scheduled/unassigned period counts), not attendance-derived.
 
 ### User Roles (UI behavior truth)
 
@@ -144,10 +144,10 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 ### Success Definition (measurable)
 
 1. Teacher can log in, view own classes, and record attendance end-to-end against live backend.
-2. Admin can create a timetable entry by clicking an empty cell, correct an attendance record, create a student (auto-provisioned login account), promote/graduate a class, and bulk-delete users.
+2. Admin can create a timetable entry by clicking an empty cell, correct an attendance record, create a student (auto-provisioned login account), promote/graduate a class, and bulk-delete users (CR-FE-013b: via `POST /*/bulk`).
 3. Student can log in with `loginId`, view today's timetable, and view own attendance history.
 4. Multi-role (Teacher+Admin) user switches roles via dropdown — sidebar changes immediately, no page reload.
-5. SuperAdmin can create a tenant (with admin block and timezone), reactivate an inactive tenant, and toggle feature flags.
+5. SuperAdmin can create a tenant (with admin block and timezone), reactivate an inactive tenant, and toggle feature flags (CR-FE-013g: sees `featureName` labels).
 6. All 16 screens pass WCAG 2.1 AA automated checks (axe-core) + Lighthouse mobile ≥85 on dashboard and `/attendance/record`.
 
 ---
@@ -171,17 +171,17 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 
 ### Backend Freeze Doc version
 
-**v4.0 (2026-03-05)**
+**v4.2 (2026-03-07)**
 
 ### OpenAPI Contract File (REQUIRED)
 
 - **File name:** `openapi.yaml`
-- **Version:** 4.0.0
+- **Version:** 4.2.0
 - **Location:** `.docs/openapi.yaml`
 
 ### Contract immutability rule
 
-- Frontend **MUST NOT** invent endpoints, fields, status codes, or error shapes not present in OpenAPI 4.0.0.
+- Frontend **MUST NOT** invent endpoints, fields, status codes, or error shapes not present in OpenAPI 4.2.0.
 - Any new UI need → backend Change Request → new backend Freeze version + updated OpenAPI → **then** frontend Change Request.
 
 ### External Dependencies
@@ -348,7 +348,7 @@ VITE_APP_NAME=Platform Admin
 
 **Role-specific content:**
 - **Teacher:** Filter client-side: `slot.teacherId === currentUser.id`. Slot cards with "Record Attendance" CTA → `/attendance/record` with `state.slotId`. Empty: "No classes assigned to you today."
-- **Admin:** All slots. Stat summary bar: "Total Periods: {N} | Scheduled: {N} | Unassigned: {N}" (derived client-side). No record CTA. Empty: "No classes scheduled for today."
+- **Admin:** All slots. Stat summary bar: "Total Periods: {N} | Scheduled: {N} | Unassigned: {N}" (derived client-side from timetable data). No record CTA. Empty: "No classes scheduled for today."
 - **Student:** All slots (read-only). Below timetable: recent attendance list (last 10 records, read-only). If CG-01 backend CR unresolved: placeholder — "My Attendance (coming soon). Contact your admin for your attendance records."
 
 **A11y:** Each slot card is `<article>`. "Record Attendance" button `aria-label="Record attendance for {className} – {subjectName} (Period {n})"`.
@@ -357,7 +357,7 @@ VITE_APP_NAME=Platform Admin
 
 ### Screen: Timetable
 
-**Goal:** Full timetable grid. Admin: inline cell interactions. Teacher/Student: read-only.
+**Goal:** Full timetable grid. Admin: inline cell interactions (CR-FE-012: End Assignment with `effectiveTo` input). Teacher/Student: read-only.
 
 **API calls:**
 1. `GET /timetable?status=Active`
@@ -371,19 +371,19 @@ VITE_APP_NAME=Platform Admin
    - `400 PERIOD_NOT_CONFIGURED` → inline "Period {n} not configured."
    - `409` → "Slot already occupied."
    - `403` → toast.
-4. **Admin:** `PUT /timetable/{id}/end`
+4. **Admin:** `PUT /timetable/{id}/end` **(CR-FE-012: body now includes `effectiveTo: string (YYYY-MM-DD)`)**
    - `200` → invalidate `['timetable']`, close popover, toast "Assignment ended."
    - `404/403` → toast.
 
-**Local state:** `selectedFilters`, `activeCell: { dayOfWeek: string, periodNumber: number } | null`, `activeSlotId: string | null`
+**Local state:** `selectedFilters`, `activeCell: { dayOfWeek: string, periodNumber: number } | null`, `activeSlotId: string | null`, `endDialogSlotId: string | null` **(CR-FE-012)**
 
 **Server state:** TQ keys: `['timetable', filters]`, `['school-periods']`. Stale: 5 min.
 
 **Loading:** Full grid skeleton. Empty: "No timetable entries found." Admin hint: "Click an empty cell to add a slot."
 
 **Cell interactions:**
-- **Empty cell (Admin):** hover `bg-muted/30 border-dashed` + icon → click → `setActiveCell({dayOfWeek, periodNumber})` → create drawer. Fields: `classId` (select, required), `subjectId` (select, required), `teacherId` (select Teacher-role users, required), `effectiveFrom` (date, required) — `dayOfWeek`/`periodNumber` pre-filled (read-only). **CR-FE-011:** If `selectedFilters.classId` or `selectedFilters.teacherId` is set, pre-fill those fields as well (editable, not locked).
-- **Filled cell (Admin):** click → `setActiveSlotId(slot.id)` → Popover with subject/teacher/class/dates → "End Assignment" → confirmation dialog → `PUT /timetable/{id}/end`.
+- **Empty cell (Admin):** hover `bg-muted/30 border-dashed` + icon → click → `setActiveCell({dayOfWeek, periodNumber})` → create drawer. Fields: `classId` (select, required), `subjectId` (select, required), `teacherId` (select Teacher-role users, required), `effectiveFrom` (date, required) — `dayOfWeek`/`periodNumber` pre-filled (read-only). CR-FE-011: If `selectedFilters.classId` or `selectedFilters.teacherId` is set, pre-fill those fields as well (editable, not locked).
+- **Filled cell (Admin):** click → `setActiveSlotId(slot.id)` → Popover with subject/teacher/class/dates → **"End Assignment"** → **CR-FE-012: Dialog with `effectiveTo` date input (required, default: today) → Confirm → `PUT /timetable/{id}/end` with body `{ effectiveTo: "YYYY-MM-DD" }`**.
 - **Teacher/Student:** cells non-interactive, plain read-only display.
 
 **Form validation (create):**
@@ -394,7 +394,10 @@ VITE_APP_NAME=Platform Admin
 - `periodNumber`: pre-filled (read-only), integer ≥1
 - `effectiveFrom`: required, YYYY-MM-DD, UX warn if past (not API-enforced).
 
-**A11y:** `role="grid"`, `role="row"`, `role="gridcell"`. Empty clickable cells: `aria-label="Add slot for {dayOfWeek} Period {n}"`. Drawers trap focus, Escape closes.
+**Form validation (end assignment - CR-FE-012):**
+- `effectiveTo`: required, YYYY-MM-DD, UX warn if past (not API-enforced). Default value: today's date.
+
+**A11y:** `role="grid"`, `role="row"`, `role="gridcell"`. Empty clickable cells: `aria-label="Add slot for {dayOfWeek} Period {n}"`. Drawers/dialogs trap focus, Escape closes.
 
 **Performance:** `overflow-x-auto` on mobile. No virtualization needed (7 days × ≤15 periods).
 
@@ -462,6 +465,7 @@ VITE_APP_NAME=Platform Admin
    - `404` → "Student not found."
    - `403 STUDENT_ACCESS_DENIED` → "You do not have access to this student's records."
 2. **Admin:** `PUT /attendance/{recordId}`
+   - Body: `{ correctedStatus: "Present" | "Absent" | "Late" }` (CR-FE-013e: type clarification — `correctedStatus`, `correctedBy`, `correctedAt` are nullable in response)
    - `200` → invalidate `['student-attendance', studentId]`, toast "Attendance corrected."
    - `400 SAME_STATUS` → inline "Status is already {status} — no change needed."
    - `400 FUTURE_DATE` → inline "Cannot correct a future record."
@@ -476,9 +480,10 @@ VITE_APP_NAME=Platform Admin
 **Correction:**
 - Table columns: Date | Subject | Period | **originalStatus** (badge, never changes) | **status** (effective badge) | Corrected By | Action (Admin only).
 - `originalStatus` always visible — immutable audit trail.
+- Response `AttendanceRecord`: `correctedStatus`, `correctedBy`, `correctedAt` are nullable (CR-FE-013e).
 
 **Form validation (correction):**
-- `status`: required, enum `Present|Absent|Late`, must differ from current effective status (client guard + server `400 SAME_STATUS`).
+- `correctedStatus`: required, enum `Present|Absent|Late`, must differ from current effective status (client guard + server `400 SAME_STATUS`).
 
 **Permissions:** Admin: any student in tenant. Student: own record only (pending CG-01 backend CR). Others: inline "Not authorized for current role."
 
@@ -490,22 +495,36 @@ VITE_APP_NAME=Platform Admin
 
 ### Screen: Attendance Summary
 
-**Goal:** Monthly summary for a student.
+**Goal:** Monthly summary for a student **(CR-FE-013c: using dedicated `/attendance/summary` endpoint)**.
 
 **API calls:**
-- `GET /students/{studentId}/attendance?from={YYYY-MM-01}&to={YYYY-MM-DD}&limit=50` (consume `response.summary` only)
+- **CR-FE-013c:** `GET /students/{studentId}/attendance/summary?year={YYYY}&month={1-12}`
+  - `200` → `{ summary: AttendanceSummary }` where `AttendanceSummary` is:
+    ```ts
+    {
+      studentId: string
+      year: number
+      month: number
+      totalClasses: number
+      present: number
+      absent: number
+      late: number
+      attendancePercentage: number
+    }
+    ```
   - `403` → "Not authorized."
   - `404` → "Student not found."
 
-**Local state:** `selectedStudentId`, `selectedMonth: YYYY-MM` (default: current month)
+**Local state:** `selectedStudentId`, `selectedYear: number`, `selectedMonth: number (1-12)` (default: current month/year)
 
-**Server state:** TQ key: `['student-attendance', studentId, from, to]`. Stale: 5 min.
+**Server state:** TQ key: `['student-attendance-summary', studentId, year, month]`. Stale: 5 min.
 
-**Loading:** Summary card skeleton. Empty: "No attendance data for {month}." (when `summary.totalRecords === 0`).
+**Loading:** Summary card skeleton. **Empty:** `"No attendance data for {month} {year}."` (when **CR-FE-013d:** `summary.totalClasses === 0` — was `summary.totalRecords` which never existed, now fixed).
 
 **Form validation:**
 - `studentId`: required
-- `month`: required, YYYY-MM, not future.
+- `year`: required, integer, not future year
+- `month`: required, integer 1-12, not future month (when combined with year).
 
 **Permissions:** Admin only.
 
@@ -527,8 +546,9 @@ VITE_APP_NAME=Platform Admin
    - `200` → invalidate
    - `403 LAST_ADMIN` → inline in role edit drawer: "Cannot remove Admin role — you are the last admin of this school."
    - `404` → toast.
-5. `DELETE /users/bulk`
-   - `200` → `result` toast, failed rows highlighted red.
+5. **CR-FE-013b:** `POST /users/bulk` (was `POST /users/bulk-delete`)
+   - Body: `{ userIds: string[] }`
+   - `200` → `{ deletedCount: number }` (was `result` object with per-item failures — OpenAPI v4.2.0 simplified)
 6. `DELETE /users/{id}`
    - `204` → toast
    - `409` → "Cannot delete — user has active records."
@@ -569,8 +589,8 @@ VITE_APP_NAME=Platform Admin
    - `200` → invalidate
    - `409 ADMISSION_NUMBER_CONFLICT` → inline
    - `400/404` → toast.
-4. `DELETE /students/bulk`
-   - `200` → `result` toast.
+4. **CR-FE-013b:** `POST /students/bulk` (was `POST /students/bulk-delete`)
+   - `200` → `{ deletedCount: number }`
 5. `DELETE /students/{id}`
    - `204`
    - `409` → "Cannot delete — student has attendance records."
@@ -617,8 +637,8 @@ VITE_APP_NAME=Platform Admin
    - `200` → list.
 2. `POST /classes`
    - `201` → invalidate `['classes']`.
-3. `DELETE /classes/bulk`
-   - `200`.
+3. **CR-FE-013b:** `POST /classes/bulk` (was `POST /classes/bulk-delete`)
+   - `200` → `{ deletedCount: number }`
 4. `DELETE /classes/{id}`
    - `204`
    - `409` → "Cannot delete — students enrolled."
@@ -657,10 +677,10 @@ VITE_APP_NAME=Platform Admin
 
 **Screen:** Route → TQ Key → Create Fields → Key 409
 
-| Screen | Route | TQ Key | Create Fields | Key 409 |
-|--------|-------|--------|---------------|---------|
-| **Batches** | `/manage/batches` | `['batches']` | `name` (max 100), `startYear`, `endYear`, **`status: Active \| Graduated`** (CR-FE-009d — `Archived` removed) | "Cannot delete — classes reference this batch" |
-| **Subjects** | `/manage/subjects` | `['subjects']` | `name` (required, max 255), `code` (optional, max 50) | "Cannot delete — timetable slots reference this subject" |
+| Screen | Route | TQ Key | Create Fields | Bulk Delete Endpoint (CR-FE-013b) | Key 409 |
+|--------|-------|--------|---------------|----------------------------------|---------|
+| **Batches** | `/manage/batches` | `['batches']` | `name` (max 100), `startYear`, `endYear`, **`status: Active \| Graduated`** (CR-FE-009d — `Archived` removed) | **`POST /batches/bulk`** (was `/batches/bulk-delete`) | "Cannot delete — classes reference this batch" |
+| **Subjects** | `/manage/subjects` | `['subjects']` | `name` (required, max 255), `code` (optional, max 50) | **`POST /subjects/bulk`** (was `/subjects/bulk-delete`) | "Cannot delete — timetable slots reference this subject" |
 
 **CR-FE-009d (Batch Management):**
 - Create/edit form: `status` select → `Active | Graduated` (remove `Archived`)
@@ -668,7 +688,7 @@ VITE_APP_NAME=Platform Admin
 - Filter `GET /batches?status=`: enum updated to `Active | Graduated`
 - Audit all fixtures/mocks/tests: replace `"Archived"` with `"Graduated"`
 
-All: stale 5 min, skeleton, "No {entity} found.", create/edit drawer, bulk delete, single delete, Admin only.
+All: stale 5 min, skeleton, "No {entity} found.", create/edit drawer, **CR-FE-013b: bulk delete via `POST /*/bulk`**, single delete, Admin only.
 
 ---
 
@@ -758,9 +778,22 @@ All: stale 5 min, skeleton, "No {entity} found.", create/edit drawer, bulk delet
 
 ### Screen: Tenant Feature Flags (`/tenants/{tenantId}/features`)
 
+**Goal:** Toggle feature flags for a tenant **(CR-FE-013g: display `featureName` instead of raw `featureKey`)**.
+
 **API calls:**
 1. `GET /super-admin/tenants/{tenantId}/features`
-   - `200`
+   - `200` → `{ features: TenantFeature[] }` where **CR-FE-013g:** `TenantFeature` now includes:
+     ```ts
+     {
+       id: string
+       tenantId: string
+       featureKey: string
+       featureName: string         // NEW (CR-FE-013g) — human-readable label
+       featureDescription: string  // NEW (CR-FE-013g) — descriptive text
+       enabled: boolean
+       enabledAt: string | null
+     }
+     ```
    - `404` → "Tenant not found."
 2. `PUT /super-admin/tenants/{tenantId}/features/{featureKey}`
    - `200`
@@ -771,9 +804,14 @@ All: stale 5 min, skeleton, "No {entity} found.", create/edit drawer, bulk delet
 
 **Server state:** TQ key: `['sa-features', tenantId]`. Stale: 30 sec.
 
+**Rendering (CR-FE-013g):**
+- Display **`featureName`** as primary label (e.g., "Timetable", "Attendance")
+- Display **`featureDescription`** as secondary text below toggle
+- `featureKey` remains internal identifier only (not rendered in UI)
+
 **Permissions:** `attendance` toggle disabled/greyed when `timetable` is disabled.
 
-**A11y:** `role="switch"`, `aria-checked`, `aria-label="{featureName}"`.
+**A11y:** `role="switch"`, `aria-checked`, **CR-FE-013g:** `aria-label="{featureName}"` (not `featureKey`).
 
 ---
 
@@ -788,9 +826,9 @@ All: stale 5 min, skeleton, "No {entity} found.", create/edit drawer, bulk delet
 
 ### 3.0 Backend Contract Link (LOCKED)
 
-**Backend Freeze version:** v4.0 (2026-03-05)  
+**Backend Freeze version:** v4.2 (2026-03-07)  
 **OpenAPI file:** `openapi.yaml`  
-**OpenAPI version:** 4.0.0  
+**OpenAPI version:** 4.2.0  
 **File path:** `.docs/openapi.yaml`
 
 **Base URL:** `VITE_API_BASE_URL` from env (never hardcoded).
@@ -798,7 +836,7 @@ All: stale 5 min, skeleton, "No {entity} found.", create/edit drawer, bulk delet
 **Auth:** Bearer JWT. Header: `Authorization: Bearer {token}`.  
 **Storage:** `localStorage.auth` (tenant), `localStorage.sa-auth` (SuperAdmin).
 
-**Global error shape MUST match OpenAPI 4.0.0:**
+**Global error shape MUST match OpenAPI 4.2.0:**
 
 ```json
 {
@@ -846,9 +884,9 @@ VITE_API_BASE_URL=http://localhost:4010/api
 
 ---
 
-### 3.2 Typed API Surface (MVP only — MUST match OpenAPI 4.0.0 exactly)
+### 3.2 Typed API Surface (MVP only — MUST match OpenAPI 4.2.0 exactly)
 
-**CR-FE-009a, 009b, 009c, 009d types:**
+**CR-FE-009a, 009b, 009c, 009d, CR-FE-012, CR-FE-013c, CR-FE-013e, CR-FE-013g types:**
 
 ```ts
 // ERRORS
@@ -935,7 +973,12 @@ type PromoteResponse =
   | { updated: number; failed: Array<{id: string; reason: string}> }
   | { graduated: number; failed: Array<{id: string; reason: string}> }  // NEW (CR-FE-009b)
 
-// ATTENDANCE — CR-FE-010
+// TIMETABLE — CR-FE-012
+interface EndAssignmentRequest {
+  effectiveTo: string  // YYYY-MM-DD, required (CR-FE-012)
+}
+
+// ATTENDANCE — CR-FE-010, CR-FE-013c, CR-FE-013e
 type AttendanceStatus = 'Present' | 'Absent' | 'Late'
 
 interface AttendanceRecord {
@@ -943,15 +986,52 @@ interface AttendanceRecord {
   date: string
   originalStatus: AttendanceStatus
   status: AttendanceStatus
-  correctedBy: string | null
-  correctedAt: string | null
+  correctedBy: string | null  // CR-FE-013e: nullable (always was, now explicit)
+  correctedAt: string | null   // CR-FE-013e: nullable
   timeSlot: TimeSlot
   recordedBy: string
   recordedAt: string
+  // CR-FE-013e: correctedStatus field removed from schema (redundant — `status` is effective status)
 }
 
 interface CorrectAttendanceRequest {
-  status: AttendanceStatus
+  correctedStatus: AttendanceStatus  // CR-FE-013e: clarification — correctedBy/correctedAt auto-set by backend
+}
+
+// ATTENDANCE SUMMARY — CR-FE-013c
+interface AttendanceSummary {
+  studentId: string
+  year: number
+  month: number
+  totalClasses: number     // CR-FE-013d: use this for empty-state guard (not totalRecords)
+  present: number
+  absent: number
+  late: number
+  attendancePercentage: number
+}
+
+// TENANT FEATURES — CR-FE-013g
+interface TenantFeature {
+  id: string
+  tenantId: string
+  featureKey: string
+  featureName: string         // NEW (CR-FE-013g)
+  featureDescription: string  // NEW (CR-FE-013g)
+  enabled: boolean
+  enabledAt: string | null
+}
+
+// BULK OPERATIONS — CR-FE-013b
+interface BulkDeleteRequest {
+  userIds?: string[]     // for POST /users/bulk
+  studentIds?: string[]  // for POST /students/bulk
+  classIds?: string[]    // for POST /classes/bulk
+  batchIds?: string[]    // for POST /batches/bulk
+  subjectIds?: string[]  // for POST /subjects/bulk
+}
+
+interface BulkDeleteResponse {
+  deletedCount: number  // simplified in v4.2.0 (was per-item failure tracking)
 }
 ```
 
@@ -963,17 +1043,18 @@ interface CorrectAttendanceRequest {
 |--------|------------|----------------|
 | `['timetable', filters]` | 5 min | `POST /timetable`, `PUT /timetable/{id}/end`, `DELETE /school-periods/{id}` |
 | `['timetable', 'today', isoDate]` | 5 min | Refetch on window focus |
-| `['students']` | 2 min | `POST /students`, `PUT /students/{id}`, `DELETE /students/{id}`, `DELETE /students/bulk`, `PUT /classes/{id}/promote` |
-| `['students', classId, classId]` | 2 min | `POST /students`, `PUT /students/{id}`, `DELETE /students/{id}`, `DELETE /students/bulk` |
-| `['users', roleFilter, searchQuery]` | 2 min | `POST /users`, `PUT /users/{id}/roles`, `DELETE /users/{id}`, `DELETE /users/bulk` |
+| `['students']` | 2 min | `POST /students`, `PUT /students/{id}`, `DELETE /students/{id}`, **`POST /students/bulk`** (CR-FE-013b), `PUT /classes/{id}/promote` |
+| `['students', classId, classId]` | 2 min | `POST /students`, `PUT /students/{id}`, `DELETE /students/{id}`, **`POST /students/bulk`** (CR-FE-013b) |
+| `['users', roleFilter, searchQuery]` | 2 min | `POST /users`, `PUT /users/{id}/roles`, `DELETE /users/{id}`, **`POST /users/bulk`** (CR-FE-013b) |
 | `['student-attendance', studentId, from, to, page]` | 2 min | `PUT /attendance/{recordId}` |
 | `['student-attendance', studentId, from, to]` | 5 min | `PUT /attendance/{recordId}` |
-| `['batches']` | 5 min | `POST /batches`, `PUT /batches/{id}`, `DELETE /batches/{id}`, `DELETE /batches/bulk` |
-| `['classes']` | 5 min | `POST /classes`, `PUT /classes/{id}`, `DELETE /classes/{id}`, `DELETE /classes/bulk`, `PUT /classes/{sourceClassId}/promote` |
-| `['subjects']` | 5 min | `POST /subjects`, `PUT /subjects/{id}`, `DELETE /subjects/{id}`, `DELETE /subjects/bulk` |
+| **`['student-attendance-summary', studentId, year, month]`** | 5 min | **(CR-FE-013c: NEW key)** — not invalidated by corrections (separate aggregate cache) |
+| `['batches']` | 5 min | `POST /batches`, `PUT /batches/{id}`, `DELETE /batches/{id}`, **`POST /batches/bulk`** (CR-FE-013b) |
+| `['classes']` | 5 min | `POST /classes`, `PUT /classes/{id}`, `DELETE /classes/{id}`, **`POST /classes/bulk`** (CR-FE-013b), `PUT /classes/{sourceClassId}/promote` |
+| `['subjects']` | 5 min | `POST /subjects`, `PUT /subjects/{id}`, `DELETE /subjects/{id}`, **`POST /subjects/bulk`** (CR-FE-013b) |
 | `['school-periods']` | 5 min | `POST /school-periods`, `PUT /school-periods/{id}`, `DELETE /school-periods/{id}` |
 | `['sa-tenants', statusFilter, searchQuery]` | 1 min | `POST /super-admin/tenants`, `PUT /super-admin/tenants/{id}`, deactivate, reactivate |
-| `['sa-features', tenantId]` | 30 sec | `PUT /super-admin/tenants/{tenantId}/features/{featureKey}` |
+| **`['sa-features', tenantId]`** | 30 sec | `PUT /super-admin/tenants/{tenantId}/features/{featureKey}` — **(CR-FE-013g: now returns `featureName` + `featureDescription`)** |
 
 ---
 
@@ -1085,12 +1166,13 @@ Button, Input, Select, Checkbox, RadioGroup, Switch, Badge, Card, Table, Sheet, 
 - Timetable grid: `role="grid"`, `role="row"`, `role="gridcell"`
 - Empty cells: `aria-label="Add slot for {dayOfWeek} Period {n}"`
 - RoleSwitcher: `aria-haspopup="menu"`, `aria-expanded`
-- Feature toggles: `role="switch"`, `aria-checked`
+- Feature toggles: `role="switch"`, `aria-checked`, **CR-FE-013g:** `aria-label="{featureName}"`
 - Login ID copy button: `aria-label="Copy login ID for {studentName}"`
 - `LAST_ADMIN` inline error: `role="alert"`
 - `STUDENT_ACCESS_DENIED` inline error: `role="alert"`
 - Promote confirm button: `aria-describedby` pointing to warning text
 - Error boundary retry button: `aria-label="Retry loading this page"`
+- **CR-FE-012:** End Assignment dialog `effectiveTo` input: `aria-label="Effective end date (YYYY-MM-DD)"`
 
 ### Testing
 
@@ -1255,7 +1337,7 @@ Previous build redeploy + cache/CDN invalidation (Cloudflare automatic).
 - **Cost impact:** {self-funded / N/A}
 - **Risk impact:** {Low/Medium/High}
 - **Decision:** Approved / Rejected
-- **New Freeze version:** {e.g., v1.5}
+- **New Freeze version:** {e.g., v1.6}
 - **Backend Freeze dependency:** unchanged / updated → backend Freeze version {value}
 - **OpenAPI dependency:** unchanged / updated → new OpenAPI version {value}
 
@@ -1276,8 +1358,9 @@ Self-funded solo project — no external billing.
 - **v1.2** (date unknown): Undocumented.
 - **v1.3** (2026-03-03): Backend v3.6 sync.
 - **v1.4** (2026-03-04): Backend v3.6 final sync, CR-FE-008 applied.
-- **v1.5** (2026-03-05): Backend v4.0 sync. CR-FE-009 (a/b/c/d), CR-FE-010, CR-FE-011 applied. Breaking changes: `BatchStatus` rename, `Student.classId` nullable, `CreateUserRequest.password` optional. Approved for execution.
+- **v1.5** (2026-03-05): Backend v4.0 sync. CR-FE-009 (a/b/c/d), CR-FE-010, CR-FE-011 applied. Breaking changes: `BatchStatus` rename, `Student.classId` nullable, `CreateUserRequest.password` optional.
+- **v1.6** (2026-03-07): Backend v4.2 sync. CR-FE-012, CR-FE-013 (a/b/c/d/e/f/g) applied. Breaking changes: bulk delete paths corrected (`POST /*/bulk`), Attendance Summary endpoint replaced (`GET /students/{id}/attendance/summary`), `TenantFeature` schema restored (`featureName`, `featureDescription`). Additive: End Assignment `effectiveTo` field, `GET /attendance/summary` deferred to NO list. Approved for execution.
 
 ---
 
-**END OF FRONTEND FREEZE v1.5**
+**END OF FRONTEND FREEZE v1.6**
