@@ -31,24 +31,10 @@ import { parseApiError } from "@/utils/errors";
 import { cn } from "@/utils/cn";
 import type { TenantFeature, FeatureKey } from "@/types/api";
 
-const FEATURE_LABELS: Record<
-  FeatureKey,
-  { name: string; description: string }
-> = {
-  timetable: {
-    name: "Timetable Management",
-    description: "Enables timetable creation and school period configuration.",
-  },
-  attendance: {
-    name: "Attendance Tracking",
-    description:
-      "Enables class attendance recording and summaries. Requires Timetable.",
-  },
-};
-
 // ── Toggle switch component ───────────────────────────────────────────────────
 interface ToggleProps {
   featureKey: FeatureKey;
+  label: string;
   enabled: boolean;
   disabled: boolean;
   loading: boolean;
@@ -57,18 +43,17 @@ interface ToggleProps {
 
 function FeatureToggle({
   featureKey,
+  label,
   enabled,
   disabled,
   loading,
   onToggle,
 }: ToggleProps) {
-  const label = FEATURE_LABELS[featureKey];
-
   return (
     <button
       role="switch"
       aria-checked={enabled}
-      aria-label={label.name}
+      aria-label={label}
       aria-disabled={disabled || loading}
       onClick={() => !disabled && !loading && onToggle(featureKey, !enabled)}
       className={cn(
@@ -201,7 +186,7 @@ export default function TenantFeaturesPage() {
           return {
             ...old,
             features: old.features.map((f: TenantFeature) =>
-              f.key === key ? data.feature : f,
+              f.featureKey === key ? data.feature : f,
             ),
           };
         },
@@ -245,14 +230,14 @@ export default function TenantFeaturesPage() {
   // Merge server data with optimistic overrides
   const features: TenantFeature[] = (data?.features ?? []).map((f) => ({
     ...f,
-    enabled: optimistic.has(f.key as FeatureKey)
-      ? optimistic.get(f.key as FeatureKey)!
+    enabled: optimistic.has(f.featureKey as FeatureKey)
+      ? optimistic.get(f.featureKey as FeatureKey)!
       : f.enabled,
   }));
 
   // Client-side guard: attendance disabled when timetable is off
   const timetableEnabled =
-    features.find((f) => f.key === "timetable")?.enabled ?? false;
+    features.find((f) => f.featureKey === "timetable")?.enabled ?? false;
 
   function handleToggle(key: FeatureKey, newValue: boolean) {
     mutation.mutate({ key, enabled: newValue });
@@ -303,8 +288,7 @@ export default function TenantFeaturesPage() {
       {!isLoading && !isError && (
         <div className="space-y-3" role="list" aria-label="Feature flags">
           {features.map((feature) => {
-            const fkey = feature.key as FeatureKey;
-            const meta = FEATURE_LABELS[fkey];
+            const fkey = feature.featureKey as FeatureKey;
             const isAttendance = fkey === "attendance";
             // Disable attendance toggle if timetable is off (client guard)
             const isDisabled = isAttendance && !timetableEnabled;
@@ -320,7 +304,9 @@ export default function TenantFeaturesPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1 flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium">{meta.name}</p>
+                      <p className="text-sm font-medium">
+                        {feature.featureName}
+                      </p>
                       <span
                         className={cn(
                           "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
@@ -333,7 +319,7 @@ export default function TenantFeaturesPage() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {meta.description}
+                      {feature.featureDescription}
                     </p>
                     {isDisabled && (
                       <p className="text-xs text-muted-foreground italic">
@@ -344,6 +330,7 @@ export default function TenantFeaturesPage() {
 
                   <FeatureToggle
                     featureKey={fkey}
+                    label={feature.featureName}
                     enabled={feature.enabled}
                     disabled={isDisabled}
                     loading={isLoading}

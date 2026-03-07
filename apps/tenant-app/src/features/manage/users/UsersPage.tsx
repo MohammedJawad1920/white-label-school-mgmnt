@@ -404,16 +404,11 @@ export default function UsersPage() {
   });
 
   const bulkMut = useMutation({
-    mutationFn: () => usersApi.bulkDelete({ ids: Array.from(selectedIds) }),
-    onSuccess: async (result) => {
+    mutationFn: () => usersApi.bulkDelete(Array.from(selectedIds)),
+    onSuccess: async () => {
       await invalidate();
       setSelectedIds(new Set());
-      // Track failures for row highlighting
-      const failed: Record<string, string> = {};
-      result.failed?.forEach((f: { id: string; reason: string }) => {
-        failed[f.id] = f.reason;
-      });
-      setBulkFailed(failed);
+      setBulkFailed({});
     },
     onError: (e) => setDeleteError(parseApiError(e).message),
   });

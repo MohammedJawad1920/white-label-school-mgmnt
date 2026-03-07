@@ -337,19 +337,19 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
   res.status(204).send();
 }
 
-// DELETE /api/users/bulk
+// POST /api/users/bulk — CR-27: renamed from bulk-delete, simplified response
 export async function bulkDeleteUsers(
   req: Request,
   res: Response,
 ): Promise<void> {
   const tenantId = req.tenantId!;
-  const { ids } = req.body as BulkDeleteRequest;
+  const { userIds } = req.body as { userIds?: unknown };
 
-  if (!Array.isArray(ids) || ids.length === 0) {
-    send400(res, "ids must be a non-empty array");
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    send400(res, "userIds must be a non-empty array");
     return;
   }
-  if (ids.length > 100) {
+  if (userIds.length > 100) {
     send400(res, "Cannot bulk delete more than 100 records at once");
     return;
   }
@@ -357,7 +357,7 @@ export async function bulkDeleteUsers(
   const result = await bulkSoftDelete(
     pool,
     "users",
-    ids,
+    userIds as string[],
     tenantId,
     async (id, tid, p) => {
       const check = await p.query<{ count: string }>(
@@ -377,5 +377,5 @@ export async function bulkDeleteUsers(
     },
   );
 
-  res.status(200).json(result);
+  res.status(200).json({ deletedCount: result.deleted.length });
 }

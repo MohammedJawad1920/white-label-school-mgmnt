@@ -5,7 +5,6 @@ import type {
   CreateUserResponse,
   UpdateUserRolesRequest,
   UpdateUserRolesResponse,
-  BulkDeleteRequest,
   BulkDeleteResponse,
 } from "@/types/api";
 
@@ -20,8 +19,8 @@ export const usersApi = {
       .then((r) => r.data),
   delete: (id: string) =>
     apiClient.delete<void>(`/users/${id}`).then((r) => r.data),
-  bulkDelete: (data: BulkDeleteRequest) =>
+  bulkDelete: (userIds: string[]) =>
     apiClient
-      .delete<BulkDeleteResponse>("/users/bulk", { data })
+      .post<BulkDeleteResponse>("/users/bulk", { userIds })
       .then((r) => r.data),
 };

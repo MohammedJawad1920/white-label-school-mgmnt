@@ -121,12 +121,12 @@ export async function tenantLogin(req: Request, res: Response): Promise<void> {
   res.status(200).json({ token, user: formatUser(user, activeRole) });
 }
 
-// POST /api/auth/logout — stateless, client discards token
+// POST /api/auth/logout — stateless server no-op (CR-26); client must discard token
 export async function tenantLogout(
   _req: Request,
   res: Response,
 ): Promise<void> {
-  res.status(204).send();
+  res.status(200).json({ message: "Logged out successfully" });
 }
 
 // POST /api/auth/switch-role

@@ -182,7 +182,7 @@ export default function ClassesPage() {
   });
 
   const bulkMut = useMutation({
-    mutationFn: () => classesApi.bulkDelete({ ids: Array.from(selectedIds) }),
+    mutationFn: () => classesApi.bulkDelete(Array.from(selectedIds)),
     onSuccess: async () => {
       await invalidate();
       setSelectedIds(new Set());

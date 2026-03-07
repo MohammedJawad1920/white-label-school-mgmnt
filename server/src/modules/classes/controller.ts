@@ -93,11 +93,9 @@ export async function updateClass(req: Request, res: Response): Promise<void> {
     "SELECT name FROM batches WHERE id = $1 AND deleted_at IS NULL",
     [updated.batch_id],
   );
-  res
-    .status(200)
-    .json({
-      class: fmt({ ...updated, batch_name: batchRow.rows[0]?.name ?? null }),
-    });
+  res.status(200).json({
+    class: fmt({ ...updated, batch_name: batchRow.rows[0]?.name ?? null }),
+  });
 }
 
 export async function deleteClass(req: Request, res: Response): Promise<void> {
@@ -133,24 +131,25 @@ export async function deleteClass(req: Request, res: Response): Promise<void> {
   res.status(204).send();
 }
 
+// POST /api/classes/bulk — CR-27
 export async function bulkDeleteClasses(
   req: Request,
   res: Response,
 ): Promise<void> {
   const tenantId = req.tenantId!;
-  const { ids } = req.body as BulkDeleteRequest;
-  if (!Array.isArray(ids) || ids.length === 0) {
-    send400(res, "ids must be a non-empty array");
+  const { classIds } = req.body as { classIds?: unknown };
+  if (!Array.isArray(classIds) || classIds.length === 0) {
+    send400(res, "classIds must be a non-empty array");
     return;
   }
-  if (ids.length > 100) {
+  if (classIds.length > 100) {
     send400(res, "Cannot bulk delete more than 100 records at once");
     return;
   }
   const result = await bulkSoftDelete(
     pool,
     "classes",
-    ids,
+    classIds as string[],
     tenantId,
     async (id, _tid, p) => {
       const check = await p.query<{ count: string }>(
@@ -162,7 +161,7 @@ export async function bulkDeleteClasses(
         : null;
     },
   );
-  res.status(200).json(result);
+  res.status(200).json({ deletedCount: result.deleted.length });
 }
 
 // PUT /api/classes/:sourceClassId/promote — v4.0 CR-21

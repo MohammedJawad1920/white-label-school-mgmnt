@@ -77,8 +77,11 @@ export interface UpdateTenantResponse {
 // ─── FEATURES ────────────────────────────────────────────────────────────────
 export type FeatureKey = "timetable" | "attendance";
 export interface TenantFeature {
-  key: FeatureKey;
-  name: string;
+  id: string;
+  tenantId: string;
+  featureKey: FeatureKey;
+  featureName: string;
+  featureDescription: string;
   enabled: boolean;
   enabledAt: string | null;
 }

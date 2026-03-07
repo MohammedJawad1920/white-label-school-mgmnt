@@ -4,7 +4,6 @@ import type {
   CreateSubjectRequest,
   UpdateSubjectRequest,
   Subject,
-  BulkDeleteRequest,
   BulkDeleteResponse,
 } from "@/types/api";
 
@@ -19,8 +18,8 @@ export const subjectsApi = {
       .then((r) => r.data),
   delete: (id: string) =>
     apiClient.delete<void>(`/subjects/${id}`).then((r) => r.data),
-  bulkDelete: (data: BulkDeleteRequest) =>
+  bulkDelete: (subjectIds: string[]) =>
     apiClient
-      .delete<BulkDeleteResponse>("/subjects/bulk", { data })
+      .post<BulkDeleteResponse>("/subjects/bulk", { subjectIds })
       .then((r) => r.data),
 };

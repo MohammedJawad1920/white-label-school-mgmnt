@@ -103,10 +103,18 @@ export async function getTimetable(req: Request, res: Response): Promise<void> {
   const params: unknown[] = [tenantId];
   let idx = 2;
 
-  // ?status=Active (default) → only non-ended slots
-  // ?status=All → include ended slots
-  if (!status || status === "Active") {
-    conditions.push("t.effective_to IS NULL");
+  // ?status=Active (default) → only currently-active slots.
+  //   When ?date= is also provided the date condition below already handles
+  //   "effective on that date" completely, so we skip the status filter to
+  //   avoid conflicting with it (effective_to IS NULL would make the OR branch
+  //   in the date condition unreachable).
+  //   When no date is given we use CURRENT_DATE so slots whose effectiveTo is
+  //   set to a future date remain visible until that date arrives.
+  // ?status=All → include ended slots (no filter added)
+  if ((!status || status === "Active") && !date) {
+    conditions.push(
+      "(t.effective_to IS NULL OR t.effective_to >= CURRENT_DATE)",
+    );
   }
 
   if (date) {

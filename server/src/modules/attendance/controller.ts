@@ -103,7 +103,9 @@ export async function recordClassAttendance(
 
   const timeslot = tsResult.rows[0]!;
 
-  if (timeslot.effective_to !== null) {
+  // Block attendance only when the attendance date is AFTER the last active date.
+  // A slot ended with effective_to = today is still valid for today's attendance.
+  if (timeslot.effective_to !== null && date! > timeslot.effective_to) {
     res.status(400).json({
       error: {
         code: "TIMESLOT_ENDED",
@@ -366,22 +368,31 @@ export async function getStudentAttendance(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// GET /api/attendance/summary
+// GET /api/attendance/summary  (CR-28)
 // ═══════════════════════════════════════════════════════════════════
+// Admin: any classId in tenant
+// Teacher: only classIds where caller has an active timeslot assignment
+//          (effectiveto IS NULL AND deletedat IS NULL)
+//          → 403 FORBIDDEN if no active assignment found for that classId
+// Student: 403 FORBIDDEN (handled by requireRole guard in routes)
 
 export async function getAttendanceSummary(
   req: Request,
   res: Response,
 ): Promise<void> {
   const tenantId = req.tenantId!;
+  const callerId = req.userId!;
+  const callerRoles = req.userRoles ?? [];
+
   const { classId, from, to } = req.query as {
     classId?: string;
     from?: string;
     to?: string;
   };
 
-  if (!from || !to) {
-    send400(res, "from and to date parameters are required");
+  // ── Validation ────────────────────────────────────────────────────
+  if (!classId || !from || !to) {
+    send400(res, "classId, from, and to are required");
     return;
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
@@ -389,123 +400,82 @@ export async function getAttendanceSummary(
     return;
   }
   if (from > to) {
-    send400(res, "from must be on or before to");
+    send400(res, "from must be on or before to", "VALIDATION_ERROR");
     return;
   }
 
-  // Optional class filter — verify it belongs to this tenant
-  let classRow: { id: string; name: string } | null = null;
-  if (classId) {
-    const classResult = await pool.query<{ id: string; name: string }>(
-      "SELECT id, name FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
-      [classId, tenantId],
+  // ── Class lookup ──────────────────────────────────────────────────
+  const classResult = await pool.query<{ id: string; name: string }>(
+    "SELECT id, name FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [classId, tenantId],
+  );
+  if ((classResult.rowCount ?? 0) === 0) {
+    send404(res, "Class not found");
+    return;
+  }
+  const classRow = classResult.rows[0]!;
+
+  // ── Teacher active-assignment guard (CR-28) ───────────────────────
+  if (callerRoles.includes("Teacher") && !callerRoles.includes("Admin")) {
+    const assignmentCheck = await pool.query<{ exists: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM timeslots
+         WHERE class_id = $1
+           AND teacher_id = $2
+           AND tenant_id = $3
+           AND effective_to IS NULL
+           AND deleted_at IS NULL
+       ) AS exists`,
+      [classId, callerId, tenantId],
     );
-    if ((classResult.rowCount ?? 0) === 0) {
-      send404(res, "Class not found");
+    if (!assignmentCheck.rows[0]?.exists) {
+      send403(res, "You are not assigned to this class", "FORBIDDEN");
       return;
     }
-    classRow = classResult.rows[0]!;
   }
 
-  // Count students in class (or all tenant students if no classId)
-  const studentCountResult = await pool.query<{ count: string }>(
-    classId
-      ? "SELECT COUNT(*) as count FROM students WHERE class_id = $1 AND tenant_id = $2 AND deleted_at IS NULL"
-      : "SELECT COUNT(*) as count FROM students WHERE tenant_id = $1 AND deleted_at IS NULL",
-    classId ? [classId, tenantId] : [tenantId],
+  // ── Aggregate query ───────────────────────────────────────────────
+  const totalStudents = await pool.query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM students WHERE class_id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [classId, tenantId],
   );
-  const studentCount = parseInt(studentCountResult.rows[0]?.count ?? "0", 10);
+  const studentCount = parseInt(totalStudents.rows[0]?.count ?? "0", 10);
 
-  // Build summary query conditions
-  const conditions = ["ar.tenant_id = $1", "ar.date >= $2", "ar.date <= $3"];
-  const params: unknown[] = [tenantId, from, to];
-
-  if (classId) {
-    // Join through timeslots to filter by class
-    conditions.push("ts.class_id = $4");
-    params.push(classId);
-  }
-
-  const joinClause = classId
-    ? "JOIN timeslots ts ON ts.id = ar.timeslot_id"
-    : "";
-
-  const summaryResult = await pool.query<{
+  const aggResult = await pool.query<{
     total: string;
-    present: string;
-    absent: string;
-    late: string;
+    present_late: string;
   }>(
     `SELECT
        COUNT(*) AS total,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Present') AS present,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Absent')  AS absent,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Late')    AS late
+       COUNT(*) FILTER (
+         WHERE COALESCE(ar.corrected_status, ar.status) IN ('Present', 'Late')
+       ) AS present_late
      FROM attendance_records ar
-     ${joinClause}
-     WHERE ${conditions.join(" AND ")}`,
-    params,
+     JOIN students s ON s.id = ar.student_id
+     WHERE s.class_id = $1
+       AND ar.tenant_id = $2
+       AND ar.date BETWEEN $3 AND $4`,
+    [classId, tenantId, from, to],
   );
 
-  const agg = summaryResult.rows[0]!;
-  const totalRecs = parseInt(agg.total, 10);
-  const presentCnt = parseInt(agg.present, 10);
-  const attendanceRate =
-    totalRecs > 0 ? Math.round((presentCnt / totalRecs) * 10000) / 100 : 0;
-
-  // Per-student breakdown
-  const byStudentResult = await pool.query<{
-    student_id: string;
-    student_name: string;
-    present: string;
-    absent: string;
-    late: string;
-  }>(
-    `SELECT
-       ar.student_id,
-       stu.name AS student_name,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Present') AS present,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Absent')  AS absent,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Late')    AS late
-     FROM attendance_records ar
-     ${joinClause}
-     JOIN students stu ON stu.id = ar.student_id
-     WHERE ${conditions.join(" AND ")}
-     GROUP BY ar.student_id, stu.name
-     ORDER BY stu.name ASC`,
-    params,
-  );
-
-  // Distinct days in range (calendar days, not just days with records)
-  const fromDate = new Date(from);
-  const toDate = new Date(to);
-  const days =
-    Math.round((toDate.getTime() - fromDate.getTime()) / 86_400_000) + 1;
+  const agg = aggResult.rows[0]!;
+  const totalClasses = parseInt(agg.total, 10);
+  const presentLate = parseInt(agg.present_late, 10);
+  const avgRate =
+    totalClasses > 0
+      ? Math.round((presentLate / totalClasses) * 10000) / 100
+      : 0;
 
   res.status(200).json({
-    class: classRow
-      ? { id: classRow.id, name: classRow.name, studentCount }
-      : { id: null, name: "All Classes", studentCount },
-    period: { from, to, days },
     summary: {
-      totalRecords: totalRecs,
-      present: presentCnt,
-      absent: parseInt(agg.absent, 10),
-      late: parseInt(agg.late, 10),
-      attendanceRate,
+      classId: classRow.id,
+      className: classRow.name,
+      from,
+      to,
+      totalStudents: studentCount,
+      totalClasses,
+      averageAttendanceRate: avgRate,
     },
-    byStudent: byStudentResult.rows.map((r) => {
-      const p = parseInt(r.present, 10);
-      const total = p + parseInt(r.absent, 10) + parseInt(r.late, 10);
-      return {
-        studentId: r.student_id,
-        studentName: r.student_name,
-        present: p,
-        absent: parseInt(r.absent, 10),
-        late: parseInt(r.late, 10),
-        attendanceRate: total > 0 ? Math.round((p / total) * 10000) / 100 : 0,
-      };
-    }),
   });
 }
 
@@ -616,6 +586,123 @@ export async function correctAttendance(
         r.recorded_at instanceof Date
           ? r.recorded_at.toISOString()
           : String(r.recorded_at),
+    },
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GET /api/students/:studentId/attendance/summary  (CR-25)
+// ═══════════════════════════════════════════════════════════════════
+// Roles allowed: Admin, Teacher, Student
+// Student guard: if caller is Student (and not Admin/Teacher), then
+//   student.user_id MUST match req.userId → 403 STUDENT_ACCESS_DENIED
+// Query params: year (integer), month (integer 1-12)
+
+export async function getStudentAttendanceSummary(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const tenantId = req.tenantId!;
+  const callerId = req.userId!;
+  const callerRoles = req.userRoles ?? [];
+  const { studentId } = req.params as { studentId: string };
+
+  // ── Parse year / month ────────────────────────────────────────────
+  const { year: yearStr, month: monthStr } = req.query as {
+    year?: string;
+    month?: string;
+  };
+
+  if (!yearStr || !monthStr) {
+    send400(res, "year and month are required");
+    return;
+  }
+
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+
+  if (isNaN(year) || year < 2000 || year > 9999) {
+    send400(res, "year must be a valid integer (e.g. 2025)");
+    return;
+  }
+  if (isNaN(month) || month < 1 || month > 12) {
+    send400(res, "month must be an integer between 1 and 12");
+    return;
+  }
+
+  // ── Fetch student + tenant ownership check ────────────────────────
+  const studentResult = await pool.query<{
+    id: string;
+    user_id: string | null;
+  }>(
+    "SELECT id, user_id FROM students WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [studentId, tenantId],
+  );
+  if ((studentResult.rowCount ?? 0) === 0) {
+    send404(res, "Student not found");
+    return;
+  }
+
+  const student = studentResult.rows[0]!;
+
+  // ── Student self-access guard ─────────────────────────────────────
+  if (
+    callerRoles.includes("Student") &&
+    !callerRoles.includes("Admin") &&
+    !callerRoles.includes("Teacher")
+  ) {
+    if (student.user_id !== callerId) {
+      send403(res, "Access denied", "STUDENT_ACCESS_DENIED");
+      return;
+    }
+  }
+
+  // ── Date range for the requested month ───────────────────────────
+  const from = `${year}-${String(month).padStart(2, "0")}-01`;
+  // Last day of month: go to 1st of next month then subtract a day
+  const lastDay = new Date(year, month, 0).getDate(); // month is 1-based; JS Date month is 0-based
+  const to = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+  // ── Aggregate ─────────────────────────────────────────────────────
+  const aggResult = await pool.query<{
+    total: string;
+    present: string;
+    absent: string;
+    late: string;
+  }>(
+    `SELECT
+       COUNT(*)                                                                       AS total,
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Present') AS present,
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Absent')  AS absent,
+       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Late')    AS late
+     FROM attendance_records ar
+     WHERE ar.student_id = $1
+       AND ar.tenant_id  = $2
+       AND ar.date BETWEEN $3 AND $4`,
+    [studentId, tenantId, from, to],
+  );
+
+  const agg = aggResult.rows[0]!;
+  const totalClasses = parseInt(agg.total, 10);
+  const present = parseInt(agg.present, 10);
+  const absent = parseInt(agg.absent, 10);
+  const late = parseInt(agg.late, 10);
+
+  const attendancePercentage =
+    totalClasses > 0
+      ? Math.round(((present + late) / totalClasses) * 10000) / 100
+      : 0;
+
+  res.status(200).json({
+    summary: {
+      studentId,
+      year,
+      month,
+      totalClasses,
+      present,
+      absent,
+      late,
+      attendancePercentage,
     },
   });
 }

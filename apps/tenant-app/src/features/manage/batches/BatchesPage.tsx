@@ -198,7 +198,7 @@ export default function BatchesPage() {
   });
 
   const bulkMut = useMutation({
-    mutationFn: () => batchesApi.bulkDelete({ ids: Array.from(selectedIds) }),
+    mutationFn: () => batchesApi.bulkDelete(Array.from(selectedIds)),
     onSuccess: async () => {
       await invalidate();
       setSelectedIds(new Set());

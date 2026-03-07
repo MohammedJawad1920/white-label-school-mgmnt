@@ -36,7 +36,7 @@ export function createApp(): Application {
   app.get("/health", (_req, res) => {
     res.json({
       status: "ok",
-      version: "4.0.0",
+      version: "4.2.0",
       timestamp: new Date().toISOString(),
     });
   });

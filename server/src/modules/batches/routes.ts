@@ -13,7 +13,7 @@ import {
 const router = Router();
 router.use(tenantContextMiddleware);
 
-router.delete("/bulk", requireRole("Admin"), asyncHandler(bulkDeleteBatches));
+router.post("/bulk", requireRole("Admin"), asyncHandler(bulkDeleteBatches));
 router.get("/", asyncHandler(listBatches));
 router.post("/", requireRole("Admin"), asyncHandler(createBatch));
 router.put("/:id", requireRole("Admin"), asyncHandler(updateBatch));

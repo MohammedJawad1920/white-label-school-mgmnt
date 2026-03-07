@@ -14,6 +14,7 @@ import {
   recordClassAttendance,
   getStudentAttendance,
   getAttendanceSummary,
+  getStudentAttendanceSummary,
   correctAttendance,
 } from "./controller";
 
@@ -31,7 +32,7 @@ router.post(
 );
 router.get(
   "/summary",
-  requireRole("Admin"),
+  requireRole("Admin", "Teacher"),
   asyncHandler(getAttendanceSummary),
 );
 // PUT /api/attendance/:recordId — correct a single record (v3.4 CR-09)
@@ -51,6 +52,13 @@ studentAttendanceRouter.get(
   "/:studentId/attendance",
   requireRole("Teacher", "Admin", "Student"),
   asyncHandler(getStudentAttendance),
+);
+
+// GET /api/students/:studentId/attendance/summary — CR-25
+studentAttendanceRouter.get(
+  "/:studentId/attendance/summary",
+  requireRole("Teacher", "Admin", "Student"),
+  asyncHandler(getStudentAttendanceSummary),
 );
 
 export { studentAttendanceRouter };

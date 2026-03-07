@@ -591,25 +591,25 @@ export async function deleteStudent(
   res.status(204).send();
 }
 
-// ── DELETE /api/students/bulk ────────────────────────────────────────────────
+// ── POST /api/students/bulk — CR-27 ─────────────────────────────────────────
 export async function bulkDeleteStudents(
   req: Request,
   res: Response,
 ): Promise<void> {
   const tenantId = req.tenantId!;
-  const { ids } = req.body as BulkDeleteRequest;
-  if (!Array.isArray(ids) || ids.length === 0) {
-    send400(res, "ids must be a non-empty array");
+  const { studentIds } = req.body as { studentIds?: unknown };
+  if (!Array.isArray(studentIds) || studentIds.length === 0) {
+    send400(res, "studentIds must be a non-empty array");
     return;
   }
-  if (ids.length > 100) {
+  if (studentIds.length > 100) {
     send400(res, "Cannot bulk delete more than 100 records at once");
     return;
   }
   const result = await bulkSoftDelete(
     pool,
     "students",
-    ids,
+    studentIds as string[],
     tenantId,
     async (id, _tid, p) => {
       const check = await p.query<{ count: string }>(
@@ -621,5 +621,5 @@ export async function bulkDeleteStudents(
         : null;
     },
   );
-  res.status(200).json(result);
+  res.status(200).json({ deletedCount: result.deleted.length });
 }

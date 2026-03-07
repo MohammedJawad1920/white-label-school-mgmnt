@@ -5,7 +5,6 @@ import type {
   CreateStudentResponse,
   UpdateStudentRequest,
   UpdateStudentResponse,
-  BulkDeleteRequest,
   BulkDeleteResponse,
   StudentStatus,
 } from "@/types/api";
@@ -33,9 +32,9 @@ export const studentsApi = {
       .then((r) => r.data),
   delete: (id: string) =>
     apiClient.delete<void>(`/students/${id}`).then((r) => r.data),
-  bulkDelete: (data: BulkDeleteRequest) =>
+  bulkDelete: (studentIds: string[]) =>
     apiClient
-      .delete<BulkDeleteResponse>("/students/bulk", { data })
+      .post<BulkDeleteResponse>("/students/bulk", { studentIds })
       .then((r) => r.data),
   // DEPRECATED in v3.5 — backend retained for migration only; removed from frontend UI
   // linkAccount: (studentId: string, data: LinkStudentAccountRequest) => ...

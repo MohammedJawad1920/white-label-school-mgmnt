@@ -559,12 +559,14 @@ export async function getTenantFeatures(
     return;
   }
 
-  // JOIN features + tenant_features to get name alongside enabled status
+  // JOIN features + tenant_features to get name/description alongside enabled status
   const result = await pool.query<
-    Pick<FeatureRow, "key" | "name"> &
-      Pick<TenantFeatureRow, "enabled" | "enabled_at">
+    Pick<FeatureRow, "key" | "name" | "description"> &
+      Pick<TenantFeatureRow, "id" | "tenant_id" | "enabled" | "enabled_at">
   >(
-    `SELECT f.key, f.name, COALESCE(tf.enabled, false) AS enabled, tf.enabled_at
+    `SELECT f.key, f.name, f.description,
+            COALESCE(tf.id, '') AS id, $1::text AS tenant_id,
+            COALESCE(tf.enabled, false) AS enabled, tf.enabled_at
      FROM features f
      LEFT JOIN tenant_features tf
        ON tf.tenant_id = $1 AND tf.feature_key = f.key
@@ -574,8 +576,11 @@ export async function getTenantFeatures(
 
   res.status(200).json({
     features: result.rows.map((r) => ({
-      key: r.key,
-      name: r.name,
+      id: r.id,
+      tenantId: r.tenant_id,
+      featureKey: r.key,
+      featureName: r.name,
+      featureDescription: r.description ?? "",
       enabled: r.enabled,
       enabledAt: r.enabled_at?.toISOString() ?? null,
     })),
@@ -659,15 +664,16 @@ export async function toggleTenantFeature(
     [id, tenantId, featureKey, enabled],
   );
 
-  // D-07 fix: return full Feature shape per OpenAPI (key, name, enabled, enabledAt)
-  // by joining the features table which holds the displayable feature name.
+  // D-07 fix: return full Feature shape per OpenAPI (featureKey, featureName, featureDescription, enabled, enabledAt)
   const featureResult = await pool.query<{
     key: string;
     name: string;
+    description: string | null;
+    id: string;
     enabled: boolean;
     enabled_at: Date | null;
   }>(
-    `SELECT f.key, f.name, tf.enabled, tf.enabled_at
+    `SELECT f.key, f.name, f.description, tf.id, tf.enabled, tf.enabled_at
      FROM features f
      JOIN tenant_features tf ON tf.tenant_id = $1 AND tf.feature_key = f.key
      WHERE f.key = $2`,
@@ -677,8 +683,11 @@ export async function toggleTenantFeature(
 
   res.status(200).json({
     feature: {
-      key: feat.key,
-      name: feat.name,
+      id: feat.id,
+      tenantId,
+      featureKey: feat.key,
+      featureName: feat.name,
+      featureDescription: feat.description ?? "",
       enabled: feat.enabled,
       enabledAt: feat.enabled_at?.toISOString() ?? null,
     },

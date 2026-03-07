@@ -1,81 +1,60 @@
 /**
- * AttendanceSummaryPage — Freeze §Screen: Attendance Summary
+ * AttendanceSummaryPage — Freeze §Screen: Attendance Summary (CR-FE-013c/d)
  *
- * GET /attendance/summary?classId={id}&from={YYYY-MM-DD}&to={YYYY-MM-DD}
- * TQ key: ['attendance-summary', classId, from, to]  stale: 5 min
+ * Admin picks a student + year + month.
+ * Calls GET /students/{studentId}/attendance/summary?year=&month=
+ * TQ key: ['student-attendance-summary', studentId, year, month]  stale: 5 min
  *
- * WHY from/to not month picker:
- * OpenAPI uses from+to date range (not YYYY-MM month param).
- * We derive from+to from a month picker for UX convenience:
- *   from = first day of selected month
- *   to   = last day of selected month
- *
- * Response shape (from OpenAPI):
- *   class: { id, name, studentCount }
- *   period: { from, to, days }
- *   summary: { totalRecords, present, absent, late, attendanceRate }
- *   byStudent: [{ studentId, studentName, present, absent, late, attendanceRate }]
+ * CR-FE-013d: empty-state guard uses summary.totalClasses === 0
  */
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { attendanceApi } from "@/api/attendance";
-import { classesApi } from "@/api/classes";
+import { studentsApi } from "@/api/students";
 import { parseApiError } from "@/utils/errors";
-import { format, startOfMonth, endOfMonth, parseISO } from "date-fns";
 
-// Derive from/to from YYYY-MM string
-function monthToRange(yyyyMm: string): { from: string; to: string } {
-  const d = parseISO(`${yyyyMm}-01`);
-  return {
-    from: format(startOfMonth(d), "yyyy-MM-dd"),
-    to: format(endOfMonth(d), "yyyy-MM-dd"),
-  };
-}
+// ── Constants ─────────────────────────────────────────────────────────────────
+const THIS_YEAR = new Date().getFullYear();
+const THIS_MONTH = new Date().getMonth() + 1; // 1-based
 
-function currentMonth(): string {
-  return format(new Date(), "yyyy-MM");
-}
+const YEARS = Array.from({ length: 5 }, (_, i) => THIS_YEAR - i);
+const MONTHS = [
+  { value: 1, label: "January" },
+  { value: 2, label: "February" },
+  { value: 3, label: "March" },
+  { value: 4, label: "April" },
+  { value: 5, label: "May" },
+  { value: 6, label: "June" },
+  { value: 7, label: "July" },
+  { value: 8, label: "August" },
+  { value: 9, label: "September" },
+  { value: 10, label: "October" },
+  { value: 11, label: "November" },
+  { value: 12, label: "December" },
+];
 
-function maxMonth(): string {
-  return format(new Date(), "yyyy-MM");
-}
-
-// ── Attendance rate bar ───────────────────────────────────────────────────────
-// WHY no * 100: backend returns attendanceRate as 0–100 percentage (e.g. 75.43),
-// not a 0–1 fraction. Multiplying by 100 would produce values like 7543% (D-03 fix).
-function RateBar({ rate }: { rate: number }) {
-  const pct = Math.round(rate);
+// ── Attendance percentage bar ─────────────────────────────────────────────────
+// CR-FE-013d clarification: attendancePercentage is 0–100 (not 0–1 fraction).
+function PctBar({ pct }: { pct: number }) {
+  const rounded = Math.round(pct);
   const color =
-    pct >= 75 ? "bg-green-500" : pct >= 50 ? "bg-yellow-500" : "bg-red-500";
+    rounded >= 75
+      ? "bg-green-500"
+      : rounded >= 50
+        ? "bg-yellow-500"
+        : "bg-red-500";
   return (
     <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full ${color}`}
-          style={{ width: `${pct}%` }}
+          style={{ width: `${rounded}%` }}
           aria-hidden="true"
         />
       </div>
-      <span className="text-xs tabular-nums w-8 text-right">{pct}%</span>
-    </div>
-  );
-}
-
-// ── Skeleton ──────────────────────────────────────────────────────────────────
-function SummarySkeleton() {
-  return (
-    <div
-      className="animate-pulse space-y-4"
-      aria-busy="true"
-      aria-label="Loading summary"
-    >
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-20 bg-muted rounded-lg" />
-        ))}
-      </div>
-      <div className="h-64 bg-muted rounded-lg" />
+      <span className="text-sm tabular-nums font-semibold w-10 text-right">
+        {rounded}%
+      </span>
     </div>
   );
 }
@@ -100,278 +79,255 @@ function StatCard({
   );
 }
 
+// ── Skeleton ──────────────────────────────────────────────────────────────────
+function SummarySkeleton() {
+  return (
+    <div
+      className="animate-pulse space-y-4"
+      aria-busy="true"
+      aria-label="Loading summary"
+    >
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-20 bg-muted rounded-lg" />
+        ))}
+      </div>
+      <div className="h-16 bg-muted rounded-lg" />
+    </div>
+  );
+}
+
+// ── Select helpers ────────────────────────────────────────────────────────────
+const selectCls =
+  "rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const labelCls = "block text-xs font-medium text-muted-foreground mb-1";
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AttendanceSummaryPage() {
-  const [selectedClass, setSelectedClass] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth());
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [selectedYear, setSelectedYear] = useState(THIS_YEAR);
+  const [selectedMonth, setSelectedMonth] = useState(THIS_MONTH);
 
-  const { from, to } = monthToRange(selectedMonth);
-
-  const classesQ = useQuery({
-    queryKey: ["classes"],
-    queryFn: () => classesApi.list(),
+  // Fetch students for the picker (Admin only route)
+  const studentsQ = useQuery({
+    queryKey: ["students-list-picker"],
+    queryFn: () => studentsApi.list({ limit: 500 }),
     staleTime: 2 * 60 * 1000,
   });
 
+  // CR-25: monthly attendance summary
   const summaryQ = useQuery({
-    queryKey: ["attendance-summary", selectedClass, from, to],
+    queryKey: [
+      "student-attendance-summary",
+      selectedStudentId,
+      selectedYear,
+      selectedMonth,
+    ],
     queryFn: () =>
-      attendanceApi.getSummary({
-        classId: selectedClass || undefined,
-        from,
-        to,
-      }),
+      attendanceApi.getStudentSummary(
+        selectedStudentId,
+        selectedYear,
+        selectedMonth,
+      ),
     staleTime: 5 * 60 * 1000,
-    enabled: true, // Allow summary without class filter
+    enabled: !!selectedStudentId,
   });
 
   const apiErr = summaryQ.isError ? parseApiError(summaryQ.error) : null;
-  const is403 = apiErr?.code === "FORBIDDEN";
+  const is403 =
+    apiErr?.code === "FORBIDDEN" || apiErr?.code === "STUDENT_ACCESS_DENIED";
   const is404 = apiErr?.code === "NOT_FOUND";
 
-  const summaryData = summaryQ.data as
-    | {
-        class?: { id: string; name: string; studentCount: number };
-        period?: { from: string; to: string; days: number };
-        summary?: {
-          totalRecords: number;
-          present: number;
-          absent: number;
-          late: number;
-          attendanceRate: number;
-        };
-        byStudent?: Array<{
-          studentId: string;
-          studentName: string;
-          present: number;
-          absent: number;
-          late: number;
-          attendanceRate: number;
-        }>;
-      }
-    | undefined;
+  const summary = summaryQ.data?.summary;
 
-  const summary = summaryData?.summary;
-  const byStudent = summaryData?.byStudent ?? [];
-  const periodInfo = summaryData?.period;
-  const classInfo = summaryData?.class;
-  const hasData = !!summary && summary.totalRecords > 0;
+  // CR-FE-013d: empty state guard — totalClasses === 0 (NOT totalRecords)
+  const hasData = !!summary && summary.totalClasses > 0;
 
-  const monthLabel = format(parseISO(`${selectedMonth}-01`), "MMMM yyyy");
+  const monthLabel = MONTHS.find((m) => m.value === selectedMonth)?.label ?? "";
+  const selectedStudentName =
+    studentsQ.data?.students.find((s) => s.id === selectedStudentId)?.name ??
+    "";
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto">
+    <div className="p-4 md:p-6 max-w-2xl mx-auto">
       {/* Header */}
       <div className="mb-5">
         <h1 className="text-xl font-semibold">Attendance Summary</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Monthly overview by class
+          Monthly attendance summary for a student
         </p>
       </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-5">
+        {/* Student selector */}
         <div>
-          <label
-            htmlFor="classFilter"
-            className="block text-xs font-medium text-muted-foreground mb-1"
-          >
-            Class
+          <label htmlFor="studentFilter" className={labelCls}>
+            Student
           </label>
           <select
-            id="classFilter"
-            value={selectedClass}
-            onChange={(e) => setSelectedClass(e.target.value)}
-            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            id="studentFilter"
+            value={selectedStudentId}
+            onChange={(e) => setSelectedStudentId(e.target.value)}
+            className={selectCls}
+            aria-label="Select student"
           >
-            <option value="">All Classes</option>
-            {classesQ.data?.classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
+            <option value="">— Select a student —</option>
+            {studentsQ.data?.students.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
               </option>
             ))}
           </select>
         </div>
 
+        {/* Year selector */}
         <div>
-          <label
-            htmlFor="monthPicker"
-            className="block text-xs font-medium text-muted-foreground mb-1"
+          <label htmlFor="yearFilter" className={labelCls}>
+            Year
+          </label>
+          <select
+            id="yearFilter"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            className={selectCls}
+            aria-label="Select year"
           >
+            {YEARS.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Month selector */}
+        <div>
+          <label htmlFor="monthFilter" className={labelCls}>
             Month
           </label>
-          <input
-            id="monthPicker"
-            type="month"
+          <select
+            id="monthFilter"
             value={selectedMonth}
-            max={maxMonth()}
-            onChange={(e) => setSelectedMonth(e.target.value)}
+            onChange={(e) => setSelectedMonth(Number(e.target.value))}
+            className={selectCls}
             aria-label="Select month"
-            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
+          >
+            {MONTHS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* Inline error states */}
-      {is403 && (
-        <div
-          role="alert"
-          className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground mb-4"
-        >
-          Not authorized to view attendance summary.
-        </div>
-      )}
-      {is404 && (
-        <div
-          role="alert"
-          className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground mb-4"
-        >
-          No data found for the selected class.
-        </div>
-      )}
-
-      {summaryQ.isLoading && <SummarySkeleton />}
-
-      {/* Empty state */}
-      {!summaryQ.isLoading && !summaryQ.isError && !hasData && (
+      {/* No student selected */}
+      {!selectedStudentId && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <p className="text-sm text-muted-foreground">
-            No attendance data for {monthLabel}
-            {classInfo ? ` · ${classInfo.name}` : ""}.
+            Select a student to view their attendance summary.
           </p>
         </div>
       )}
 
-      {/* Summary cards + table */}
-      {!summaryQ.isLoading && !summaryQ.isError && hasData && summary && (
-        <>
-          {/* Context */}
-          <div className="mb-4 text-sm text-muted-foreground">
-            {classInfo && (
-              <span className="font-medium text-foreground">
-                {classInfo.name}
-              </span>
-            )}
-            {classInfo && <span className="mx-1.5">·</span>}
-            <span>{monthLabel}</span>
-            {periodInfo && (
-              <span className="ml-1.5">
-                ({periodInfo.days} school day{periodInfo.days !== 1 ? "s" : ""})
-              </span>
-            )}
-            {classInfo?.studentCount !== undefined && (
-              <span className="ml-1.5">
-                · {classInfo.studentCount} students
-              </span>
-            )}
-          </div>
-
-          {/* Summary stat cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-            <StatCard label="Total Records" value={summary.totalRecords} />
-            <StatCard
-              label="Present"
-              value={summary.present}
-              color="text-green-600"
-            />
-            <StatCard
-              label="Absent"
-              value={summary.absent}
-              color="text-red-600"
-            />
-            <StatCard
-              label="Late"
-              value={summary.late}
-              color="text-yellow-600"
-            />
-          </div>
-
-          {/* Attendance rate summary card */}
-          <div className="rounded-lg border bg-card p-4 mb-5">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium">
-                Overall Attendance Rate
-              </span>
-              <span className="text-lg font-bold tabular-nums">
-                {Math.round(summary.attendanceRate)}%
-              </span>
-            </div>
-            <RateBar rate={summary.attendanceRate} />
-          </div>
-
-          {/* Per-student breakdown */}
-          {byStudent.length > 0 && (
-            <div className="rounded-lg border overflow-hidden">
-              <table
-                className="w-full text-sm"
-                aria-label={`Attendance breakdown for ${monthLabel}`}
-              >
-                <caption className="sr-only">
-                  Per-student attendance breakdown for {monthLabel}
-                </caption>
-                <thead className="bg-muted/50 border-b">
-                  <tr>
-                    <th
-                      scope="col"
-                      className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide"
-                    >
-                      Student
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-4 py-2.5 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide"
-                    >
-                      Present
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-4 py-2.5 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide"
-                    >
-                      Absent
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-4 py-2.5 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide"
-                    >
-                      Late
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide w-40"
-                    >
-                      Rate
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {byStudent.map((row) => (
-                    <tr
-                      key={row.studentId}
-                      className="border-b last:border-b-0 hover:bg-muted/20"
-                    >
-                      <td className="px-4 py-2.5 font-medium">
-                        {row.studentName}
-                      </td>
-                      <td className="px-4 py-2.5 text-center text-green-700 tabular-nums">
-                        {row.present}
-                      </td>
-                      <td className="px-4 py-2.5 text-center text-red-700 tabular-nums">
-                        {row.absent}
-                      </td>
-                      <td className="px-4 py-2.5 text-center text-yellow-700 tabular-nums">
-                        {row.late}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <RateBar rate={row.attendanceRate} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
+      {/* Error states */}
+      {selectedStudentId && is403 && (
+        <div
+          role="alert"
+          className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground mb-4"
+        >
+          Access denied — you are not authorised to view this student's
+          attendance.
+        </div>
       )}
+      {selectedStudentId && is404 && (
+        <div
+          role="alert"
+          className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground mb-4"
+        >
+          Student not found.
+        </div>
+      )}
+      {selectedStudentId && summaryQ.isError && !is403 && !is404 && apiErr && (
+        <div
+          role="alert"
+          className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive mb-4"
+        >
+          {apiErr.message ?? "Failed to load attendance summary."}
+        </div>
+      )}
+
+      {/* Loading skeleton */}
+      {selectedStudentId && summaryQ.isLoading && <SummarySkeleton />}
+
+      {/* Empty state — CR-FE-013d: guard on totalClasses */}
+      {selectedStudentId &&
+        !summaryQ.isLoading &&
+        !summaryQ.isError &&
+        summary &&
+        !hasData && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <p className="text-sm text-muted-foreground">
+              No attendance records for {selectedStudentName} in {monthLabel}{" "}
+              {selectedYear}.
+            </p>
+          </div>
+        )}
+
+      {/* Results */}
+      {selectedStudentId &&
+        !summaryQ.isLoading &&
+        !summaryQ.isError &&
+        hasData &&
+        summary && (
+          <div className="space-y-5">
+            {/* Context label */}
+            <div className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">
+                {selectedStudentName}
+              </span>
+              <span className="mx-1.5">·</span>
+              <span>
+                {monthLabel} {selectedYear}
+              </span>
+              <span className="ml-1.5">
+                · {summary.totalClasses} classes recorded
+              </span>
+            </div>
+
+            {/* Stat cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <StatCard label="Total Classes" value={summary.totalClasses} />
+              <StatCard
+                label="Present"
+                value={summary.present}
+                color="text-green-600"
+              />
+              <StatCard
+                label="Absent"
+                value={summary.absent}
+                color="text-red-600"
+              />
+              <StatCard
+                label="Late"
+                value={summary.late}
+                color="text-yellow-600"
+              />
+            </div>
+
+            {/* Attendance percentage bar */}
+            <div className="rounded-lg border bg-card p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-medium">Attendance</span>
+                <span className="text-xs text-muted-foreground">
+                  (Present + Late counted)
+                </span>
+              </div>
+              <PctBar pct={summary.attendancePercentage} />
+            </div>
+          </div>
+        )}
     </div>
   );
 }

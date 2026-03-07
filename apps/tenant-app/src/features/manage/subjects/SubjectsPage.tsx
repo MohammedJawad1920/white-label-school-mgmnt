@@ -146,7 +146,7 @@ export default function SubjectsPage() {
   });
 
   const bulkMut = useMutation({
-    mutationFn: () => subjectsApi.bulkDelete({ ids: Array.from(selectedIds) }),
+    mutationFn: () => subjectsApi.bulkDelete(Array.from(selectedIds)),
     onSuccess: async () => {
       await invalidate();
       setSelectedIds(new Set());

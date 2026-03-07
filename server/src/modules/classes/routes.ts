@@ -14,7 +14,7 @@ import {
 const router = Router();
 router.use(tenantContextMiddleware);
 
-router.delete("/bulk", requireRole("Admin"), asyncHandler(bulkDeleteClasses));
+router.post("/bulk", requireRole("Admin"), asyncHandler(bulkDeleteClasses));
 router.get("/", asyncHandler(listClasses));
 router.post("/", requireRole("Admin"), asyncHandler(createClass));
 router.put(

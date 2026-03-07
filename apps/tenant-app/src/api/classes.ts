@@ -7,7 +7,6 @@ import type {
   PromoteResult,
   GraduateResult,
   Class,
-  BulkDeleteRequest,
   BulkDeleteResponse,
 } from "@/types/api";
 
@@ -20,9 +19,9 @@ export const classesApi = {
     apiClient.put<{ class: Class }>(`/classes/${id}`, data).then((r) => r.data),
   delete: (id: string) =>
     apiClient.delete<void>(`/classes/${id}`).then((r) => r.data),
-  bulkDelete: (data: BulkDeleteRequest) =>
+  bulkDelete: (classIds: string[]) =>
     apiClient
-      .delete<BulkDeleteResponse>("/classes/bulk", { data })
+      .post<BulkDeleteResponse>("/classes/bulk", { classIds })
       .then((r) => r.data),
   // v4.0 CR-21: body is a union — either { targetClassId } for promote or { action: "graduate" } for graduation
   promote: (sourceClassId: string, body: PromoteRequest) =>

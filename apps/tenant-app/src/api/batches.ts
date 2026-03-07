@@ -4,7 +4,6 @@ import type {
   CreateBatchRequest,
   UpdateBatchRequest,
   Batch,
-  BulkDeleteRequest,
   BulkDeleteResponse,
 } from "@/types/api";
 
@@ -17,8 +16,8 @@ export const batchesApi = {
     apiClient.put<{ batch: Batch }>(`/batches/${id}`, data).then((r) => r.data),
   delete: (id: string) =>
     apiClient.delete<void>(`/batches/${id}`).then((r) => r.data),
-  bulkDelete: (data: BulkDeleteRequest) =>
+  bulkDelete: (batchIds: string[]) =>
     apiClient
-      .delete<BulkDeleteResponse>("/batches/bulk", { data })
+      .post<BulkDeleteResponse>("/batches/bulk", { batchIds })
       .then((r) => r.data),
 };

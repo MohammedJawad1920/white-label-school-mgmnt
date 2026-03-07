@@ -129,24 +129,25 @@ export async function deleteBatch(req: Request, res: Response): Promise<void> {
   res.status(204).send();
 }
 
+// POST /api/batches/bulk — CR-27
 export async function bulkDeleteBatches(
   req: Request,
   res: Response,
 ): Promise<void> {
   const tenantId = req.tenantId!;
-  const { ids } = req.body as BulkDeleteRequest;
-  if (!Array.isArray(ids) || ids.length === 0) {
-    send400(res, "ids must be a non-empty array");
+  const { batchIds } = req.body as { batchIds?: unknown };
+  if (!Array.isArray(batchIds) || batchIds.length === 0) {
+    send400(res, "batchIds must be a non-empty array");
     return;
   }
-  if (ids.length > 100) {
+  if (batchIds.length > 100) {
     send400(res, "Cannot bulk delete more than 100 records at once");
     return;
   }
   const result = await bulkSoftDelete(
     pool,
     "batches",
-    ids,
+    batchIds as string[],
     tenantId,
     async (id, _tid, p) => {
       const check = await p.query<{ count: string }>(
@@ -158,5 +159,5 @@ export async function bulkDeleteBatches(
         : null;
     },
   );
-  res.status(200).json(result);
+  res.status(200).json({ deletedCount: result.deleted.length });
 }

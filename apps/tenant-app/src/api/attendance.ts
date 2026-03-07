@@ -3,6 +3,7 @@ import type {
   RecordClassAttendanceRequest,
   RecordClassAttendanceResponse,
   StudentAttendanceResponse,
+  StudentAttendanceSummaryResponse,
   AttendanceSummaryResponse,
   CorrectAttendanceRequest,
   CorrectAttendanceResponse,
@@ -44,5 +45,13 @@ export const attendanceApi = {
   correctRecord: (recordId: string, data: CorrectAttendanceRequest) =>
     apiClient
       .put<CorrectAttendanceResponse>(`/attendance/${recordId}`, data)
+      .then((r) => r.data),
+  // CR-25: monthly attendance summary for a student
+  getStudentSummary: (studentId: string, year: number, month: number) =>
+    apiClient
+      .get<StudentAttendanceSummaryResponse>(
+        `/students/${studentId}/attendance/summary`,
+        { params: { year, month } },
+      )
       .then((r) => r.data),
 };

@@ -119,24 +119,25 @@ export async function deleteSubject(
   res.status(204).send();
 }
 
+// POST /api/subjects/bulk — CR-27
 export async function bulkDeleteSubjects(
   req: Request,
   res: Response,
 ): Promise<void> {
   const tenantId = req.tenantId!;
-  const { ids } = req.body as BulkDeleteRequest;
-  if (!Array.isArray(ids) || ids.length === 0) {
-    send400(res, "ids must be a non-empty array");
+  const { subjectIds } = req.body as { subjectIds?: unknown };
+  if (!Array.isArray(subjectIds) || subjectIds.length === 0) {
+    send400(res, "subjectIds must be a non-empty array");
     return;
   }
-  if (ids.length > 100) {
+  if (subjectIds.length > 100) {
     send400(res, "Cannot bulk delete more than 100 records at once");
     return;
   }
   const result = await bulkSoftDelete(
     pool,
     "subjects",
-    ids,
+    subjectIds as string[],
     tenantId,
     async (id, _tid, p) => {
       const check = await p.query<{ count: string }>(
@@ -149,5 +150,5 @@ export async function bulkDeleteSubjects(
         : null;
     },
   );
-  res.status(200).json(result);
+  res.status(200).json({ deletedCount: result.deleted.length });
 }

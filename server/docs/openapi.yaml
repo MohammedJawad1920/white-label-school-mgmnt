@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: White-Label School Management System
-  version: "4.0.0"
+  version: "4.2.0"
   description: >
     Multi-tenant school management API. Supports SuperAdmin (platform-level)
     and tenant-scoped Admin/Teacher/Student roles.
@@ -108,12 +108,19 @@ components:
 
     Feature:
       type: object
-      required: [key, name, enabled]
+      required:
+        [id, tenantId, featureKey, featureName, featureDescription, enabled]
       properties:
-        key:
+        id:
+          type: string
+        tenantId:
+          type: string
+        featureKey:
           type: string
           enum: [timetable, attendance]
-        name:
+        featureName:
+          type: string
+        featureDescription:
           type: string
         enabled:
           type: boolean
@@ -350,9 +357,38 @@ components:
 
     BulkDeleteRequest:
       type: object
-      required: [ids]
+      description: >-
+        Entity-specific ID array. Pass the field matching the entity type being deleted.
       properties:
-        ids:
+        userIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+        studentIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+        classIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+        batchIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+        subjectIds:
           type: array
           items:
             type: string
@@ -362,25 +398,12 @@ components:
 
     BulkDeleteResponse:
       type: object
-      required: [deleted, failed]
+      required: [deletedCount]
       properties:
-        deleted:
-          type: array
-          items:
-            type: string
-        failed:
-          type: array
-          items:
-            type: object
-            required: [id, reason, message]
-            properties:
-              id:
-                type: string
-              reason:
-                type: string
-                enum: [NOT_FOUND, HAS_REFERENCES]
-              message:
-                type: string
+        deletedCount:
+          type: integer
+          description: Number of records successfully soft-deleted
+          minimum: 0
 
     Pagination:
       type: object
@@ -523,8 +546,17 @@ paths:
       operationId: tenantLogout
       tags: [Auth]
       responses:
-        "204":
-          description: Logged out
+        "200":
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    type: string
+                    example: Logged out successfully
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -992,12 +1024,18 @@ paths:
                 success:
                   value:
                     features:
-                      - key: timetable
-                        name: Timetable Management
+                      - id: TF-001
+                        tenantId: T001
+                        featureKey: timetable
+                        featureName: Timetable Management
+                        featureDescription: Create and manage class schedules and timetables
                         enabled: true
                         enabledAt: "2026-01-01T00:00:00Z"
-                      - key: attendance
-                        name: Attendance Tracking
+                      - id: TF-002
+                        tenantId: T001
+                        featureKey: attendance
+                        featureName: Attendance Tracking
+                        featureDescription: Record and view student attendance records
                         enabled: false
                         enabledAt: null
         "401":
@@ -1056,7 +1094,11 @@ paths:
                 success:
                   value:
                     feature:
-                      key: attendance
+                      id: TF-002
+                      tenantId: T001
+                      featureKey: attendance
+                      featureName: Attendance Tracking
+                      featureDescription: Record and view student attendance records
                       enabled: true
                       enabledAt: "2026-02-26T07:00:00Z"
         "400":
@@ -1532,7 +1574,7 @@ paths:
           $ref: "#/components/responses/Conflict"
 
   /users/bulk:
-    delete:
+    post:
       summary: Bulk soft-delete users
       operationId: bulkDeleteUsers
       tags: [Users]
@@ -1541,26 +1583,31 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BulkDeleteRequest"
+              type: object
+              required: [userIds]
+              properties:
+                userIds:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  maxItems: 100
+                  uniqueItems: true
             examples:
               success:
                 value:
-                  ids: [U001, U002, U003]
+                  userIds: [U001, U002, U003]
       responses:
         "200":
-          description: Bulk delete result (partial success allowed)
+          description: Bulk delete result
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkDeleteResponse"
               examples:
-                partial:
+                success:
                   value:
-                    deleted: [U001, U002]
-                    failed:
-                      - id: U003
-                        reason: HAS_REFERENCES
-                        message: "Cannot delete: user has active timeslot assignments or attendance records"
+                    deletedCount: 3
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1814,7 +1861,7 @@ paths:
                   timestamp: "2026-03-03T07:00:00Z"
 
   /students/bulk:
-    delete:
+    post:
       summary: Bulk soft-delete students
       operationId: bulkDeleteStudents
       tags: [Students]
@@ -1823,7 +1870,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BulkDeleteRequest"
+              type: object
+              required: [studentIds]
+              properties:
+                studentIds:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  maxItems: 100
+                  uniqueItems: true
+            examples:
+              success:
+                value:
+                  studentIds: [S001, S002]
       responses:
         "200":
           description: Bulk delete result
@@ -1831,6 +1891,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkDeleteResponse"
+              examples:
+                success:
+                  value:
+                    deletedCount: 2
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -2119,6 +2183,106 @@ paths:
                       code: FORBIDDEN
                       message: Insufficient permissions
                       timestamp: "2026-02-26T07:00:00Z"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # CR-25: Student monthly attendance summary
+  /students/{studentId}/attendance/summary:
+    get:
+      summary: Get monthly attendance summary for a student (CR-25)
+      description: >-
+        Admin/Teacher: any student in tenant.
+        Student: own record only (student.userId == req.userId); 403 STUDENT_ACCESS_DENIED otherwise.
+      operationId: getStudentAttendanceSummary
+      tags: [Attendance]
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2000
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        "200":
+          description: Monthly attendance summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [summary]
+                properties:
+                  summary:
+                    type: object
+                    required:
+                      [
+                        studentId,
+                        year,
+                        month,
+                        totalClasses,
+                        present,
+                        absent,
+                        late,
+                        attendancePercentage,
+                      ]
+                    properties:
+                      studentId:
+                        type: string
+                      year:
+                        type: integer
+                      month:
+                        type: integer
+                      totalClasses:
+                        type: integer
+                      present:
+                        type: integer
+                      absent:
+                        type: integer
+                      late:
+                        type: integer
+                      attendancePercentage:
+                        type: number
+                        format: float
+              examples:
+                success:
+                  value:
+                    summary:
+                      studentId: S001
+                      year: 2026
+                      month: 3
+                      totalClasses: 22
+                      present: 18
+                      absent: 3
+                      late: 1
+                      attendancePercentage: 86.36
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                student_access_denied:
+                  value:
+                    error:
+                      code: STUDENT_ACCESS_DENIED
+                      message: Access denied
+                      timestamp: "2026-03-07T10:00:00Z"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -2460,12 +2624,18 @@ paths:
 
   /attendance/summary:
     get:
-      summary: Get aggregated attendance summary
+      summary: Get aggregated attendance summary for a class (CR-28)
+      description: >-
+        Admin: any classId in tenant.
+        Teacher: only classes where the caller has an active timeslot assignment
+        (effectiveTo IS NULL); returns 403 FORBIDDEN otherwise.
+        classId is required.
       operationId: getAttendanceSummary
       tags: [Attendance]
       parameters:
         - name: classId
           in: query
+          required: true
           schema:
             type: string
         - name: from
@@ -2487,57 +2657,49 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [summary]
                 properties:
-                  class:
+                  summary:
                     type: object
+                    required:
+                      [
+                        classId,
+                        className,
+                        from,
+                        to,
+                        totalStudents,
+                        totalClasses,
+                        averageAttendanceRate,
+                      ]
                     properties:
-                      id:
+                      classId:
                         type: string
-                      name:
+                      className:
                         type: string
-                      studentCount:
-                        type: integer
-                  period:
-                    type: object
-                    properties:
                       from:
                         type: string
                         format: date
                       to:
                         type: string
                         format: date
-                      days:
+                      totalStudents:
                         type: integer
-                  summary:
-                    type: object
-                    properties:
-                      totalRecords:
+                      totalClasses:
                         type: integer
-                      present:
-                        type: integer
-                      absent:
-                        type: integer
-                      late:
-                        type: integer
-                      attendanceRate:
+                      averageAttendanceRate:
                         type: number
-                  byStudent:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        studentId:
-                          type: string
-                        studentName:
-                          type: string
-                        present:
-                          type: integer
-                        absent:
-                          type: integer
-                        late:
-                          type: integer
-                        attendanceRate:
-                          type: number
+                        format: float
+              examples:
+                success:
+                  value:
+                    summary:
+                      classId: CL001
+                      className: "Class 10-A"
+                      from: "2026-03-01"
+                      to: "2026-03-31"
+                      totalStudents: 30
+                      totalClasses: 620
+                      averageAttendanceRate: 87.5
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -2702,7 +2864,7 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
   /classes/bulk:
-    delete:
+    post:
       summary: Bulk soft-delete classes
       operationId: bulkDeleteClasses
       tags: [Classes]
@@ -2711,7 +2873,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BulkDeleteRequest"
+              type: object
+              required: [classIds]
+              properties:
+                classIds:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  maxItems: 100
+                  uniqueItems: true
+            examples:
+              success:
+                value:
+                  classIds: [C001, C002]
       responses:
         "200":
           description: Bulk delete result
@@ -2719,6 +2894,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkDeleteResponse"
+              examples:
+                success:
+                  value:
+                    deletedCount: 2
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -2958,7 +3137,7 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
   /batches/bulk:
-    delete:
+    post:
       summary: Bulk soft-delete batches
       operationId: bulkDeleteBatches
       tags: [Batches]
@@ -2967,7 +3146,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BulkDeleteRequest"
+              type: object
+              required: [batchIds]
+              properties:
+                batchIds:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  maxItems: 100
+                  uniqueItems: true
+            examples:
+              success:
+                value:
+                  batchIds: [B001, B002]
       responses:
         "200":
           description: Bulk delete result
@@ -2975,6 +3167,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkDeleteResponse"
+              examples:
+                success:
+                  value:
+                    deletedCount: 2
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -3107,7 +3303,7 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
   /subjects/bulk:
-    delete:
+    post:
       summary: Bulk soft-delete subjects
       operationId: bulkDeleteSubjects
       tags: [Subjects]
@@ -3116,7 +3312,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BulkDeleteRequest"
+              type: object
+              required: [subjectIds]
+              properties:
+                subjectIds:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  maxItems: 100
+                  uniqueItems: true
+            examples:
+              success:
+                value:
+                  subjectIds: [SUB001, SUB002]
       responses:
         "200":
           description: Bulk delete result
@@ -3124,6 +3333,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkDeleteResponse"
+              examples:
+                success:
+                  value:
+                    deletedCount: 2
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":

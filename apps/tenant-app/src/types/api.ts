@@ -356,34 +356,31 @@ export interface StudentAttendanceResponse {
   };
   pagination: { limit: number; offset: number; total: number };
 }
-export interface AttendanceSummaryByStudent {
-  studentId: string;
-  studentName: string;
-  present: number;
-  absent: number;
-  late: number;
-  attendanceRate: number;
-}
 
 export interface AttendanceSummaryResponse {
-  class?: {
-    id: string;
-    name: string;
-    studentCount: number;
-  };
-  period?: {
+  summary: {
+    classId: string;
+    className: string;
     from: string;
     to: string;
-    days: number;
+    totalStudents: number;
+    totalClasses: number;
+    averageAttendanceRate: number;
   };
-  summary?: {
-    totalRecords: number;
+}
+
+// ─── STUDENT MONTHLY ATTENDANCE SUMMARY (CR-25) ───────────────────────────────
+export interface StudentAttendanceSummaryResponse {
+  summary: {
+    studentId: string;
+    year: number;
+    month: number;
+    totalClasses: number;
     present: number;
     absent: number;
     late: number;
-    attendanceRate: number;
+    attendancePercentage: number;
   };
-  byStudent?: AttendanceSummaryByStudent[];
 }
 
 // ─── FEATURES ────────────────────────────────────────────────────────────────
@@ -400,13 +397,12 @@ export interface ListFeaturesResponse {
 
 // ─── BULK DELETE ─────────────────────────────────────────────────────────────
 export interface BulkDeleteRequest {
-  ids: string[];
+  userIds?: string[];
+  studentIds?: string[];
+  classIds?: string[];
+  batchIds?: string[];
+  subjectIds?: string[];
 }
 export interface BulkDeleteResponse {
-  deleted: string[];
-  failed: Array<{
-    id: string;
-    reason: "NOT_FOUND" | "HAS_REFERENCES";
-    message: string;
-  }>;
+  deletedCount: number;
 }

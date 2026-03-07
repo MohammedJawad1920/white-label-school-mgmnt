@@ -16,7 +16,7 @@ const router = Router();
 router.use(tenantContextMiddleware);
 
 // NOTE: /bulk MUST precede /:id to avoid route shadowing
-router.delete("/bulk", requireRole("Admin"), asyncHandler(bulkDeleteStudents));
+router.post("/bulk", requireRole("Admin"), asyncHandler(bulkDeleteStudents));
 router.get("/", asyncHandler(listStudents));
 router.get("/:id", asyncHandler(getStudent)); // CR-15: Admin + Teacher(scoped) + Student(own)
 router.post("/", requireRole("Admin"), asyncHandler(createStudent));

@@ -4,7 +4,7 @@ description: "Hard rules for apps/** to stay Freeze compliant"
 applyTo: "apps/**"
 ---
 
-Must match Frontend Freeze v1.0 exactly. [file:2]
+Must match Frontend Freeze v1.6 exactly. [file:2]
 
 - React 18 + Vite 5.x + TS strict + React Router v6 + TanStack Query v5 + axios + Tailwind v3. [file:2]
 - No Redux/Zustand; server state via TanStack Query; auth via Context only. [file:2]
