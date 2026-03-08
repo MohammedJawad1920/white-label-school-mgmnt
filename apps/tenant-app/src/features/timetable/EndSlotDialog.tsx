@@ -1,41 +1,29 @@
 /**
- * EndSlotDialog — Freeze §Screen: Timetable, "End Assignment" action.
+ * DeleteSlotDialog — CR-31 replacement for EndSlotDialog.
  *
- * PUT /timetable/:id/end  → body: { effectiveTo: 'YYYY-MM-DD' }
- * On 200: invalidate ['timetable'] + toast success
- * On 404: toast "Slot not found."
- * On 403: toast "Not authorized."
- *
- * WHY separate dialog (not inline): Ending a slot is destructive and
- * irreversible. A confirmation step with date input prevents accidents.
- *
- * WHY invalidate ['timetable'] (all filters):
- * Freeze §3 caching rules: PUT /timetable/:id/end invalidates ['timetable'].
- * Using queryClient.invalidateQueries({ queryKey: ['timetable'] }) removes
- * ALL timetable cache entries (across any filter combo) so the grid always
- * reflects the ended slot immediately.
+ * DELETE /timetable/:id
+ * On 204: invalidate ['timetable'] + close
+ * On 404: show inline error "Slot not found."
+ * On 403: show inline error "Not authorized."
  */
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { timetableApi } from "@/api/timetable";
 import { parseApiError } from "@/utils/errors";
-import { todayISO } from "@/utils/dates";
 import type { TimeSlot } from "@/types/api";
 
-interface EndSlotDialogProps {
+interface DeleteSlotDialogProps {
   slot: TimeSlot | null;
   onClose: () => void;
 }
 
-export function EndSlotDialog({ slot, onClose }: EndSlotDialogProps) {
+export function DeleteSlotDialog({ slot, onClose }: DeleteSlotDialogProps) {
   const queryClient = useQueryClient();
-  const [effectiveTo, setEffectiveTo] = useState(todayISO());
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => timetableApi.end(slot!.id, { effectiveTo }),
+    mutationFn: () => timetableApi.deleteSlot(slot!.id),
     onSuccess: async () => {
-      // Freeze §3: invalidate ALL timetable queries
       await queryClient.invalidateQueries({ queryKey: ["timetable"] });
       onClose();
     },
@@ -59,19 +47,18 @@ export function EndSlotDialog({ slot, onClose }: EndSlotDialogProps) {
   }
 
   return (
-    /* Backdrop */
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="end-slot-title"
+      aria-labelledby="delete-slot-title"
       onKeyDown={handleKeyDown}
     >
       <div className="bg-background rounded-lg shadow-xl w-full max-w-sm border">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
-          <h2 id="end-slot-title" className="text-base font-semibold">
-            End Assignment
+          <h2 id="delete-slot-title" className="text-base font-semibold">
+            Delete Slot
           </h2>
           <button
             onClick={onClose}
@@ -97,7 +84,6 @@ export function EndSlotDialog({ slot, onClose }: EndSlotDialogProps) {
 
         {/* Body */}
         <div className="p-4 space-y-4">
-          {/* Slot info summary */}
           <div className="rounded-md bg-muted px-3 py-2.5 text-sm">
             <p className="font-medium">
               {slot.className} · {slot.subjectName}
@@ -108,36 +94,12 @@ export function EndSlotDialog({ slot, onClose }: EndSlotDialogProps) {
           </div>
 
           <p className="text-sm text-muted-foreground">
-            Choose the last date this assignment is active. The slot will no
-            longer appear after this date.
+            This slot will be permanently removed from the timetable. This
+            action cannot be undone.
           </p>
 
-          {/* Effective-to date */}
-          <div>
-            <label
-              htmlFor="effectiveTo"
-              className="block text-sm font-medium mb-1.5"
-            >
-              Last active date
-            </label>
-            <input
-              id="effectiveTo"
-              type="date"
-              value={effectiveTo}
-              min={todayISO()}
-              onChange={(e) => setEffectiveTo(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-describedby={error ? "end-slot-error" : undefined}
-            />
-          </div>
-
-          {/* Error */}
           {error && (
-            <p
-              id="end-slot-error"
-              role="alert"
-              className="text-xs text-destructive"
-            >
+            <p role="alert" className="text-xs text-destructive">
               {error}
             </p>
           )}
@@ -154,7 +116,7 @@ export function EndSlotDialog({ slot, onClose }: EndSlotDialogProps) {
           </button>
           <button
             onClick={handleConfirm}
-            disabled={mutation.isPending || !effectiveTo}
+            disabled={mutation.isPending}
             className="inline-flex items-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             {mutation.isPending ? (
@@ -179,10 +141,10 @@ export function EndSlotDialog({ slot, onClose }: EndSlotDialogProps) {
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                   />
                 </svg>
-                Ending…
+                Deleting…
               </>
             ) : (
-              "End Assignment"
+              "Delete Slot"
             )}
           </button>
         </div>

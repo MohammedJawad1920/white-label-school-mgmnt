@@ -1,8 +1,8 @@
 /**
  * DashboardPage — Freeze §Screen: Dashboard
  *
- * Query: GET /timetable?date={today}
- * TQ key: ['timetable', 'today', isoDate] — stale 5 min, refetch on focus
+ * Query: GET /timetable?dayOfWeek={todayDayName}
+ * TQ key: ['timetable', { dayOfWeek }] — stale 5 min, refetch on focus
  *
  * Role rules (Freeze §Screen: Dashboard):
  *   Teacher → filter client-side: only slots where teacherId === currentUser.id
@@ -118,7 +118,7 @@ interface SlotCardProps {
     periodNumber: number;
     label?: string;
     startTime?: string;
-    endTime?: string;
+    endTime?: string | null;
     className?: string;
     subjectName?: string;
     teacherName?: string;
@@ -192,8 +192,8 @@ export default function DashboardPage() {
   const navigate = useNavigate();
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["timetable", "today", TODAY],
-    queryFn: () => timetableApi.list({ date: TODAY }),
+    queryKey: ["timetable", { dayOfWeek: todayDayOfWeek() }],
+    queryFn: () => timetableApi.list({ dayOfWeek: todayDayOfWeek() }),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
   });

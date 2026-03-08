@@ -86,7 +86,7 @@ export async function recordClassAttendance(
     TimeslotRow & { class_name: string; subject_name: string }
   >(
     `SELECT t.id, t.tenant_id, t.class_id, t.subject_id, t.teacher_id,
-            t.day_of_week, t.period_number, t.effective_from, t.effective_to,
+            t.day_of_week, t.period_number,
             t.deleted_at, t.created_at, t.updated_at,
             c.name AS class_name, s.name AS subject_name
      FROM timeslots t
@@ -103,18 +103,20 @@ export async function recordClassAttendance(
 
   const timeslot = tsResult.rows[0]!;
 
-  // Block attendance only when the attendance date is AFTER the last active date.
-  // A slot ended with effective_to = today is still valid for today's attendance.
-  if (timeslot.effective_to !== null && date! > timeslot.effective_to) {
-    res.status(400).json({
-      error: {
-        code: "TIMESLOT_ENDED",
-        message: "Cannot record attendance for an ended timeslot",
-        details: { effectiveTo: timeslot.effective_to },
-        timestamp: new Date().toISOString(),
-      },
-    });
-    return;
+  // ── Teacher auth guard (v4.3, CR-31) ─────────────────────────────
+  // A Teacher may only record attendance for their own assigned slot.
+  const callerRoles = req.userRoles ?? [];
+  if (callerRoles.includes("Teacher") && !callerRoles.includes("Admin")) {
+    if (timeslot.teacher_id !== recordedBy) {
+      res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
+          message: "You are not assigned to this timeslot",
+          timestamp: new Date().toISOString(),
+        },
+      });
+      return;
+    }
   }
 
   // ── Fetch students in this class ──────────────────────────────────
@@ -372,8 +374,8 @@ export async function getStudentAttendance(
 // ═══════════════════════════════════════════════════════════════════
 // Admin: any classId in tenant
 // Teacher: only classIds where caller has an active timeslot assignment
-//          (effectiveto IS NULL AND deletedat IS NULL)
-//          → 403 FORBIDDEN if no active assignment found for that classId
+//          (deleted_at IS NULL)
+//          → 403 FORBIDDEN if no assignment found for that classId
 // Student: 403 FORBIDDEN (handled by requireRole guard in routes)
 
 export async function getAttendanceSummary(
@@ -423,7 +425,6 @@ export async function getAttendanceSummary(
          WHERE class_id = $1
            AND teacher_id = $2
            AND tenant_id = $3
-           AND effective_to IS NULL
            AND deleted_at IS NULL
        ) AS exists`,
       [classId, callerId, tenantId],

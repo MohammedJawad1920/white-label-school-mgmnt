@@ -28,6 +28,10 @@ services:
       - ./src/db/migrations/002_add_student_user_id.sql:/docker-entrypoint-initdb.d/002_add_student_user_id.sql
       - ./src/db/migrations/003_add_attendance_corrections.sql:/docker-entrypoint-initdb.d/003_add_attendance_corrections.sql
       - ./src/db/migrations/004_student_admission_dob.sql:/docker-entrypoint-initdb.d/004_student_admission_dob.sql
+      - ./src/db/migrations/005_tenant_timezone.sql:/docker-entrypoint-initdb.d/005_tenant_timezone.sql
+      - ./src/db/migrations/006_student_status_classid_nullable.sql:/docker-entrypoint-initdb.d/006_student_status_classid_nullable.sql
+      - ./src/db/migrations/007_batch_status_graduated.sql:/docker-entrypoint-initdb.d/007_batch_status_graduated.sql
+      - ./src/db/migrations/008_timeslot_remove_effective_dates.sql:/docker-entrypoint-initdb.d/008_timeslot_remove_effective_dates.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
       interval: 5s

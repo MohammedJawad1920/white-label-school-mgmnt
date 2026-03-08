@@ -270,9 +270,7 @@ export interface TimeSlot {
   periodNumber: number;
   label?: string;
   startTime?: string;
-  endTime?: string;
-  effectiveFrom: string;
-  effectiveTo: string | null;
+  endTime?: string | null;
 }
 export interface ListTimetableResponse {
   timetable: TimeSlot[];
@@ -283,17 +281,13 @@ export interface CreateTimeSlotRequest {
   teacherId: string;
   dayOfWeek: DayOfWeek;
   periodNumber: number;
-  effectiveFrom: string;
-  // v3.3: startTime/endTime removed from request — derived server-side via school_periods JOIN
 }
 export interface CreateTimeSlotResponse {
   timeSlot: TimeSlot;
 }
-export interface EndTimeSlotRequest {
-  effectiveTo: string;
-}
-export interface EndTimeSlotResponse {
-  timeSlot: Pick<TimeSlot, "id" | "effectiveTo">;
+export interface UpdateTimeslotRequest {
+  teacherId?: string;
+  subjectId?: string;
 }
 
 // ─── ATTENDANCE ──────────────────────────────────────────────────────────────

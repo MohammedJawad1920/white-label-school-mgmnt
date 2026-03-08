@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: White-Label School Management System API
-  version: 4.2.0
+  version: 4.3.0
   description: Backend API for white-label school management system with timetable scheduling and attendance tracking
   contact:
     name: API Support
@@ -1489,16 +1489,11 @@ paths:
   /timetable:
     get:
       summary: Get timetable
-      description: 'Returns timeslots matching filters. status=Active (default): returns where effectiveto IS NULL OR effectiveto >= queryDate. status=All: returns all non-deleted timeslots.'
+      description: Returns all non-deleted timeslots matching the provided filters.
       tags: [Timetable]
       security:
         - BearerAuth: []
       parameters:
-        - name: date
-          in: query
-          schema:
-            type: string
-            format: date
         - name: dayOfWeek
           in: query
           schema:
@@ -1512,12 +1507,6 @@ paths:
           in: query
           schema:
             type: string
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [Active, All]
-            default: Active
       responses:
         '200':
           description: Timetable data
@@ -1543,7 +1532,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [classId, subjectId, teacherId, dayOfWeek, periodNumber, effectiveFrom]
+              required: [classId, subjectId, teacherId, dayOfWeek, periodNumber]
               properties:
                 classId:
                   type: string
@@ -1557,10 +1546,7 @@ paths:
                 periodNumber:
                   type: integer
                   minimum: 1
-                effectiveFrom:
-                  type: string
-                  format: date
-      responses:
+        responses:
         '201':
           description: Timeslot created
           content:
@@ -1573,10 +1559,11 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
-  /timetable/{timeSlotId}/end:
+  /timetable/{timeSlotId}:
     put:
-      summary: End timeslot
-      tags: [Timetable]
+      summary: Update timeslot teacher and/or subject
+      tags:
+        - Timetable
       security:
         - BearerAuth: []
       parameters:
@@ -1591,14 +1578,15 @@ paths:
           application/json:
             schema:
               type: object
-              required: [effectiveTo]
               properties:
-                effectiveTo:
+                teacherId:
                   type: string
-                  format: date
+                subjectId:
+                  type: string
+              description: At least one of teacherId or subjectId must be provided
       responses:
         '200':
-          description: Timeslot ended
+          description: Timeslot updated
           content:
             application/json:
               schema:
@@ -1606,6 +1594,31 @@ paths:
                 properties:
                   timeSlot:
                     $ref: '#/components/schemas/TimeSlot'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Soft-delete timeslot
+      tags:
+        - Timetable
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: timeSlotId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Timeslot deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /attendance/record-class:
     post:
@@ -1984,12 +1997,6 @@ components:
         endTime:
           type: string
           format: time
-        effectiveFrom:
-          type: string
-          format: date
-        effectiveTo:
-          type: string
-          format: date
           nullable: true
         createdAt:
           type: string

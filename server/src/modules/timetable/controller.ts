@@ -1,21 +1,19 @@
 /**
- * Timetable Controller — v3.3
+ * Timetable Controller — v4.3
  *
- * GET  /api/timetable               — list timeslots with school_periods JOIN
- * POST /api/timetable               — create timeslot (no startTime/endTime in body)
- * PUT  /api/timetable/:id/end       — set effectiveTo (ends the assignment)
+ * GET    /api/timetable     — list non-deleted timeslots (JOIN school_periods)
+ * POST   /api/timetable     — create timeslot
+ * PUT    /api/timetable/:id — update teacherId and/or subjectId (CR-31 NEW)
+ * DELETE /api/timetable/:id — soft-delete timeslot (CR-31 NEW)
  *
- * v3.3 KEY CHANGE — POST no longer accepts startTime/endTime:
- * Times live in school_periods, joined at read time.
- * POST only validates that periodNumber exists in school_periods for this tenant
- * (PERIOD_NOT_CONFIGURED error if not).
- *
- * TIMETABLE VERSIONING PATTERN:
- * Timeslots are never updated in place. To change a teacher or subject:
- *   1. PUT /:id/end  → sets effectiveTo = today
- *   2. POST /        → creates new timeslot with effectiveFrom = tomorrow
- * This preserves attendance history — every attendance_record links to the
- * exact timeslot that was active when it was recorded.
+ * v4.3 KEY CHANGES (CR-31):
+ * - effectiveFrom/effectiveTo removed from all schemas and flows
+ * - PUT /:id/end REMOVED entirely
+ * - PUT /:id NEW — direct field update (teacherId? + subjectId?, at least one)
+ * - DELETE /:id NEW — soft-delete (deletedat = NOW())
+ * - GET: date and status query params removed; returns all non-deleted slots
+ * - POST: effectiveFrom no longer required or accepted
+ * - Teacher auth for attendance: deletedat IS NULL only (no effectiveto check)
  *
  * GET JOIN QUERY:
  * Every read JOINs school_periods on (tenant_id, period_number) to populate
@@ -55,20 +53,15 @@ function fmt(row: TimeslotJoinRow) {
     periodNumber: row.period_number,
     label: row.sp_label,
     startTime: trimTime(row.sp_start_time),
-    endTime: trimTime(row.sp_end_time),
-    effectiveFrom: String(row.effective_from).slice(0, 10),
-    effectiveTo: row.effective_to
-      ? String(row.effective_to).slice(0, 10)
-      : null,
+    endTime: row.sp_end_time ? trimTime(row.sp_end_time) : null,
   };
 }
 
-// Base JOIN query — reused by GET and POST (after insert + re-fetch)
+// Base JOIN query — reused by GET, POST (after insert + re-fetch), and PUT
 const TIMETABLE_JOIN = `
   SELECT
     t.id, t.tenant_id, t.class_id, t.subject_id, t.teacher_id,
     t.day_of_week, t.period_number,
-    t.effective_from, t.effective_to,
     t.deleted_at, t.created_at, t.updated_at,
     c.name  AS class_name,
     s.name  AS subject_name,
@@ -87,44 +80,20 @@ const TIMETABLE_JOIN = `
 
 // ═══════════════════════════════════════════════════════════════════
 // GET /api/timetable
+// v4.3: date + status params removed; returns all non-deleted slots
 // ═══════════════════════════════════════════════════════════════════
 
 export async function getTimetable(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;
-  const { date, dayOfWeek, teacherId, classId, status } = req.query as {
-    date?: string;
+  const { dayOfWeek, teacherId, classId } = req.query as {
     dayOfWeek?: string;
     teacherId?: string;
     classId?: string;
-    status?: string;
   };
 
   const conditions = ["t.tenant_id = $1", "t.deleted_at IS NULL"];
   const params: unknown[] = [tenantId];
   let idx = 2;
-
-  // ?status=Active (default) → only currently-active slots.
-  //   When ?date= is also provided the date condition below already handles
-  //   "effective on that date" completely, so we skip the status filter to
-  //   avoid conflicting with it (effective_to IS NULL would make the OR branch
-  //   in the date condition unreachable).
-  //   When no date is given we use CURRENT_DATE so slots whose effectiveTo is
-  //   set to a future date remain visible until that date arrives.
-  // ?status=All → include ended slots (no filter added)
-  if ((!status || status === "Active") && !date) {
-    conditions.push(
-      "(t.effective_to IS NULL OR t.effective_to >= CURRENT_DATE)",
-    );
-  }
-
-  if (date) {
-    // Filter by ISO date: slots effective on this date
-    conditions.push(
-      `t.effective_from <= $${idx} AND (t.effective_to IS NULL OR t.effective_to >= $${idx})`,
-    );
-    params.push(date);
-    idx++;
-  }
 
   if (dayOfWeek) {
     conditions.push(`t.day_of_week = $${idx++}`);
@@ -151,7 +120,7 @@ export async function getTimetable(req: Request, res: Response): Promise<void> {
 
 // ═══════════════════════════════════════════════════════════════════
 // POST /api/timetable
-// v3.3: No startTime/endTime in body — derived from school_periods
+// v4.3: effectiveFrom removed — no date-range tracking
 // ═══════════════════════════════════════════════════════════════════
 
 export async function createTimeslot(
@@ -159,39 +128,20 @@ export async function createTimeslot(
   res: Response,
 ): Promise<void> {
   const tenantId = req.tenantId!;
-  const {
-    classId,
-    subjectId,
-    teacherId,
-    dayOfWeek,
-    periodNumber,
-    effectiveFrom,
-  } = req.body as {
-    classId?: string;
-    subjectId?: string;
-    teacherId?: string;
-    dayOfWeek?: string;
-    periodNumber?: unknown;
-    effectiveFrom?: string;
-  };
-
-  // ── v3.3 BREAKING: Reject removed fields ────────────────────────
-  // Freeze §7 Phase 5: "rejects request if startTime/endTime sent in body → 400"
-  const body = req.body as Record<string, unknown>;
-  if (body.startTime !== undefined || body.endTime !== undefined) {
-    send400(
-      res,
-      "startTime and endTime are no longer accepted. Period times are derived from school_periods configuration.",
-      "VALIDATION_ERROR",
-    );
-    return;
-  }
+  const { classId, subjectId, teacherId, dayOfWeek, periodNumber } =
+    req.body as {
+      classId?: string;
+      subjectId?: string;
+      teacherId?: string;
+      dayOfWeek?: string;
+      periodNumber?: unknown;
+    };
 
   // ── Validation ────────────────────────────────────────────────────
-  if (!classId || !subjectId || !teacherId || !dayOfWeek || !effectiveFrom) {
+  if (!classId || !subjectId || !teacherId || !dayOfWeek) {
     send400(
       res,
-      "classId, subjectId, teacherId, dayOfWeek, periodNumber, and effectiveFrom are required",
+      "classId, subjectId, teacherId, dayOfWeek, and periodNumber are required",
     );
     return;
   }
@@ -216,16 +166,7 @@ export async function createTimeslot(
     return;
   }
 
-  // Basic ISO date format check
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
-    send400(res, "effectiveFrom must be a valid date in YYYY-MM-DD format");
-    return;
-  }
-
-  // ── PERIOD_NOT_CONFIGURED guard (v3.3) ────────────────────────────
-  // The periodNumber must exist in school_periods for this tenant.
-  // WHY: Without this check, a timeslot with period_number=99 would
-  // INSERT fine but the JOIN in GET would return no startTime/endTime.
+  // ── PERIOD_NOT_CONFIGURED guard ────────────────────────────────────
   const periodCheck = await pool.query<Pick<SchoolPeriodRow, "id">>(
     `SELECT id FROM school_periods
      WHERE tenant_id = $1 AND period_number = $2`,
@@ -264,8 +205,6 @@ export async function createTimeslot(
   }
 
   // ── Verify teacher exists and has Teacher role ────────────────────
-  // WHY check roles: An Admin-only user could be passed as teacherId.
-  // Attendance reports group by teacher, so only actual Teachers belong here.
   const teacherCheck = await pool.query<{ id: string; roles: string[] }>(
     "SELECT id, roles FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
     [teacherId, tenantId],
@@ -293,18 +232,9 @@ export async function createTimeslot(
     await pool.query(
       `INSERT INTO timeslots
          (id, tenant_id, class_id, subject_id, teacher_id, day_of_week,
-          period_number, effective_from, effective_to, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, NOW(), NOW())`,
-      [
-        id,
-        tenantId,
-        classId,
-        subjectId,
-        teacherId,
-        dayOfWeek,
-        periodNum,
-        effectiveFrom,
-      ],
+          period_number, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+      [id, tenantId, classId, subjectId, teacherId, dayOfWeek, periodNum],
     );
   } catch (err: unknown) {
     if (
@@ -326,7 +256,7 @@ export async function createTimeslot(
     throw err;
   }
 
-  // Re-fetch with JOIN to return full shape (startTime, endTime, label, names)
+  // Re-fetch with JOIN to return full shape
   const result = await pool.query<TimeslotJoinRow>(
     `${TIMETABLE_JOIN} WHERE t.id = $1`,
     [id],
@@ -336,54 +266,113 @@ export async function createTimeslot(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// PUT /api/timetable/:id/end
+// PUT /api/timetable/:id   (CR-31 NEW)
+// Update teacherId and/or subjectId on an existing slot.
+// At least one field must be provided.
 // ═══════════════════════════════════════════════════════════════════
 
-export async function endTimeslot(req: Request, res: Response): Promise<void> {
+export async function updateTimeslot(
+  req: Request,
+  res: Response,
+): Promise<void> {
   const tenantId = req.tenantId!;
   const { id } = req.params as { id: string };
-  const { effectiveTo } = req.body as { effectiveTo?: string };
+  const { teacherId, subjectId } = req.body as {
+    teacherId?: string;
+    subjectId?: string;
+  };
 
-  if (!effectiveTo) {
-    send400(res, "effectiveTo is required");
+  if (!teacherId && !subjectId) {
+    send400(res, "At least one of teacherId or subjectId must be provided");
     return;
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveTo)) {
-    send400(res, "effectiveTo must be a valid date in YYYY-MM-DD format");
-    return;
-  }
 
-  const existing = await pool.query<{
-    id: string;
-    effective_to: string | null;
-  }>(
-    `SELECT id, effective_to FROM timeslots
-     WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+  // Verify slot exists
+  const existing = await pool.query<TimeslotRow>(
+    `SELECT * FROM timeslots WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
     [id, tenantId],
   );
   if ((existing.rowCount ?? 0) === 0) {
     send404(res, "Timeslot not found");
     return;
   }
-  if (existing.rows[0]!.effective_to !== null) {
-    res.status(409).json({
-      error: {
-        code: "ALREADY_ENDED",
-        message: "This timeslot has already been ended",
-        details: { effectiveTo: existing.rows[0]!.effective_to },
-        timestamp: new Date().toISOString(),
-      },
-    });
+
+  if (teacherId) {
+    const teacherCheck = await pool.query<{ id: string; roles: string[] }>(
+      "SELECT id, roles FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+      [teacherId, tenantId],
+    );
+    if ((teacherCheck.rowCount ?? 0) === 0) {
+      send404(res, "Teacher not found");
+      return;
+    }
+    if (!teacherCheck.rows[0]!.roles.includes("Teacher")) {
+      res.status(400).json({
+        error: {
+          code: "INVALID_TEACHER",
+          message: "The specified user does not have the Teacher role",
+          details: { teacherId },
+          timestamp: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+  }
+
+  if (subjectId) {
+    const subjectCheck = await pool.query<{ id: string }>(
+      "SELECT id FROM subjects WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+      [subjectId, tenantId],
+    );
+    if ((subjectCheck.rowCount ?? 0) === 0) {
+      send404(res, "Subject not found");
+      return;
+    }
+  }
+
+  await pool.query(
+    `UPDATE timeslots
+        SET teacher_id  = COALESCE($1, teacher_id),
+            subject_id  = COALESCE($2, subject_id),
+            updated_at  = NOW()
+      WHERE id = $3 AND tenant_id = $4`,
+    [teacherId ?? null, subjectId ?? null, id, tenantId],
+  );
+
+  const result = await pool.query<TimeslotJoinRow>(
+    `${TIMETABLE_JOIN} WHERE t.id = $1`,
+    [id],
+  );
+
+  res.status(200).json({ timeSlot: fmt(result.rows[0]!) });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DELETE /api/timetable/:id   (CR-31 NEW)
+// Soft-delete a timeslot (sets deleted_at = NOW()).
+// ═══════════════════════════════════════════════════════════════════
+
+export async function deleteTimeslot(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const tenantId = req.tenantId!;
+  const { id } = req.params as { id: string };
+
+  const existing = await pool.query<{ id: string }>(
+    `SELECT id FROM timeslots WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+    [id, tenantId],
+  );
+  if ((existing.rowCount ?? 0) === 0) {
+    send404(res, "Timeslot not found");
     return;
   }
 
   await pool.query(
-    `UPDATE timeslots SET effective_to = $1, updated_at = NOW()
-     WHERE id = $2 AND tenant_id = $3`,
-    [effectiveTo, id, tenantId],
+    `UPDATE timeslots SET deleted_at = NOW(), updated_at = NOW()
+     WHERE id = $1 AND tenant_id = $2`,
+    [id, tenantId],
   );
 
-  res.status(200).json({
-    timeSlot: { id, effectiveTo },
-  });
+  res.status(204).send();
 }

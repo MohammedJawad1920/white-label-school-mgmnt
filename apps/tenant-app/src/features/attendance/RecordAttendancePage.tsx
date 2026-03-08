@@ -14,8 +14,8 @@
  * Students NOT in the map inherit defaultStatus.
  *
  * Permissions (Freeze §Screen):
- *   Teacher → GET /timetable?teacherId=currentUser.id&date=today (own slots only)
- *   Admin   → GET /timetable?date=today (all slots)
+ *   Teacher → GET /timetable?teacherId=currentUser.id&dayOfWeek=today (own slots only)
+ *   Admin   → GET /timetable?dayOfWeek=today (all slots)
  *
  * Error codes:
  *   400 future date      → inline "Attendance cannot be recorded for a future date."
@@ -35,7 +35,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { timetableApi } from "@/api/timetable";
 import { studentsApi } from "@/api/students";
 import { attendanceApi } from "@/api/attendance";
-import { todayISO } from "@/utils/dates";
+import { todayISO, todayDayOfWeek } from "@/utils/dates";
 import { parseApiError } from "@/utils/errors";
 import { cn } from "@/utils/cn";
 import type { TimeSlot, Student } from "@/types/api";
@@ -199,10 +199,16 @@ export default function RecordAttendancePage() {
 
   // ── Slot list query ───────────────────────────────────────────────────────
   const slotsQ = useQuery({
-    queryKey: ["timetable", "myToday", todayISO(), user?.activeRole, user?.id],
+    queryKey: [
+      "timetable",
+      {
+        dayOfWeek: todayDayOfWeek(),
+        teacherId: isAdmin ? undefined : user?.id,
+      },
+    ],
     queryFn: () =>
       timetableApi.list({
-        date: todayISO(),
+        dayOfWeek: todayDayOfWeek(),
         teacherId: isAdmin ? undefined : user?.id,
       }),
     staleTime: 5 * 60 * 1000,

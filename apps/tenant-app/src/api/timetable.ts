@@ -3,16 +3,13 @@ import type {
   ListTimetableResponse,
   CreateTimeSlotRequest,
   CreateTimeSlotResponse,
-  EndTimeSlotRequest,
-  EndTimeSlotResponse,
+  UpdateTimeslotRequest,
 } from "@/types/api";
 
 export interface TimetableFilters {
-  date?: string;
   dayOfWeek?: string;
   teacherId?: string;
   classId?: string;
-  status?: "Active" | "All";
 }
 
 export const timetableApi = {
@@ -24,8 +21,10 @@ export const timetableApi = {
     apiClient
       .post<CreateTimeSlotResponse>("/timetable", data)
       .then((r) => r.data),
-  end: (timeSlotId: string, data: EndTimeSlotRequest) =>
+  update: (timeSlotId: string, data: UpdateTimeslotRequest) =>
     apiClient
-      .put<EndTimeSlotResponse>(`/timetable/${timeSlotId}/end`, data)
+      .put<CreateTimeSlotResponse>(`/timetable/${timeSlotId}`, data)
       .then((r) => r.data),
+  deleteSlot: (timeSlotId: string) =>
+    apiClient.delete(`/timetable/${timeSlotId}`).then(() => undefined),
 };

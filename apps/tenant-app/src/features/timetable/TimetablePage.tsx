@@ -2,13 +2,13 @@
  * TimetablePage — Freeze §Screen: Timetable
  *
  * Queries:
- *   ['timetable', filters]  — GET /timetable?status=Active&...filters
+ *   ['timetable', filters]  — GET /timetable?...filters
  *   ['school-periods']      — GET /school-periods (for grid row headers)
  *   Both: stale 5 min
  *
  * Role rules (Freeze §Screen: Timetable permissions):
- *   Teacher: read-only — no Create button, no "End Assignment" button
- *   Admin:   Create button (opens CreateSlotDrawer) + "End Assignment" per slot
+ *   Teacher: read-only — no Create button, no slot actions
+ *   Admin:   Create button (opens CreateSlotDrawer) + Edit/Delete per slot
  *
  * Grid layout:
  *   Rows    = school periods (sorted by periodNumber)
@@ -28,7 +28,8 @@ import { classesApi } from "@/api/classes";
 import { usersApi } from "@/api/users";
 import { parseApiError } from "@/utils/errors";
 import { CreateSlotDrawer } from "./CreateSlotDrawer";
-import { EndSlotDialog } from "./EndSlotDialog";
+import { DeleteSlotDialog } from "./EndSlotDialog";
+import { EditSlotDrawer } from "./EditSlotDrawer";
 import type { TimeSlot } from "@/types/api";
 
 const DAYS = [
@@ -94,23 +95,33 @@ function FeatureDisabledState() {
 interface SlotCellProps {
   slot: TimeSlot;
   isAdmin: boolean;
-  onEnd: (slot: TimeSlot) => void;
+  onEdit: (slot: TimeSlot) => void;
+  onDelete: (slot: TimeSlot) => void;
 }
 
-function SlotCell({ slot, isAdmin, onEnd }: SlotCellProps) {
+function SlotCell({ slot, isAdmin, onEdit, onDelete }: SlotCellProps) {
   return (
     <div className="rounded border bg-primary/5 p-2 text-xs space-y-1 h-full">
       <p className="font-medium truncate">{slot.className}</p>
       <p className="text-muted-foreground truncate">{slot.subjectName}</p>
       <p className="text-muted-foreground truncate">{slot.teacherName}</p>
       {isAdmin && (
-        <button
-          onClick={() => onEnd(slot)}
-          aria-label={`End assignment: ${slot.className} ${slot.subjectName} Period ${slot.periodNumber}`}
-          className="mt-1 w-full rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive hover:bg-destructive/20 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive"
-        >
-          End
-        </button>
+        <div className="flex gap-1 mt-1">
+          <button
+            onClick={() => onEdit(slot)}
+            aria-label={`Edit slot: ${slot.className} ${slot.subjectName} Period ${slot.periodNumber}`}
+            className="flex-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => onDelete(slot)}
+            aria-label={`Delete slot: ${slot.className} ${slot.subjectName} Period ${slot.periodNumber}`}
+            className="flex-1 rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive hover:bg-destructive/20 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive"
+          >
+            Delete
+          </button>
+        </div>
       )}
     </div>
   );
@@ -131,11 +142,11 @@ export default function TimetablePage() {
     dayOfWeek: Day;
     periodNumber: number;
   } | null>(null);
-  const [endSlot, setEndSlot] = useState<TimeSlot | null>(null);
+  const [editSlot, setEditSlot] = useState<TimeSlot | null>(null);
+  const [deleteSlot, setDeleteSlot] = useState<TimeSlot | null>(null);
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const filters = {
-    status: "Active" as const,
     dayOfWeek: filterDay || undefined,
     classId: filterClassId || undefined,
     teacherId: filterTeacher || undefined,
@@ -430,7 +441,8 @@ export default function TimetablePage() {
                             key={slot.id}
                             slot={slot}
                             isAdmin={isAdmin}
-                            onEnd={setEndSlot}
+                            onEdit={setEditSlot}
+                            onDelete={setDeleteSlot}
                           />
                         ))}
                       </div>
@@ -455,13 +467,22 @@ export default function TimetablePage() {
                           {slot.className} · {slot.subjectName}
                         </span>
                         {isAdmin && (
-                          <button
-                            onClick={() => setEndSlot(slot)}
-                            className="ml-2 text-xs text-destructive underline"
-                            aria-label={`End: ${slot.className} P${slot.periodNumber}`}
-                          >
-                            End
-                          </button>
+                          <div className="flex gap-1 ml-2">
+                            <button
+                              onClick={() => setEditSlot(slot)}
+                              className="text-xs text-primary underline"
+                              aria-label={`Edit: ${slot.className} P${slot.periodNumber}`}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => setDeleteSlot(slot)}
+                              className="text-xs text-destructive underline"
+                              aria-label={`Delete: ${slot.className} P${slot.periodNumber}`}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         )}
                       </div>
                     ))}
@@ -487,9 +508,17 @@ export default function TimetablePage() {
         />
       )}
 
-      {/* End slot dialog — Admin only */}
+      {/* Edit slot drawer — Admin only */}
       {isAdmin && (
-        <EndSlotDialog slot={endSlot} onClose={() => setEndSlot(null)} />
+        <EditSlotDrawer slot={editSlot} onClose={() => setEditSlot(null)} />
+      )}
+
+      {/* Delete slot dialog — Admin only */}
+      {isAdmin && (
+        <DeleteSlotDialog
+          slot={deleteSlot}
+          onClose={() => setDeleteSlot(null)}
+        />
       )}
     </div>
   );

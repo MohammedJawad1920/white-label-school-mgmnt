@@ -1,5 +1,5 @@
 // =====================================================
-// FREEZE v4.0 — Canonical Type Definitions (§3.2)
+// FREEZE v4.3 — Canonical Type Definitions (§3.2)
 // All application code must import from here.
 // =====================================================
 
@@ -103,8 +103,7 @@ export interface TimeslotRow {
   teacher_id: string;
   day_of_week: DayOfWeek;
   period_number: number;
-  effective_from: string; // DATE as ISO string
-  effective_to: string | null;
+  // effective_from and effective_to removed (v4.3 CR-31)
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -242,10 +241,9 @@ export interface ApiTimeslot {
   dayOfWeek: DayOfWeek;
   periodNumber: number;
   startTime: string; // from JOIN with school_periods
-  endTime: string; // from JOIN with school_periods
+  endTime: string | null; // from JOIN with school_periods; nullable (v4.3 CR-31)
   label: string; // from JOIN with school_periods
-  effectiveFrom: string;
-  effectiveTo: string | null;
+  // effectiveFrom and effectiveTo removed (v4.3 CR-31)
 }
 
 export interface ApiAttendanceRecord {

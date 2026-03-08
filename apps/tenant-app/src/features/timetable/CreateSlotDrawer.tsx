@@ -26,7 +26,6 @@ import { usersApi } from "@/api/users";
 import { classesApi } from "@/api/classes";
 import { subjectsApi } from "@/api/subjects";
 import { parseApiError } from "@/utils/errors";
-import { todayISO } from "@/utils/dates";
 import { cn } from "@/utils/cn";
 
 const DAYS = [
@@ -46,12 +45,6 @@ const schema = z.object({
   teacherId: z.string().min(1, "Teacher is required"),
   dayOfWeek: z.enum(DAYS, { errorMap: () => ({ message: "Day is required" }) }),
   periodNumber: z.coerce.number().int().min(1, "Period must be ≥ 1"),
-  effectiveFrom: z
-    .string()
-    .min(1, "Start date is required")
-    .refine((v) => v >= todayISO(), {
-      message: "Start date cannot be in the past",
-    }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -93,7 +86,6 @@ export function CreateSlotDrawer({
   useEffect(() => {
     if (open) {
       reset({
-        effectiveFrom: todayISO(),
         // Pre-fill from active filters; activeCell overrides dayOfWeek
         classId: filterDefaults?.classId ?? "",
         subjectId: "",
@@ -145,7 +137,7 @@ export function CreateSlotDrawer({
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { effectiveFrom: todayISO() },
+    defaultValues: {},
   });
 
   const mutation = useMutation({
@@ -544,36 +536,6 @@ export function CreateSlotDrawer({
                     </p>
                   )}
                 </>
-              )}
-            </div>
-
-            {/* Effective from */}
-            <div>
-              <label
-                htmlFor="effectiveFrom"
-                className="block text-sm font-medium mb-1.5"
-              >
-                Effective From
-              </label>
-              <input
-                id="effectiveFrom"
-                type="date"
-                min={todayISO()}
-                aria-describedby={
-                  errors.effectiveFrom ? "effectiveFrom-error" : undefined
-                }
-                aria-invalid={errors.effectiveFrom ? true : undefined}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
-                {...register("effectiveFrom")}
-              />
-              {errors.effectiveFrom && (
-                <p
-                  id="effectiveFrom-error"
-                  role="alert"
-                  className="mt-1 text-xs text-destructive"
-                >
-                  {errors.effectiveFrom.message}
-                </p>
               )}
             </div>
           </div>

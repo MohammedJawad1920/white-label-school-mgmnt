@@ -1,16 +1,18 @@
 /**
- * Integration tests: Timetable endpoints (v3.3)
+ * Integration tests: Timetable endpoints (v4.3 — CR-31)
  *
  * Covers:
- *   GET  /api/timetable        — list timeslots (feature-guarded)
- *   POST /api/timetable        — create timeslot; rejects startTime/endTime (v3.3)
- *   PUT  /api/timetable/:id/end — set effectiveTo (versioning pattern)
+ *   GET    /api/timetable        — list non-deleted timeslots (dayOfWeek/teacherId/classId filters)
+ *   POST   /api/timetable        — create timeslot (effectiveFrom removed)
+ *   PUT    /api/timetable/:id    — update teacherId and/or subjectId (CR-31 NEW)
+ *   DELETE /api/timetable/:id    — soft-delete timeslot (CR-31 NEW)
  *
- * FREEZE INVARIANTS:
+ * FREEZE INVARIANTS (v4.3):
  *   - Feature guard: requires timetable feature enabled
- *   - POST: no startTime/endTime in body (VALIDATION_ERROR)
  *   - PERIOD_NOT_CONFIGURED when periodNumber not in school_periods
- *   - Timeslots versioned; effectiveTo terminates current assignment
+ *   - POST: no effectiveFrom in body; slot identified by class+day+period
+ *   - PUT: at least one of teacherId/subjectId required
+ *   - DELETE: 204; subsequent GET excludes the slot
  */
 import dotenv from "dotenv";
 import path from "path";
@@ -136,8 +138,7 @@ describe("POST /api/timetable", () => {
         subjectId,
         teacherId,
         dayOfWeek: "Monday",
-        periodNumber: tenant.periodNumber, // seeded period in createTestTenant
-        effectiveFrom: "2024-06-01",
+        periodNumber: tenant.periodNumber,
       });
     expect(res.status).toBe(201);
     const slot = res.body.timeSlot;
@@ -146,25 +147,9 @@ describe("POST /api/timetable", () => {
     expect(slot).toHaveProperty("label");
     expect(slot.periodNumber).toBe(tenant.periodNumber);
     expect(slot.dayOfWeek).toBe("Monday");
-    expect(slot.effectiveTo).toBeNull();
-  });
-
-  it("returns 400 VALIDATION_ERROR when startTime or endTime sent in body (v3.3)", async () => {
-    if (SKIP) return;
-    const res = await makeAgent()
-      .post("/api/timetable")
-      .set("Authorization", `Bearer ${token}`)
-      .send({
-        classId,
-        subjectId,
-        teacherId,
-        dayOfWeek: "Tuesday",
-        periodNumber: tenant.periodNumber,
-        effectiveFrom: "2024-06-01",
-        startTime: "08:00", // forbidden in v3.3
-      });
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    // v4.3: no effectiveFrom/effectiveTo in response
+    expect(slot.effectiveFrom).toBeUndefined();
+    expect(slot.effectiveTo).toBeUndefined();
   });
 
   it("returns 400 PERIOD_NOT_CONFIGURED for non-existent periodNumber", async () => {
@@ -177,8 +162,7 @@ describe("POST /api/timetable", () => {
         subjectId,
         teacherId,
         dayOfWeek: "Wednesday",
-        periodNumber: 999, // does not exist
-        effectiveFrom: "2024-06-01",
+        periodNumber: 999,
       });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("PERIOD_NOT_CONFIGURED");
@@ -194,7 +178,104 @@ describe("POST /api/timetable", () => {
   });
 });
 
-describe("PUT /api/timetable/:id/end (versioning)", () => {
+describe("PUT /api/timetable/:id (edit slot — CR-31)", () => {
+  let tenant: TestTenant;
+  let token: string;
+  let timeslotId: string;
+  let altSubjectId: string;
+  let altTeacherId: string;
+  let classId: string;
+
+  beforeAll(async () => {
+    if (SKIP) return;
+    tenant = await createTestTenant();
+    token = await loginAsAdmin(tenant);
+    const {
+      subjectId,
+      teacherId,
+      classId: cId,
+    } = await scaffoldTimetableData(token);
+    classId = cId;
+
+    // Create a second subject and teacher for reassignment tests
+    const suffix = Date.now() + 1;
+    const [subRes, teachRes] = await Promise.all([
+      makeAgent()
+        .post("/api/subjects")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: `AltSubject-${suffix}` }),
+      makeAgent()
+        .post("/api/users")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          name: `AltTeacher-${suffix}`,
+          email: `alt-teacher-${suffix}@test.local`,
+          password: "AltTeacher@1",
+          roles: ["Teacher"],
+        }),
+    ]);
+    altSubjectId = subRes.body.subject.id as string;
+    altTeacherId = teachRes.body.user.id as string;
+
+    const res = await makeAgent()
+      .post("/api/timetable")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        classId,
+        subjectId,
+        teacherId,
+        dayOfWeek: "Thursday",
+        periodNumber: tenant.periodNumber,
+      });
+    timeslotId = res.body.timeSlot.id as string;
+  });
+
+  afterAll(async () => {
+    if (SKIP) return;
+    await cleanupTenant(tenant.tenantId);
+  });
+
+  it("updates subjectId — 200 with updated slot", async () => {
+    if (SKIP) return;
+    const res = await makeAgent()
+      .put(`/api/timetable/${timeslotId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ subjectId: altSubjectId });
+    expect(res.status).toBe(200);
+    expect(res.body.timeSlot.subjectId).toBe(altSubjectId);
+    expect(res.body.timeSlot.effectiveFrom).toBeUndefined();
+  });
+
+  it("updates teacherId — 200 with updated slot", async () => {
+    if (SKIP) return;
+    const res = await makeAgent()
+      .put(`/api/timetable/${timeslotId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ teacherId: altTeacherId });
+    expect(res.status).toBe(200);
+    expect(res.body.timeSlot.teacherId).toBe(altTeacherId);
+  });
+
+  it("returns 400 when neither teacherId nor subjectId provided", async () => {
+    if (SKIP) return;
+    const res = await makeAgent()
+      .put(`/api/timetable/${timeslotId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for unknown timeslotId", async () => {
+    if (SKIP) return;
+    const res = await makeAgent()
+      .put("/api/timetable/TS-no-such-id")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ subjectId: altSubjectId });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("DELETE /api/timetable/:id (soft-delete — CR-31)", () => {
   let tenant: TestTenant;
   let token: string;
   let timeslotId: string;
@@ -213,9 +294,8 @@ describe("PUT /api/timetable/:id/end (versioning)", () => {
         classId,
         subjectId,
         teacherId,
-        dayOfWeek: "Thursday",
+        dayOfWeek: "Friday",
         periodNumber: tenant.periodNumber,
-        effectiveFrom: "2024-01-01",
       });
     timeslotId = res.body.timeSlot.id as string;
   });
@@ -225,23 +305,38 @@ describe("PUT /api/timetable/:id/end (versioning)", () => {
     await cleanupTenant(tenant.tenantId);
   });
 
-  it("sets effectiveTo — 200 with updated timeslot", async () => {
+  it("soft-deletes timeslot — 204 no body", async () => {
     if (SKIP) return;
-    const endDate = "2024-12-31";
     const res = await makeAgent()
-      .put(`/api/timetable/${timeslotId}/end`)
-      .set("Authorization", `Bearer ${token}`)
-      .send({ effectiveTo: endDate });
-    expect(res.status).toBe(200);
-    expect(res.body.timeSlot.effectiveTo).toBe(endDate);
+      .delete(`/api/timetable/${timeslotId}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(204);
+    expect(res.body).toEqual({});
   });
 
-  it("returns 404 for unknown timeslot", async () => {
+  it("excludes deleted slot from GET /timetable", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .put("/api/timetable/TS-no-such-id/end")
-      .set("Authorization", `Bearer ${token}`)
-      .send({ effectiveTo: "2024-12-31" });
+      .get("/api/timetable")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    const ids = (res.body.timetable as Array<{ id: string }>).map((s) => s.id);
+    expect(ids).not.toContain(timeslotId);
+  });
+
+  it("returns 404 when deleting already-deleted timeslot", async () => {
+    if (SKIP) return;
+    const res = await makeAgent()
+      .delete(`/api/timetable/${timeslotId}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for unknown timeslotId", async () => {
+    if (SKIP) return;
+    const res = await makeAgent()
+      .delete("/api/timetable/TS-no-such-id")
+      .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
 });

@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: White-Label School Management System
-  version: "4.2.0"
+  version: "4.3.0"
   description: >
     Multi-tenant school management API. Supports SuperAdmin (platform-level)
     and tenant-scoped Admin/Teacher/Student roles.
@@ -251,22 +251,12 @@ components:
           pattern: '^\d{2}:\d{2}$'
           example: "08:45"
 
-    # v3.3 CHANGES:
-    #   - periodNumber: maximum:10 REMOVED (now unlimited, lower-bound only)
-    #   - startTime/endTime: nullable:true REMOVED — always present in response (derived from school_periods)
-    #   - label: NEW field derived from school_periods
+    # v4.3 CHANGES (CR-31):
+    #   - effectiveFrom/effectiveTo REMOVED entirely
+    #   - endTime is now nullable (some schools don't configure an end time)
     TimeSlot:
       type: object
-      required:
-        [
-          id,
-          classId,
-          subjectId,
-          teacherId,
-          dayOfWeek,
-          periodNumber,
-          effectiveFrom,
-        ]
+      required: [id, classId, subjectId, teacherId, dayOfWeek, periodNumber]
       properties:
         id:
           type: string
@@ -288,7 +278,6 @@ components:
         periodNumber:
           type: integer
           minimum: 1
-          # maximum: 10 REMOVED in v3.3 — period count is now per-tenant and unlimited
         label:
           type: string
           description: Period label derived from school_periods at query time
@@ -301,15 +290,9 @@ components:
         endTime:
           type: string
           pattern: '^\d{2}:\d{2}$'
+          nullable: true
           description: Derived from school_periods at query time (not stored in timeslots)
           example: "10:25"
-        effectiveFrom:
-          type: string
-          format: date
-        effectiveTo:
-          type: string
-          format: date
-          nullable: true
 
     AttendanceRecord:
       type: object
@@ -2296,11 +2279,6 @@ paths:
       operationId: getTimetable
       tags: [Timetable]
       parameters:
-        - name: date
-          in: query
-          schema:
-            type: string
-            format: date
         - name: dayOfWeek
           in: query
           schema:
@@ -2315,12 +2293,6 @@ paths:
           in: query
           schema:
             type: string
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [Active, All]
-            default: Active
       responses:
         "200":
           description: Timetable entries (startTime/endTime/label derived from school_periods)
@@ -2350,8 +2322,6 @@ paths:
                         label: "Period 3"
                         startTime: "09:40"
                         endTime: "10:25"
-                        effectiveFrom: "2026-01-01"
-                        effectiveTo: null
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2367,9 +2337,7 @@ paths:
                   timestamp: "2026-02-26T07:00:00Z"
 
     post:
-      # v3.3 BREAKING: startTime and endTime REMOVED from request body
-      # Times are owned by school_periods; derived at read time via JOIN
-      summary: "Create timetable entry (v3.3: startTime/endTime removed from request)"
+      summary: "Create timetable entry (v4.3: effectiveFrom removed)"
       operationId: createTimeSlot
       tags: [Timetable]
       requestBody:
@@ -2378,15 +2346,7 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                [
-                  classId,
-                  subjectId,
-                  teacherId,
-                  dayOfWeek,
-                  periodNumber,
-                  effectiveFrom,
-                ]
+              required: [classId, subjectId, teacherId, dayOfWeek, periodNumber]
               properties:
                 classId:
                   type: string
@@ -2409,12 +2369,6 @@ paths:
                 periodNumber:
                   type: integer
                   minimum: 1
-                  # maximum: 10 REMOVED in v3.3
-                  # startTime REMOVED in v3.3
-                  # endTime REMOVED in v3.3
-                effectiveFrom:
-                  type: string
-                  format: date
             examples:
               success:
                 summary: Create a Monday Period 3 slot
@@ -2424,7 +2378,6 @@ paths:
                   teacherId: U123
                   dayOfWeek: Monday
                   periodNumber: 3
-                  effectiveFrom: "2026-03-01"
               error_period_not_configured:
                 summary: Unknown period number
                 value:
@@ -2433,7 +2386,6 @@ paths:
                   teacherId: U123
                   dayOfWeek: Monday
                   periodNumber: 99
-                  effectiveFrom: "2026-03-01"
       responses:
         "201":
           description: TimeSlot created (startTime/endTime/label populated from school_periods)
@@ -2461,8 +2413,6 @@ paths:
                       label: "Period 3"
                       startTime: "09:40"
                       endTime: "10:25"
-                      effectiveFrom: "2026-03-01"
-                      effectiveTo: null
         "400":
           description: Validation failure or period not configured
           content:
@@ -2500,10 +2450,10 @@ paths:
                   message: "This period slot is already occupied for the given class and day"
                   timestamp: "2026-02-26T07:00:00Z"
 
-  /timetable/{timeSlotId}/end:
+  /timetable/{timeSlotId}:
     put:
-      summary: End a timetable assignment
-      operationId: endTimeSlot
+      summary: Update teacherId and/or subjectId on an existing timeslot (CR-31 NEW)
+      operationId: updateTimeSlot
       tags: [Timetable]
       parameters:
         - name: timeSlotId
@@ -2517,14 +2467,25 @@ paths:
           application/json:
             schema:
               type: object
-              required: [effectiveTo]
+              minProperties: 1
               properties:
-                effectiveTo:
+                teacherId:
                   type: string
-                  format: date
+                subjectId:
+                  type: string
+            examples:
+              update_teacher:
+                summary: Reassign teacher
+                value:
+                  teacherId: U456
+              update_both:
+                summary: Reassign teacher and subject
+                value:
+                  teacherId: U456
+                  subjectId: SUB002
       responses:
         "200":
-          description: TimeSlot ended
+          description: Timeslot updated
           content:
             application/json:
               schema:
@@ -2532,13 +2493,33 @@ paths:
                 required: [timeSlot]
                 properties:
                   timeSlot:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                      effectiveTo:
-                        type: string
-                        format: date
+                    $ref: "#/components/schemas/TimeSlot"
+        "400":
+          description: No fields provided or invalid teacher
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      summary: Soft-delete a timeslot (CR-31 NEW)
+      operationId: deleteTimeSlot
+      tags: [Timetable]
+      parameters:
+        - name: timeSlotId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Timeslot deleted
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
