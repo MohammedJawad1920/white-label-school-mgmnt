@@ -3,7 +3,6 @@ import type {
   ListTimetableResponse,
   CreateTimeSlotRequest,
   CreateTimeSlotResponse,
-  UpdateTimeslotRequest,
 } from "@/types/api";
 
 export interface TimetableFilters {
@@ -20,10 +19,6 @@ export const timetableApi = {
   create: (data: CreateTimeSlotRequest) =>
     apiClient
       .post<CreateTimeSlotResponse>("/timetable", data)
-      .then((r) => r.data),
-  update: (timeSlotId: string, data: UpdateTimeslotRequest) =>
-    apiClient
-      .put<CreateTimeSlotResponse>(`/timetable/${timeSlotId}`, data)
       .then((r) => r.data),
   deleteSlot: (timeSlotId: string) =>
     apiClient.delete(`/timetable/${timeSlotId}`).then(() => undefined),

@@ -2,9 +2,9 @@
 
 SOURCE OF TRUTH (must follow exactly):
 
-- Backend Freeze: docs/freeze/white_label_backend_architecture_freeze.md (v4.3) [IMMUTABLE]
-- Frontend Freeze: docs/freeze/white_label_frontend_architecture_freeze.md (v1.7) [IMMUTABLE]
-- OpenAPI: docs/openapi.yaml (v4.3.0) [CANONICAL CONTRACT]
+- Backend Freeze: docs/freeze/white_label_backend_architecture_freeze.md (v4.4) [IMMUTABLE]
+- Frontend Freeze: docs/freeze/white_label_frontend_architecture_freeze.md (v1.8) [IMMUTABLE]
+- OpenAPI: docs/openapi.yaml (v4.4.0) [CANONICAL CONTRACT]
 
 NON-NEGOTIABLE RULE:
 

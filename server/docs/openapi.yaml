@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: White-Label School Management System
-  version: "4.3.0"
+  version: "4.4.0"
   description: >
     Multi-tenant school management API. Supports SuperAdmin (platform-level)
     and tenant-scoped Admin/Teacher/Student roles.
@@ -2451,62 +2451,6 @@ paths:
                   timestamp: "2026-02-26T07:00:00Z"
 
   /timetable/{timeSlotId}:
-    put:
-      summary: Update teacherId and/or subjectId on an existing timeslot (CR-31 NEW)
-      operationId: updateTimeSlot
-      tags: [Timetable]
-      parameters:
-        - name: timeSlotId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                teacherId:
-                  type: string
-                subjectId:
-                  type: string
-            examples:
-              update_teacher:
-                summary: Reassign teacher
-                value:
-                  teacherId: U456
-              update_both:
-                summary: Reassign teacher and subject
-                value:
-                  teacherId: U456
-                  subjectId: SUB002
-      responses:
-        "200":
-          description: Timeslot updated
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [timeSlot]
-                properties:
-                  timeSlot:
-                    $ref: "#/components/schemas/TimeSlot"
-        "400":
-          description: No fields provided or invalid teacher
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
     delete:
       summary: Soft-delete a timeslot (CR-31 NEW)
       operationId: deleteTimeSlot

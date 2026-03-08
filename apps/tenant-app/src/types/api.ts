@@ -285,11 +285,6 @@ export interface CreateTimeSlotRequest {
 export interface CreateTimeSlotResponse {
   timeSlot: TimeSlot;
 }
-export interface UpdateTimeslotRequest {
-  teacherId?: string;
-  subjectId?: string;
-}
-
 // ─── ATTENDANCE ──────────────────────────────────────────────────────────────
 export interface AttendanceRecord {
   id: string;

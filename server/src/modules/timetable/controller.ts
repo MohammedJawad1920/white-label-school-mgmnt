@@ -1,19 +1,20 @@
 /**
- * Timetable Controller — v4.3
+ * Timetable Controller — v4.4
  *
  * GET    /api/timetable     — list non-deleted timeslots (JOIN school_periods)
  * POST   /api/timetable     — create timeslot
- * PUT    /api/timetable/:id — update teacherId and/or subjectId (CR-31 NEW)
- * DELETE /api/timetable/:id — soft-delete timeslot (CR-31 NEW)
+ * DELETE /api/timetable/:id — soft-delete timeslot (CR-31)
  *
  * v4.3 KEY CHANGES (CR-31):
  * - effectiveFrom/effectiveTo removed from all schemas and flows
  * - PUT /:id/end REMOVED entirely
- * - PUT /:id NEW — direct field update (teacherId? + subjectId?, at least one)
- * - DELETE /:id NEW — soft-delete (deletedat = NOW())
+ * - DELETE /:id — soft-delete (deletedat = NOW())
  * - GET: date and status query params removed; returns all non-deleted slots
  * - POST: effectiveFrom no longer required or accepted
  * - Teacher auth for attendance: deletedat IS NULL only (no effectiveto check)
+ *
+ * v4.4 KEY CHANGE (CR-32):
+ * - PUT /:id REMOVED entirely; correction workflow is DELETE + POST
  *
  * GET JOIN QUERY:
  * Every read JOINs school_periods on (tenant_id, period_number) to populate
@@ -266,89 +267,7 @@ export async function createTimeslot(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// PUT /api/timetable/:id   (CR-31 NEW)
-// Update teacherId and/or subjectId on an existing slot.
-// At least one field must be provided.
-// ═══════════════════════════════════════════════════════════════════
-
-export async function updateTimeslot(
-  req: Request,
-  res: Response,
-): Promise<void> {
-  const tenantId = req.tenantId!;
-  const { id } = req.params as { id: string };
-  const { teacherId, subjectId } = req.body as {
-    teacherId?: string;
-    subjectId?: string;
-  };
-
-  if (!teacherId && !subjectId) {
-    send400(res, "At least one of teacherId or subjectId must be provided");
-    return;
-  }
-
-  // Verify slot exists
-  const existing = await pool.query<TimeslotRow>(
-    `SELECT * FROM timeslots WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
-    [id, tenantId],
-  );
-  if ((existing.rowCount ?? 0) === 0) {
-    send404(res, "Timeslot not found");
-    return;
-  }
-
-  if (teacherId) {
-    const teacherCheck = await pool.query<{ id: string; roles: string[] }>(
-      "SELECT id, roles FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
-      [teacherId, tenantId],
-    );
-    if ((teacherCheck.rowCount ?? 0) === 0) {
-      send404(res, "Teacher not found");
-      return;
-    }
-    if (!teacherCheck.rows[0]!.roles.includes("Teacher")) {
-      res.status(400).json({
-        error: {
-          code: "INVALID_TEACHER",
-          message: "The specified user does not have the Teacher role",
-          details: { teacherId },
-          timestamp: new Date().toISOString(),
-        },
-      });
-      return;
-    }
-  }
-
-  if (subjectId) {
-    const subjectCheck = await pool.query<{ id: string }>(
-      "SELECT id FROM subjects WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
-      [subjectId, tenantId],
-    );
-    if ((subjectCheck.rowCount ?? 0) === 0) {
-      send404(res, "Subject not found");
-      return;
-    }
-  }
-
-  await pool.query(
-    `UPDATE timeslots
-        SET teacher_id  = COALESCE($1, teacher_id),
-            subject_id  = COALESCE($2, subject_id),
-            updated_at  = NOW()
-      WHERE id = $3 AND tenant_id = $4`,
-    [teacherId ?? null, subjectId ?? null, id, tenantId],
-  );
-
-  const result = await pool.query<TimeslotJoinRow>(
-    `${TIMETABLE_JOIN} WHERE t.id = $1`,
-    [id],
-  );
-
-  res.status(200).json({ timeSlot: fmt(result.rows[0]!) });
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// DELETE /api/timetable/:id   (CR-31 NEW)
+// DELETE /api/timetable/:id   (CR-31)
 // Soft-delete a timeslot (sets deleted_at = NOW()).
 // ═══════════════════════════════════════════════════════════════════
 

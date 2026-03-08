@@ -29,7 +29,6 @@ import { usersApi } from "@/api/users";
 import { parseApiError } from "@/utils/errors";
 import { CreateSlotDrawer } from "./CreateSlotDrawer";
 import { DeleteSlotDialog } from "./EndSlotDialog";
-import { EditSlotDrawer } from "./EditSlotDrawer";
 import type { TimeSlot } from "@/types/api";
 
 const DAYS = [
@@ -95,29 +94,21 @@ function FeatureDisabledState() {
 interface SlotCellProps {
   slot: TimeSlot;
   isAdmin: boolean;
-  onEdit: (slot: TimeSlot) => void;
   onDelete: (slot: TimeSlot) => void;
 }
 
-function SlotCell({ slot, isAdmin, onEdit, onDelete }: SlotCellProps) {
+function SlotCell({ slot, isAdmin, onDelete }: SlotCellProps) {
   return (
     <div className="rounded border bg-primary/5 p-2 text-xs space-y-1 h-full">
       <p className="font-medium truncate">{slot.className}</p>
       <p className="text-muted-foreground truncate">{slot.subjectName}</p>
       <p className="text-muted-foreground truncate">{slot.teacherName}</p>
       {isAdmin && (
-        <div className="flex gap-1 mt-1">
-          <button
-            onClick={() => onEdit(slot)}
-            aria-label={`Edit slot: ${slot.className} ${slot.subjectName} Period ${slot.periodNumber}`}
-            className="flex-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-          >
-            Edit
-          </button>
+        <div className="flex flex-col gap-1 mt-1">
           <button
             onClick={() => onDelete(slot)}
             aria-label={`Delete slot: ${slot.className} ${slot.subjectName} Period ${slot.periodNumber}`}
-            className="flex-1 rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive hover:bg-destructive/20 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive"
+            className="rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive hover:bg-destructive/20 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive"
           >
             Delete
           </button>
@@ -142,7 +133,6 @@ export default function TimetablePage() {
     dayOfWeek: Day;
     periodNumber: number;
   } | null>(null);
-  const [editSlot, setEditSlot] = useState<TimeSlot | null>(null);
   const [deleteSlot, setDeleteSlot] = useState<TimeSlot | null>(null);
 
   // ── Queries ────────────────────────────────────────────────────────────────
@@ -441,7 +431,6 @@ export default function TimetablePage() {
                             key={slot.id}
                             slot={slot}
                             isAdmin={isAdmin}
-                            onEdit={setEditSlot}
                             onDelete={setDeleteSlot}
                           />
                         ))}
@@ -468,13 +457,6 @@ export default function TimetablePage() {
                         </span>
                         {isAdmin && (
                           <div className="flex gap-1 ml-2">
-                            <button
-                              onClick={() => setEditSlot(slot)}
-                              className="text-xs text-primary underline"
-                              aria-label={`Edit: ${slot.className} P${slot.periodNumber}`}
-                            >
-                              Edit
-                            </button>
                             <button
                               onClick={() => setDeleteSlot(slot)}
                               className="text-xs text-destructive underline"
@@ -506,11 +488,6 @@ export default function TimetablePage() {
             teacherId: filterTeacher || undefined,
           }}
         />
-      )}
-
-      {/* Edit slot drawer — Admin only */}
-      {isAdmin && (
-        <EditSlotDrawer slot={editSlot} onClose={() => setEditSlot(null)} />
       )}
 
       {/* Delete slot dialog — Admin only */}

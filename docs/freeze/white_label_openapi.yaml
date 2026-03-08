@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: White-Label School Management System API
-  version: 4.3.0
+  version: 4.4.0
   description: Backend API for white-label school management system with timetable scheduling and attendance tracking
   contact:
     name: API Support
@@ -1546,7 +1546,7 @@ paths:
                 periodNumber:
                   type: integer
                   minimum: 1
-        responses:
+      responses:
         '201':
           description: Timeslot created
           content:
@@ -1560,46 +1560,7 @@ paths:
           $ref: '#/components/responses/Conflict'
 
   /timetable/{timeSlotId}:
-    put:
-      summary: Update timeslot teacher and/or subject
-      tags:
-        - Timetable
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: timeSlotId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                teacherId:
-                  type: string
-                subjectId:
-                  type: string
-              description: At least one of teacherId or subjectId must be provided
-      responses:
-        '200':
-          description: Timeslot updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  timeSlot:
-                    $ref: '#/components/schemas/TimeSlot'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+    # PUT removed by CR-32. Returns 404. Use DELETE + POST /timetable to correct a slot.
     delete:
       summary: Soft-delete timeslot
       tags:

@@ -1,18 +1,17 @@
 /**
- * Integration tests: Timetable endpoints (v4.3 — CR-31)
+ * Integration tests: Timetable endpoints (v4.4 — CR-32)
  *
  * Covers:
  *   GET    /api/timetable        — list non-deleted timeslots (dayOfWeek/teacherId/classId filters)
- *   POST   /api/timetable        — create timeslot (effectiveFrom removed)
- *   PUT    /api/timetable/:id    — update teacherId and/or subjectId (CR-31 NEW)
- *   DELETE /api/timetable/:id    — soft-delete timeslot (CR-31 NEW)
+ *   POST   /api/timetable        — create timeslot (effectiveFrom removed since CR-31)
+ *   DELETE /api/timetable/:id    — soft-delete timeslot (CR-31)
  *
- * FREEZE INVARIANTS (v4.3):
+ * FREEZE INVARIANTS (v4.4):
  *   - Feature guard: requires timetable feature enabled
  *   - PERIOD_NOT_CONFIGURED when periodNumber not in school_periods
  *   - POST: no effectiveFrom in body; slot identified by class+day+period
- *   - PUT: at least one of teacherId/subjectId required
  *   - DELETE: 204; subsequent GET excludes the slot
+ *   - PUT /api/timetable/:id does NOT exist (CR-32 removed it)
  */
 import dotenv from "dotenv";
 import path from "path";
@@ -175,103 +174,6 @@ describe("POST /api/timetable", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ classId });
     expect(res.status).toBe(400);
-  });
-});
-
-describe("PUT /api/timetable/:id (edit slot — CR-31)", () => {
-  let tenant: TestTenant;
-  let token: string;
-  let timeslotId: string;
-  let altSubjectId: string;
-  let altTeacherId: string;
-  let classId: string;
-
-  beforeAll(async () => {
-    if (SKIP) return;
-    tenant = await createTestTenant();
-    token = await loginAsAdmin(tenant);
-    const {
-      subjectId,
-      teacherId,
-      classId: cId,
-    } = await scaffoldTimetableData(token);
-    classId = cId;
-
-    // Create a second subject and teacher for reassignment tests
-    const suffix = Date.now() + 1;
-    const [subRes, teachRes] = await Promise.all([
-      makeAgent()
-        .post("/api/subjects")
-        .set("Authorization", `Bearer ${token}`)
-        .send({ name: `AltSubject-${suffix}` }),
-      makeAgent()
-        .post("/api/users")
-        .set("Authorization", `Bearer ${token}`)
-        .send({
-          name: `AltTeacher-${suffix}`,
-          email: `alt-teacher-${suffix}@test.local`,
-          password: "AltTeacher@1",
-          roles: ["Teacher"],
-        }),
-    ]);
-    altSubjectId = subRes.body.subject.id as string;
-    altTeacherId = teachRes.body.user.id as string;
-
-    const res = await makeAgent()
-      .post("/api/timetable")
-      .set("Authorization", `Bearer ${token}`)
-      .send({
-        classId,
-        subjectId,
-        teacherId,
-        dayOfWeek: "Thursday",
-        periodNumber: tenant.periodNumber,
-      });
-    timeslotId = res.body.timeSlot.id as string;
-  });
-
-  afterAll(async () => {
-    if (SKIP) return;
-    await cleanupTenant(tenant.tenantId);
-  });
-
-  it("updates subjectId — 200 with updated slot", async () => {
-    if (SKIP) return;
-    const res = await makeAgent()
-      .put(`/api/timetable/${timeslotId}`)
-      .set("Authorization", `Bearer ${token}`)
-      .send({ subjectId: altSubjectId });
-    expect(res.status).toBe(200);
-    expect(res.body.timeSlot.subjectId).toBe(altSubjectId);
-    expect(res.body.timeSlot.effectiveFrom).toBeUndefined();
-  });
-
-  it("updates teacherId — 200 with updated slot", async () => {
-    if (SKIP) return;
-    const res = await makeAgent()
-      .put(`/api/timetable/${timeslotId}`)
-      .set("Authorization", `Bearer ${token}`)
-      .send({ teacherId: altTeacherId });
-    expect(res.status).toBe(200);
-    expect(res.body.timeSlot.teacherId).toBe(altTeacherId);
-  });
-
-  it("returns 400 when neither teacherId nor subjectId provided", async () => {
-    if (SKIP) return;
-    const res = await makeAgent()
-      .put(`/api/timetable/${timeslotId}`)
-      .set("Authorization", `Bearer ${token}`)
-      .send({});
-    expect(res.status).toBe(400);
-  });
-
-  it("returns 404 for unknown timeslotId", async () => {
-    if (SKIP) return;
-    const res = await makeAgent()
-      .put("/api/timetable/TS-no-such-id")
-      .set("Authorization", `Bearer ${token}`)
-      .send({ subjectId: altSubjectId });
-    expect(res.status).toBe(404);
   });
 });
 

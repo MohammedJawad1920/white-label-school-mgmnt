@@ -4,7 +4,7 @@ description: "Hard rules for server/** to stay OpenAPI+Freeze compliant"
 applyTo: "server/**"
 ---
 
-Must match Backend Freeze v4.2 + OpenAPI v4.2.0 exactly.
+Must match Backend Freeze v4.4 + OpenAPI v4.4.0 exactly.
 
 - Multi-tenancy: every tenant-scoped query MUST filter by tenantId. [file:1]
 - Soft delete: deletes set deletedAt; reads filter deletedAt IS NULL (for specified tables). [file:1]

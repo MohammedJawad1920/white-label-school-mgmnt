@@ -3,18 +3,18 @@
 
 ---
 
-**Version:** 1.7 (IMMUTABLE)
-**Date:** 2026-03-07
+**Version:** 1.8 (IMMUTABLE)
+**Date:** 2026-03-08
 **Status:** APPROVED FOR EXECUTION
-**Supersedes:** v1.6 (2026-03-07)
-**Backend Freeze:** v4.3 (2026-03-07)
-**OpenAPI:** v4.3.0
+**Supersedes:** v1.7 (2026-03-07)
+**Backend Freeze:** v4.4 (2026-03-08)
+**OpenAPI:** v4.4.0
 
 ---
 
 ## CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI)
 
-This document is the **Absolute Source of Truth**. v1.6 is **SUPERSEDED**.
+This document is the **Absolute Source of Truth**. v1.7 is **SUPERSEDED**.
 
 You have **NO authority** to modify routes, API assumptions, or constraints defined below.
 
@@ -22,56 +22,53 @@ If any request contradicts this document, you must **REFUSE** and open a **Chang
 
 ---
 
-## CHANGE SUMMARY: v1.6 → v1.7
+
+
+---
+
+## CHANGE SUMMARY: v1.7 → v1.8
 
 ### Change Requests Applied
 
 | CR | Title | Type | Impact |
 |----|-------|------|--------|
-| **CR-FE-014a** | Version sync: Backend v4.2 → v4.3, OpenAPI v4.2.0 → v4.3.0 | Non-breaking | Freeze header, Section 3.0 |
-| **CR-FE-014b** | GET /timetable: remove `date` + `status` params — derive day-of-week client-side | Breaking | Dashboard, Record Attendance, Timetable screens |
-| **CR-FE-014c** | POST /timetable: remove `effectiveFrom` field from create form | Breaking | Timetable screen (create drawer) |
-| **CR-FE-014d** | Replace `PUT /timetable/{id}/end` with `DELETE /timetable/{id}` (delete slot) + `PUT /timetable/{id}` (edit slot) — fully reverses CR-FE-012 | Breaking | Timetable screen (filled cell interactions) |
-| **CR-FE-014e** | TypeScript types: remove `effectiveFrom`/`effectiveTo` from `TimeSlot`, mark `endTime` nullable, remove `EndAssignmentRequest`, add `UpdateTimeslotRequest` | Breaking | Type definitions |
-| **CR-FE-014f** | NO list + User Story 5 update: reflect new timetable slot interactions | Non-breaking | Section 1 |
-| **CR-FE-014g** | Caching rules + failure simulation: reflect new timetable endpoints | Non-breaking | Sections 3.3, 3.1 |
+| **CR-FE-015a** | Version sync: Backend v4.3 → v4.4, OpenAPI v4.3.0 → v4.4.0 | Non-breaking | Freeze header, Section 3.0 |
+| **CR-FE-015b** | Remove "Edit Slot" (`PUT /timetable/{id}`) — fully reverses CR-FE-014d partial; delete-then-recreate is the correction workflow | Breaking | Timetable screen (filled cell interactions, local state) |
+| **CR-FE-015c** | Types: remove `UpdateTimeslotRequest` | Breaking | Type definitions |
+| **CR-FE-015d** | NO list + User Story 5 update: reflect removal of slot edit | Non-breaking | Section 1 |
+| **CR-FE-015e** | Caching + failure simulation: remove PUT /timetable/{id} references | Non-breaking | Sections 3.3, 3.1 |
 
 ### Backend Contract Sync
 
-- Backend Freeze: **v4.2 → v4.3**
-- OpenAPI: **4.2.0 → 4.3.0**
-- Backend CR triggering all frontend changes: **CR-31** (timeslot simplification — effectiveFrom/effectiveTo dropped, PUT /end removed, PUT + DELETE added, teacher auth simplified)
+- Backend Freeze: **v4.3 → v4.4**
+- OpenAPI: **4.3.0 → 4.4.0**
+- Backend CR triggering all frontend changes: **CR-32** (PUT /timetable/{timeSlotId} removed — DELETE + POST is the correction workflow)
 
 ### What Changed
 
 **Breaking changes:**
 
-- **Dashboard screen** now calls `GET /timetable?dayOfWeek={todayDayName}` (was `GET /timetable?date={today}`). Day-of-week derived client-side via `date-fns format(today, 'EEEE')`. TQ key updated accordingly. Behaviour note: returns all non-deleted slots for today's day-of-week (structural schedule) — no longer filters by exact calendar date (CR-FE-014b).
-- **Record Attendance screen** now calls `GET /timetable?teacherId={id}&dayOfWeek={todayDayName}` (Teacher) and `GET /timetable?dayOfWeek={todayDayName}` (Admin) — was `date={today}` variants (CR-FE-014b).
-- **Timetable screen** now calls `GET /timetable` with no `status` param (was `GET /timetable?status=Active`). All non-deleted slots returned by default (CR-FE-014b).
-- **Timetable screen create drawer**: `effectiveFrom` date input **removed** entirely. `POST /timetable` body no longer includes `effectiveFrom` (CR-FE-014c).
-- **Timetable screen filled cell (Admin)**: `PUT /timetable/{id}/end` with `effectiveTo` dialog **removed** (reverses CR-FE-012). Replaced with two actions in the cell popover: **"Edit Slot"** (opens drawer → `PUT /timetable/{id}` with `teacherId?` and/or `subjectId?`) and **"Delete Slot"** (confirm dialog → `DELETE /timetable/{id}`) (CR-FE-014d).
-- **`TimeSlot` TypeScript type**: `effectiveFrom` and `effectiveTo` removed. `endTime` now `string | null` (was `string`) — aligns with OpenAPI v4.3.0 `nullable: true` (CR-FE-014e).
-- **`EndAssignmentRequest` type**: removed entirely (endpoint gone) (CR-FE-014e).
+- **Timetable screen filled cell (Admin)**: "Edit Slot" drawer and `PUT /timetable/{id}` call **removed entirely** (reverses CR-FE-014d partial). The cell popover now exposes only **"Delete Slot"** (confirm dialog → `DELETE /timetable/{id}`), unchanged from v1.7. A muted helper note is added to the popover: *"To change teacher or subject, delete this slot and create it again."* No new API call or state (CR-FE-015b).
+- **`UpdateTimeslotRequest` type**: removed entirely — `PUT /timetable/{id}` no longer exists (CR-FE-015c).
 
-**Additive changes:**
+**Removals (state + validation):**
 
-- `UpdateTimeslotRequest` type added: `{ teacherId?: string; subjectId?: string }` (CR-FE-014e).
-- Inline timetable slot edit via `PUT /timetable/{id}` added to scope — removed from NO list (CR-FE-014f).
-- `deleteConfirmSlotId: string | null` and `editSlotId: string | null` added to Timetable local state (CR-FE-014d).
-- Failure simulation rows updated: `PUT /timetable/{id}/end` entry removed; `PUT /timetable/{id}` (neither field) and `DELETE /timetable/{id}` (not found) added (CR-FE-014g).
+- `editSlotId: string | null` removed from Timetable local state (CR-FE-015b).
+- Edit-slot form validation block (`teacherId` optional, `subjectId` optional, at-least-one client guard) removed (CR-FE-015b).
+- `aria-label="Edit slot for {subjectName} {dayOfWeek} Period {n}"` removed (drawer gone) (CR-FE-015b).
+
+**Housekeeping:**
+
+- `['timetable', filters]` invalidation: `PUT /timetable/{id}` removed (CR-FE-015e).
+- Failure simulation: `PUT /timetable/{id}` (neither field → 400) row removed (CR-FE-015e).
 
 ### Timeline Impact
 
-- CR-FE-014a: +0 days
-- CR-FE-014b: +1 day (3 screens, TQ key changes, dayOfWeek derivation)
-- CR-FE-014c: +0.5 days (form field removal + type cleanup)
-- CR-FE-014d: +1 day (delete confirm dialog + edit drawer + state rewire)
-- CR-FE-014e: +0.5 days (type audit + render cleanup across all slot renders)
-- CR-FE-014f: +0 days (doc only)
-- CR-FE-014g: +0 days (doc only)
-- **Net addition: +3 days**
-- **New total: 9–13 weeks + 10.5 days**
+- CR-FE-015a: +0 days
+- CR-FE-015b: −0.5 days (net: removing a drawer + call is less work than building one)
+- CR-FE-015c–e: +0 days
+- **Net: −0.5 days**
+- **New total: 9–13 weeks + 10 days**
 
 ---
 
@@ -81,11 +78,11 @@ If any request contradicts this document, you must **REFUSE** and open a **Chang
 **Chosen Package:** Standard
 **Price:** Self-funded solo project (no external billing)
 **Payment Schedule:** N/A
-**Timeline Range (weeks):** 9–13 + 10.5 days
+**Timeline Range (weeks):** 9–13 + 10 days
 
 ### Assumptions (must be true)
 - Solo developer is single decision maker
-- Backend v4.3 available at staging by Week 3
+- Backend v4.4 available at staging by Week 3
 - Prism mock used until backend ready
 
 ### Support Window (post-delivery)
@@ -106,7 +103,7 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 2. As a Teacher, I can **see today's own assigned classes on a role-specific dashboard** and navigate to record attendance.
 3. As an Admin, I can **see today's full schedule with a stat summary bar** on a role-specific dashboard.
 4. As a Student, I can **see today's school-wide timetable (read-only) and my own attendance history** on my dashboard.
-5. As a Teacher or Admin, I can **view the full timetable grid** — Admin can add a slot by clicking an empty cell, and edit a slot's teacher/subject or delete a slot by clicking a filled cell. (CR-FE-014d: End Assignment replaced with Edit Slot + Delete Slot.)
+5. As a Teacher or Admin, I can **view the full timetable grid** — Admin can add a slot by clicking an empty cell, and delete a slot by clicking a filled cell; to correct a slot's teacher or subject, Admin deletes and recreates the slot. (CR-FE-015d: "Edit Slot" removed — `PUT /timetable/{id}` does not exist per CR-32.)
 6. As a Teacher or Admin, I can **record attendance for a class period** by selecting statuses for each student.
 7. As an Admin, I can **view a student's full attendance history** and correct an individual record (with `originalStatus` preserved).
 8. As an Admin, I can **view a monthly attendance summary** for a student (using dedicated `/attendance/summary` endpoint).
@@ -125,7 +122,7 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 - No custom branding/theme UI (no logo upload, no color picker)
 - No multi-language / i18n (English only)
 - No charts or graph visualizations (summary tables only)
-- **Inline timetable slot edit (`PUT /timetable/{id}`) is in scope** (Admin only, CR-FE-014d): edit `teacherId` and/or `subjectId` via popover → Edit drawer. Editing `dayOfWeek`, `periodNumber`, or `classId` is NOT supported — delete + recreate for those.
+- **No inline timetable slot edit** — `PUT /timetable/{id}` does not exist (CR-32, CR-FE-015d). To correct a slot's teacher or subject: delete the slot (`DELETE /timetable/{id}`) then recreate it (`POST /timetable`). Editing `dayOfWeek`, `periodNumber`, or `classId` follows the same delete-and-recreate pattern.
 - No `PUT /features/{featureKey}` from tenant app (deprecated since v3.2, returns 403)
 - No SSR/SEO (login-gated SPA)
 - No analytics or telemetry
@@ -153,7 +150,7 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 ### Success Definition (measurable)
 
 1. Teacher can log in, view own classes, and record attendance end-to-end against live backend.
-2. Admin can create a timetable entry by clicking an empty cell, edit a filled slot's teacher or subject, delete a filled slot, correct an attendance record, create a student (auto-provisioned login account), promote/graduate a class, and bulk-delete users (via `POST /*/bulk`).
+2. Admin can create a timetable entry by clicking an empty cell, delete a filled slot (and recreate to correct teacher/subject), correct an attendance record, create a student (auto-provisioned login account), promote/graduate a class, and bulk-delete users (via `POST /*/bulk`).
 3. Student can log in with `loginId`, view today's timetable, and view own attendance history.
 4. Multi-role (Teacher+Admin) user switches roles via dropdown — sidebar changes immediately, no page reload.
 5. SuperAdmin can create a tenant (with admin block and timezone), reactivate an inactive tenant, and toggle feature flags (sees `featureName` labels).
@@ -180,7 +177,7 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 
 ### Backend Freeze Doc version
 
-**v4.3 (2026-03-07)**
+**v4.4 (2026-03-08)**
 
 ### OpenAPI Contract File (REQUIRED)
 
@@ -190,7 +187,7 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 
 ### Contract immutability rule
 
-- Frontend **MUST NOT** invent endpoints, fields, status codes, or error shapes not present in OpenAPI 4.3.0.
+- Frontend **MUST NOT** invent endpoints, fields, status codes, or error shapes not present in OpenAPI 4.4.0.
 - Any new UI need → backend Change Request → new backend Freeze version + updated OpenAPI → **then** frontend Change Request.
 
 ### External Dependencies
@@ -384,16 +381,11 @@ VITE_APP_NAME=Platform Admin
    - `400 PERIOD_NOT_CONFIGURED` → inline "Period {n} not configured."
    - `409` → "Slot already occupied."
    - `403` → toast.
-4. **Admin — edit slot (CR-FE-014d NEW):** `PUT /timetable/{id}`
-   - Body: `{ teacherId?: string, subjectId?: string }` (at least one required)
-   - `200` → invalidate `['timetable', filters]`, close edit drawer, toast "Slot updated."
-   - `400 VALIDATION_ERROR` (neither field provided) → inline error in drawer: "Provide at least one field to update."
-   - `403/404` → toast.
-5. **Admin — delete slot (CR-FE-014d NEW):** `DELETE /timetable/{id}`
+4. **Admin — delete slot (CR-FE-015b):** `DELETE /timetable/{id}`
    - `204` → invalidate `['timetable', filters]`, close popover, toast "Slot deleted."
    - `403/404` → toast.
 
-**Local state:** `selectedFilters`, `activeCell: { dayOfWeek: string, periodNumber: number } | null`, `activeSlotId: string | null`, `editSlotId: string | null` (CR-FE-014d), `deleteConfirmSlotId: string | null` (CR-FE-014d)
+**Local state:** `selectedFilters`, `activeCell: { dayOfWeek: string, periodNumber: number } | null`, `activeSlotId: string | null`, `deleteConfirmSlotId: string | null` (CR-FE-014d)
 
 **Server state:** TQ keys: `['timetable', filters]`, `['school-periods']`. Stale: 5 min.
 
@@ -401,9 +393,9 @@ VITE_APP_NAME=Platform Admin
 
 **Cell interactions:**
 - **Empty cell (Admin):** hover `bg-muted/30 border-dashed` + icon → click → `setActiveCell({dayOfWeek, periodNumber})` → create drawer. Fields: `classId` (select, required), `subjectId` (select, required), `teacherId` (select Teacher-role users, required). `dayOfWeek`/`periodNumber` pre-filled (read-only). CR-FE-011: If `selectedFilters.classId` or `selectedFilters.teacherId` is set, pre-fill those fields as well (editable, not locked). **CR-FE-014c: `effectiveFrom` field removed.**
-- **Filled cell (Admin):** click → `setActiveSlotId(slot.id)` → Popover displaying subject/teacher/class. Two actions:
-  - **"Edit Slot" (CR-FE-014d):** → `setEditSlotId(slot.id)` → `<Sheet>` drawer. Fields: `teacherId` (select Teacher-role users, optional), `subjectId` (select, optional). At least one required (client guard). Submit → `PUT /timetable/{id}`.
+- **Filled cell (Admin):** click → `setActiveSlotId(slot.id)` → Popover displaying subject/teacher/class. One action + one helper note:
   - **"Delete Slot" (CR-FE-014d):** → `setDeleteConfirmSlotId(slot.id)` → `<Dialog>` confirm: *"Delete this slot ({subjectName}, {teacherName}, {dayOfWeek} Period {n})? Existing attendance records are preserved."* → Confirm → `DELETE /timetable/{id}`.
+  - **Helper text (CR-FE-015b):** Muted secondary text below the button: *"To change teacher or subject, delete this slot and create it again."* — no action, no state.
 - **Teacher/Student:** cells non-interactive, plain read-only display.
 
 **Form validation (create):**
@@ -413,12 +405,7 @@ VITE_APP_NAME=Platform Admin
 - `dayOfWeek`: pre-filled (read-only)
 - `periodNumber`: pre-filled (read-only), integer ≥1
 
-**Form validation (edit slot — CR-FE-014d):**
-- `teacherId`: optional, string
-- `subjectId`: optional, string
-- At least one of `teacherId` or `subjectId` must be non-empty (client guard before submit → prevents unnecessary API call)
-
-**A11y:** `role="grid"`, `role="row"`, `role="gridcell"`. Empty clickable cells: `aria-label="Add slot for {dayOfWeek} Period {n}"`. Edit drawer: `aria-label="Edit slot for {subjectName} {dayOfWeek} Period {n}"`. Delete confirm dialog: focus trap, Escape cancels, confirm button `aria-describedby` pointing to warning text. All drawers/dialogs trap focus, Escape closes.
+**A11y:** `role="grid"`, `role="row"`, `role="gridcell"`. Empty clickable cells: `aria-label="Add slot for {dayOfWeek} Period {n}"`. Delete confirm dialog: focus trap, Escape cancels, confirm button `aria-describedby` pointing to warning text. All drawers/dialogs trap focus, Escape closes.
 
 **Performance:** `overflow-x-auto` on mobile. No virtualization needed (7 days × ≤15 periods).
 
@@ -809,9 +796,9 @@ All: stale 5 min, skeleton, "No {entity} found.", create/edit drawer, bulk delet
 
 ### 3.0 Backend Contract Link (LOCKED)
 
-**Backend Freeze version:** v4.3 (2026-03-07)
+**Backend Freeze version:** v4.4 (2026-03-08)
 **OpenAPI file:** `openapi.yaml`
-**OpenAPI version:** 4.3.0
+**OpenAPI version:** 4.4.0
 **File path:** `.docs/openapi.yaml`
 
 **Base URL:** `VITE_API_BASE_URL` from env (never hardcoded).
@@ -819,7 +806,7 @@ All: stale 5 min, skeleton, "No {entity} found.", create/edit drawer, bulk delet
 **Auth:** Bearer JWT. Header: `Authorization: Bearer {token}`.
 **Storage:** `localStorage.auth` (tenant), `localStorage.sa-auth` (SuperAdmin).
 
-**Global error shape MUST match OpenAPI 4.3.0:**
+**Global error shape MUST match OpenAPI 4.4.0:**
 
 ```json
 {
@@ -865,13 +852,12 @@ VITE_API_BASE_URL=http://localhost:4010/api
 | Same status correction | `Prefer: code=400` | `PUT /attendance/{recordId}` |
 | Same class promotion | `Prefer: code=400` | `PUT /classes/{sourceClassId}/promote` |
 | Student access denied | `Prefer: code=403` | `GET /students/{studentId}/attendance` |
-| Neither teacherId nor subjectId | `Prefer: code=400` | `PUT /timetable/{id}` |
 | Slot not found (delete) | `Prefer: code=404` | `DELETE /timetable/{id}` |
 | Teacher not assigned | `Prefer: code=403` | `POST /attendance/record-class` |
 
 ---
 
-### 3.2 Typed API Surface (MVP only — MUST match OpenAPI 4.3.0 exactly)
+### 3.2 Typed API Surface (MVP only — MUST match OpenAPI 4.4.0 exactly)
 
 ```ts
 // ERRORS
@@ -972,7 +958,7 @@ interface TimeSlot {
   periodNumber: number
   periodLabel: string
   startTime: string          // HH:mm
-  endTime: string | null     // HH:mm — nullable per OpenAPI 4.3.0
+  endTime: string | null     // HH:mm — nullable per OpenAPI 4.4.0
   createdAt: string
   updatedAt: string
   // CR-FE-014e: effectiveFrom and effectiveTo REMOVED
@@ -986,13 +972,9 @@ interface CreateTimeslotRequest {
   periodNumber: number
   // CR-FE-014c: effectiveFrom REMOVED
 }
-
-interface UpdateTimeslotRequest {
-  teacherId?: string   // at least one of these required
-  subjectId?: string
-}
+// CR-FE-015c: UpdateTimeslotRequest REMOVED — PUT /timetable/{id} does not exist (CR-32)
+// To correct a slot: DELETE /timetable/{id} then POST /timetable
 // DELETE /timetable/{id} → 204 no body
-// EndAssignmentRequest REMOVED (CR-FE-014d — endpoint gone)
 
 // ATTENDANCE
 type AttendanceStatus = 'Present' | 'Absent' | 'Late'
@@ -1056,7 +1038,7 @@ interface BulkDeleteResponse {
 
 | TQ Key | Stale Time | Invalidated By |
 |--------|------------|----------------|
-| `['timetable', filters]` | 5 min | `POST /timetable`, `PUT /timetable/{id}` (CR-FE-014d), `DELETE /timetable/{id}` (CR-FE-014d), `DELETE /school-periods/{id}` |
+| `['timetable', filters]` | 5 min | `POST /timetable`, `DELETE /timetable/{id}` (CR-FE-015e: `PUT /timetable/{id}` removed), `DELETE /school-periods/{id}` |
 | `['timetable', { dayOfWeek: string }]` | 5 min | Refetch on window focus (CR-FE-014b: was `['timetable', 'today', isoDate]`) |
 | `['students']` | 2 min | `POST /students`, `PUT /students/{id}`, `DELETE /students/{id}`, `POST /students/bulk`, `PUT /classes/{id}/promote` |
 | `['students', classId, classId]` | 2 min | `POST /students`, `PUT /students/{id}`, `DELETE /students/{id}`, `POST /students/bulk` |
@@ -1090,7 +1072,7 @@ interface BulkDeleteResponse {
 
 - **Server state:** TanStack Query (all API data)
 - **Auth/session:** React Context (`AuthContext`: `user`, `token`, `isAuthenticated`, `isExpired`)
-- **UI state:** Local `useState` (drawer open/close, selected IDs, active cell, edit slot ID, delete confirm slot ID, form state)
+- **UI state:** Local `useState` (drawer open/close, selected IDs, active cell, delete confirm slot ID, form state)
 - **Persistent:** `localStorage.auth` (tenant JWT+user), `localStorage.sa-auth` (SuperAdmin JWT)
 
 ### AuthContext responsibilities
@@ -1187,7 +1169,6 @@ Button, Input, Select, Checkbox, RadioGroup, Switch, Badge, Card, Table, Sheet, 
 - `STUDENT_ACCESS_DENIED` inline error: `role="alert"`
 - Promote confirm button: `aria-describedby` pointing to warning text
 - Error boundary retry button: `aria-label="Retry loading this page"`
-- **CR-FE-014d:** Edit slot drawer: `aria-label="Edit slot for {subjectName} {dayOfWeek} Period {n}"`
 - **CR-FE-014d:** Delete slot confirm button: `aria-describedby` pointing to preservation warning text
 
 ### Testing
@@ -1270,8 +1251,7 @@ Referrer-Policy: strict-origin-when-cross-origin
 - Critical workflows per user story
 - Error states + retries (401/403/409/422/429/500)
 - A11y checks (axe-core) for key screens
-- **CR-FE-014d:** Timetable edit slot flow (PUT with one field, PUT with both fields, PUT with neither → 400 inline)
-- **CR-FE-014d:** Timetable delete slot flow (confirm dialog → DELETE → invalidation → slot gone from grid)
+- **CR-FE-014d / CR-FE-015b:** Timetable delete slot flow (confirm dialog → DELETE → invalidation → slot gone from grid; helper text visible in popover)
 
 ---
 
@@ -1379,7 +1359,8 @@ Self-funded solo project — no external billing.
 - **v1.5** (2026-03-05): Backend v4.0 sync. CR-FE-009 (a/b/c/d), CR-FE-010, CR-FE-011 applied. Breaking changes: `BatchStatus` rename, `Student.classId` nullable, `CreateUserRequest.password` optional.
 - **v1.6** (2026-03-07): Backend v4.2 sync. CR-FE-012, CR-FE-013 (a/b/c/d/e/f/g) applied. Breaking changes: bulk delete paths corrected (`POST /*/bulk`), Attendance Summary endpoint replaced, `TenantFeature` schema restored. Additive: End Assignment `effectiveTo` field, `GET /attendance/summary` deferred to NO list.
 - **v1.7** (2026-03-07): Backend v4.3 sync (CR-31). CR-FE-014 (a/b/c/d/e/f/g) applied. Breaking changes: `GET /timetable` `date`/`status` params removed (dayOfWeek derivation client-side, 3 screens), `effectiveFrom` removed from POST /timetable create form, `PUT /timetable/{id}/end` replaced by `PUT /timetable/{id}` (edit) + `DELETE /timetable/{id}` (delete) — fully reverses CR-FE-012, `TimeSlot` type cleaned (`effectiveFrom`/`effectiveTo` removed, `endTime` nullable). Timeline: 9–13 weeks + 10.5 days.
+- **v1.8** (2026-03-08): Backend v4.4 sync (CR-32). CR-FE-015 (a/b/c/d/e) applied. Breaking change: `PUT /timetable/{id}` (Edit Slot) removed — reverses CR-FE-014d partial. Correction workflow is now delete-then-recreate. `UpdateTimeslotRequest` type removed. Muted helper text added to filled cell popover. Timeline: 9–13 weeks + 10 days.
 
 ---
 
-**END OF FRONTEND FREEZE v1.7**
+**END OF FRONTEND FREEZE v1.8**

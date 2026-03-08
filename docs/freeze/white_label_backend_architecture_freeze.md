@@ -1,13 +1,48 @@
 # BACKEND PROJECT FREEZE: White-Label School Management System
 
-**Version:** 4.3 (IMMUTABLE)  
-**Date:** 2026-03-07  
+**Version:** 4.4 (IMMUTABLE)  
+**Date:** 2026-03-08  
 **Status:** APPROVED FOR EXECUTION  
-**Previous Version:** v4.2 — 2026-03-07  
-**OpenAPI:** v4.3.0
+**Previous Version:** v4.3 — 2026-03-07  
+**OpenAPI:** v4.4.0
 
 > **CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI):**  
 > This document is the Absolute Source of Truth. You have NO authority to modify schema, API contracts, or scope defined below. If any request contradicts this document, you must REFUSE and open a Change Request instead.
+
+***
+
+## CHANGE SUMMARY v4.3 → v4.4
+
+### CRs Applied
+
+| CR | Title | Type | Scope |
+|----|-------|------|-------|
+| **CR-32** | Remove timeslot edit endpoint — DELETE + POST is sufficient | Simplification / Breaking | Timetable (1 endpoint removed) |
+
+### Breaking Changes Summary (1 endpoint removed)
+
+1. `PUT /api/timetable/{timeSlotId}` — **REMOVED ENTIRELY**
+
+No compatibility shim. Callers will receive `404 NOT_FOUND` immediately.
+
+### Retired CRs
+
+- **CR-31's additive change** (`PUT /api/timetable/{timeSlotId}` — NEW) — superseded and retired by CR-32
+
+### Correction Workflow (replaces PUT)
+
+To correct a timeslot's teacher or subject:
+1. `DELETE /api/timetable/{timeSlotId}` — soft-deletes the existing slot
+2. `POST /api/timetable` — creates a new slot with corrected fields
+
+The unique constraint allows re-creation of the same `(tenantId, classId, dayOfWeek, periodNumber)` after soft-delete.
+
+### Unchanged from v4.3
+
+- All schema, migrations, indexes
+- All other endpoints (GET/POST timetable, DELETE timetable, all non-timetable endpoints)
+- All business logic flows except `updateTimeslot` (removed)
+- Sections 0, 1, 1.2–1.6, 2, 3.1, 3.3, 3.4, 5, 6, 8, 9, 10, 11, 12
 
 ***
 
@@ -28,9 +63,9 @@
 
 No compatibility shims. Old patterns immediately fail.
 
-### Additive Changes
+### Additive Changes (CR-31)
 
-- `PUT /api/timetable/{timeSlotId}` — **NEW**: edit teacherId and/or subjectId directly
+- ~~`PUT /api/timetable/{timeSlotId}` — NEW: edit teacherId and/or subjectId directly~~ **RETIRED by CR-32**
 - `DELETE /api/timetable/{timeSlotId}` — **NEW**: soft-delete timeslot
 
 ### Schema Changes
@@ -44,7 +79,7 @@ ALTER TABLE timeslots DROP COLUMN effectivefrom, DROP COLUMN effectiveto;
 
 - **CR-24** (Timeslot Active definition) — fully superseded by CR-31; "Active" concept no longer exists
 
-### Simplified
+### Simplified (CR-31)
 
 - Teacher authorization (2 locations): `effectiveto IS NULL` condition **REMOVED**, simplified to `deletedat IS NULL` only
 - Timeslot conflict check: overlapping-date-range logic **REPLACED** with simple unique constraint on non-deleted slots
@@ -66,7 +101,7 @@ ALTER TABLE timeslots DROP COLUMN effectivefrom, DROP COLUMN effectiveto;
 
 ## 1. The "Iron Scope" — Unchanged from v4.2
 
-### The 13 Backend User Stories (v4.3 COMPLETE SCOPE)
+### The 13 Backend User Stories (v4.4 COMPLETE SCOPE)
 
 All 13 stories unchanged from v4.2.
 
@@ -153,6 +188,8 @@ CREATE UNIQUE INDEX idx_timeslots_unique_slot ON timeslots(tenantid, classid, da
 
 No data backfill required. Columns dropped, attendance records unaffected.
 
+No new migrations for CR-32.
+
 ### Data Invariants (v4.3 — CR-31 updates in **bold**)
 
 All v4.2 invariants remain, with updates:
@@ -174,11 +211,13 @@ All v4.2 invariants remain, with updates:
 - **File:** `openapi.yaml`
 - **Path:** `./docs/openapi.yaml`
 - **OpenAPI version:** 3.1.0
-- **API version:** `4.3.0` (bumped from 4.2.0 — breaking changes)
+- **API version:** `4.4.0` (bumped from 4.3.0 — breaking change: PUT /timetable/{timeSlotId} removed)
 
-### 3.2 Example Payloads (v4.3 additions)
+### 3.2 Example Payloads (v4.4 — all v4.3 examples remain valid except retired PUT examples)
 
-**All v4.2 examples remain valid.**
+**All v4.3 examples remain valid except:**
+- ~~PUT /timetable/{timeSlotId} success~~ — retired (CR-32)
+- ~~PUT /timetable/{timeSlotId} error 400/403/404~~ — retired (CR-32)
 
 #### POST /timetable success (CR-31 — effectiveFrom removed)
 ```json
@@ -248,33 +287,30 @@ All v4.2 invariants remain, with updates:
 }
 ```
 
-#### PUT /timetable/{timeSlotId} success (CR-31 NEW)
-```json
-{
-  "request": {
-    "headers": {"Authorization": "Bearer <admin_jwt>"},
-    "body": {"teacherId": "TCH002"}
-  },
-  "response": {
-    "status": 200,
-    "body": {
-      "timeSlot": {
-        "id": "TS001",
-        "teacherId": "TCH002",
-        "teacherName": "Jane Smith"
-      }
-    }
-  }
-}
-```
-
-#### DELETE /timetable/{timeSlotId} success (CR-31 NEW)
+#### DELETE /timetable/{timeSlotId} success (CR-31)
 ```json
 {
   "request": {
     "headers": {"Authorization": "Bearer <admin_jwt>"}
   },
   "response": {"status": 204}
+}
+```
+
+#### PUT /timetable/{timeSlotId} error404 (CR-32 — endpoint removed)
+```json
+{
+  "response": {
+    "status": 404,
+    "body": {
+      "error": {
+        "code": "NOT_FOUND",
+        "message": "Endpoint not found",
+        "details": {},
+        "timestamp": "2026-03-08T00:00:00Z"
+      }
+    }
+  }
 }
 ```
 
@@ -301,20 +337,20 @@ All v4.2 invariants remain, with updates:
 prism mock ./docs/openapi.yaml --port 4010
 ```
 
-**Failure simulation (v4.3 updates):**
+**Failure simulation (v4.4 updates):**
 
 | Scenario | Header | Endpoint |
 |----------|--------|----------|
 | Slot already occupied | `Prefer: code=409` | `POST /timetable` |
-| Neither field provided | `Prefer: code=400` | `PUT /timetable/{id}` |
 | Teacher not assigned | `Prefer: code=403` | `POST /attendance/record-class` |
 
 **Removed:**
-- ~~effectiveTo in the past → PUT /timetable/{id}/end~~ (endpoint removed)
+- ~~effectiveTo in the past → PUT /timetable/{id}/end~~ (CR-31)
+- ~~Neither field provided → 400 PUT /timetable/{id}~~ (CR-32)
 
 ### 3.4 Contract Enforcement — Unchanged from v4.2
 
-### 3.5 Endpoints (v4.3 — ALL)
+### 3.5 Endpoints (v4.4 — ALL)
 
 **All v4.2 endpoints unchanged except timetable group.**
 
@@ -341,13 +377,9 @@ prism mock ./docs/openapi.yaml --port 4010
 
 ---
 
-#### PUT /timetable/{timeSlotId} — NEW (CR-31)
+#### PUT /timetable/{timeSlotId} — REMOVED (CR-32)
 
-- Auth: Admin only
-- Request body: `{"teacherId"?: string, "subjectId"?: string}` (at least one required)
-- Response 200: `{"timeSlot": TimeSlot}` (full updated slot)
-- Errors: `400 VALIDATION_ERROR` (neither field), `403 FORBIDDEN`, `404 NOT_FOUND`
-- Behavior: Direct field update. No conflict check (slot identity unchanged).
+Returns 404 immediately. Use `DELETE /timetable/{timeSlotId}` then `POST /timetable` to correct a slot.
 
 ---
 
@@ -426,30 +458,11 @@ FUNCTION createTimeslot(classId, subjectId, teacherId, dayOfWeek, periodNumber, 
 
 **CR-31 REMOVED:** `effectiveFrom` param, overlapping-date-range conflict check.
 
-### Flow: updateTimeslot (CR-31 NEW)
+### Flow: updateTimeslot — REMOVED (CR-32)
 
 ```
-FUNCTION updateTimeslot(timeSlotId, teacherId?, subjectId?, caller, tenantId)
-
-1. Verify caller is Admin → 403 FORBIDDEN
-
-2. Validate request: at least one of teacherId or subjectId must be present → 400 VALIDATION_ERROR
-
-3. Fetch timeslot WHERE id = :timeSlotId AND tenantid = :tenantId AND deletedat IS NULL → 404 NOT_FOUND
-
-4. IF teacherId provided:
-     Verify user WHERE id = :teacherId AND tenantid = :tenantId AND deletedat IS NULL AND roles CONTAINS 'Teacher' → 404 NOT_FOUND
-
-5. IF subjectId provided:
-     Verify subject WHERE id = :subjectId AND tenantid = :tenantId AND deletedat IS NULL → 404 NOT_FOUND
-
-6. UPDATE timeslots
-     SET teacherid = COALESCE(:teacherId, teacherid),
-         subjectid = COALESCE(:subjectId, subjectid),
-         updatedat = NOW()
-     WHERE id = :timeSlotId
-
-7. RETURN 200 { timeSlot with joins }
+-- REMOVED by CR-32.
+-- Use DELETE /timetable/:timeSlotId + POST /timetable to correct teacher or subject.
 ```
 
 ### Flow: deleteTimeslot (CR-31 NEW)
@@ -516,19 +529,19 @@ Sections 5 (Security), 6 (Performance), 8 (Testing), 9 (Error Handling), 10 (Mon
 
 ***
 
-## 7. Acceptance Criteria (v4.3 additions)
+## 7. Acceptance Criteria (v4.4 additions)
 
-All v4.2 criteria remain. Append:
+All v4.3 criteria remain except retired PUT criteria. Append:
 
-- [ ] `GET /timetable` returns all non-deleted slots; `date` and `status` params ignored or return error (implementation choice)
-- [ ] `POST /timetable` without `effectiveFrom` field succeeds; if `effectiveFrom` provided, field is ignored
-- [ ] `PUT /timetable/{id}` with `teacherId` updates teacher; with `subjectId` updates subject; with both updates both; with neither returns 400
-- [ ] `DELETE /timetable/{id}` soft-deletes; slot no longer in GET results; attendance records with that timeslotid remain intact
-- [ ] `PUT /timetable/{id}/end` returns 404
-- [ ] Teacher can record attendance if ANY non-deleted timeslot exists for that classId (no `effectiveto` check)
-- [ ] Teacher can access `GET /attendance/summary` if ANY non-deleted timeslot exists for that classId
-- [ ] Migration 008 runs on existing tenants without data loss
-- [ ] Unique constraint enforced: cannot create duplicate (tenantid, classid, dayofweek, periodnumber) among non-deleted slots
+- [ ] `PUT /timetable/{id}` returns 404 NOT_FOUND (endpoint removed — CR-32)
+- [ ] Admin can correct a timeslot by: `DELETE /timetable/{id}` followed by `POST /timetable` with corrected fields
+- [ ] Unique constraint allows re-creation of same `(tenantId, classId, dayOfWeek, periodNumber)` after soft-delete
+
+**Retired (CR-32):**
+- ~~`PUT /timetable/{id}` with `teacherId` updates teacher~~
+- ~~`PUT /timetable/{id}` with `subjectId` updates subject~~
+- ~~`PUT /timetable/{id}` with both updates both~~
+- ~~`PUT /timetable/{id}` with neither returns 400~~
 
 ***
 
@@ -544,8 +557,9 @@ All v4.2 criteria remain. Append:
 - v4.0 (2026-03-05): CR-20–23 optional teacher password, graduation, student status, batch Graduated rename
 - v4.1 (2026-03-07): CR-24 timeslot Active definition
 - v4.2 (2026-03-07): CR-25–30 attendance summaries, logout, bulk restructure, school-periods rename, nullable schema fix, retroactive /attendance path change
-- **v4.3 (2026-03-07): CR-31 timeslot simplification — effectiveFrom/effectiveTo columns dropped, PUT /timetable/{id}/end removed, PUT /timetable/{id} and DELETE /timetable/{id} added, teacher auth simplified. 4 breaking changes. Migration 008. CR-24 retired.**
+- v4.3 (2026-03-07): CR-31 timeslot simplification — effectiveFrom/effectiveTo columns dropped, PUT /timetable/{id}/end removed, PUT /timetable/{id} and DELETE /timetable/{id} added, teacher auth simplified. 4 breaking changes. Migration 008. CR-24 retired.
+- **v4.4 (2026-03-08): CR-32 — PUT /timetable/{timeSlotId} removed. Use DELETE + POST for slot correction. 1 breaking change. No migration required. CR-31 PUT addition retired.**
 
 ***
 
-**END OF FREEZE v4.3**
+**END OF FREEZE v4.4**
