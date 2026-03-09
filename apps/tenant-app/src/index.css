@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    /* ── Core color tokens (HSL — enables bg-*/50 opacity modifiers) ────── */
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
@@ -22,14 +23,128 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
+
+    /* ── Sidebar tokens (themed independently from main surface) ────────── */
+    --sidebar-background: 222.2 47.4% 11.2%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 221.2 83.2% 53.3%;
+    --sidebar-accent: 217.2 32.6% 17.5%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+
+    /* ── Typography ─────────────────────────────────────────────────────── */
+    --font-sans: 'Montserrat', system-ui, sans-serif;
   }
+
+  /* ── Dark mode — full inverted token set, zero JS theme logic ─────────── */
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+
+    --sidebar-background: 222.2 84% 4.9%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 217.2 91.2% 59.8%;
+    --sidebar-accent: 217.2 32.6% 17.5%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+  }
+
   * {
     @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
     font-feature-settings:
       "rlig" 1,
       "calt" 1;
+  }
+}
+
+/* ── Custom scrollbar (6px, transparent track) ───────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+.hide-scrollbar {
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Top-loader bar — pure CSS, no JS library ────────────────────────────── */
+.top-loader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: hsl(var(--primary));
+  z-index: 9999;
+  animation: toploader 1s ease-in-out infinite;
+}
+
+@keyframes toploader {
+  0%   { width: 0; opacity: 1; }
+  70%  { width: 70%; opacity: 1; }
+  100% { width: 100%; opacity: 0; }
+}
+
+/* Disable top-loader animation for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .top-loader {
+    animation: none;
+    width: 100%;
+    opacity: 0;
+  }
+}
+
+/* ── Print rules (§5.7) ──────────────────────────────────────────────────── */
+@media print {
+  * {
+    font-size: 12px;
+  }
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+
+  /* Hide navigation chrome */
+  aside,
+  nav,
+  header,
+  [data-radix-portal],
+  .hide-on-print {
+    display: none !important;
+  }
+
+  /* Fully expand scrollable content */
+  .scrollable {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  /* Hide top-loader in print */
+  .top-loader {
+    display: none;
   }
 }
