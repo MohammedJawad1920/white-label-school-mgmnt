@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* ── Core color tokens (HSL — enables bg-*/50 opacity modifiers) ────── */
+    /* ── Core color tokens (HSL — enables bg-[color]/50 opacity modifiers) ── */
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
@@ -32,7 +32,7 @@
     --sidebar-border: 217.2 32.6% 17.5%;
 
     /* ── Typography ─────────────────────────────────────────────────────── */
-    --font-sans: 'Montserrat', system-ui, sans-serif;
+    --font-sans: "Montserrat", system-ui, sans-serif;
   }
 
   /* ── Dark mode — full inverted token set, zero JS theme logic ─────────── */
@@ -93,6 +93,23 @@
   display: none;
 }
 
+/* ── Native form controls — color-scheme ────────────────────────────────── */
+/* Tells the browser to render native controls (date picker icon, scrollbars */
+/* checkboxes, etc.) using the correct light/dark palette automatically.     */
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.6;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
 /* ── Top-loader bar — pure CSS, no JS library ────────────────────────────── */
 .top-loader {
   position: fixed;
@@ -106,9 +123,18 @@
 }
 
 @keyframes toploader {
-  0%   { width: 0; opacity: 1; }
-  70%  { width: 70%; opacity: 1; }
-  100% { width: 100%; opacity: 0; }
+  0% {
+    width: 0;
+    opacity: 1;
+  }
+  70% {
+    width: 70%;
+    opacity: 1;
+  }
+  100% {
+    width: 100%;
+    opacity: 0;
+  }
 }
 
 /* Disable top-loader animation for users who prefer reduced motion */
@@ -122,11 +148,13 @@
 
 /* ── Print rules (§5.7) ──────────────────────────────────────────────────── */
 @media print {
-  * {
+  *,
+  *::before,
+  *::after {
     font-size: 12px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
 
   /* Hide navigation chrome */
   aside,

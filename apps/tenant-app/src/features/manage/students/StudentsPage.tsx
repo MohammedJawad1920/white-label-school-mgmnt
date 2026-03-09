@@ -20,6 +20,7 @@
  * Cross-field validation: batchId must match selectedClass.batchId.
  */
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -504,6 +505,7 @@ function EditStudentForm({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function StudentsPage() {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
@@ -801,6 +803,12 @@ export default function StudentsPage() {
                 </td>
                 <td className="px-4 py-2.5">
                   <div className="flex justify-end gap-1.5">
+                    <ActionBtn
+                      onClick={() =>
+                        navigate(`/students/${student.id}/attendance`)
+                      }
+                      label="History"
+                    />
                     <ActionBtn
                       onClick={() => openEdit(student)}
                       label={`Edit ${student.name}`}

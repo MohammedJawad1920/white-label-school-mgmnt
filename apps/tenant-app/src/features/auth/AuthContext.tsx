@@ -30,7 +30,7 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
-import type { TenantUser, SwitchRoleRequest } from "@/types/api";
+import type { TenantUser, SwitchRoleRequest, UserRole } from "@/types/api";
 import { authApi } from "@/api/auth";
 
 const AUTH_KEY = "auth";
@@ -45,9 +45,13 @@ interface AuthContextValue {
   token: string | null;
   isAuthenticated: boolean;
   isExpired: boolean;
+  /** Computed from user.activeRole — null when logged out */
+  activeRole: UserRole | null;
   login: (token: string, user: TenantUser) => void;
   logout: () => Promise<void>;
   switchRole: (req: SwitchRoleRequest) => Promise<void>;
+  /** Convenience wrapper: calls switchRole({ role }) */
+  setActiveRole: (role: UserRole) => Promise<void>;
   dismissExpired: () => void;
 }
 
@@ -112,6 +116,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [login],
   );
 
+  const setActiveRole = useCallback(
+    (role: UserRole) => switchRole({ role }),
+    [switchRole],
+  );
+
   const dismissExpired = useCallback(() => setIsExpired(false), []);
 
   // Listen for 401s fired by the axios interceptor
@@ -132,9 +141,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         token,
         isAuthenticated: !!token && !!user,
         isExpired,
+        activeRole: user?.activeRole ?? null,
         login,
         logout,
         switchRole,
+        setActiveRole,
         dismissExpired,
       }}
     >

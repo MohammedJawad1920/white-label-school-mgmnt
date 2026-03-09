@@ -19,6 +19,7 @@
  */
 import { type ReactNode } from "react";
 import { cn } from "@/utils/cn";
+import { ConfirmDialog as SharedConfirmDialog } from "@/components/ConfirmDialog";
 
 // ── Table skeleton ────────────────────────────────────────────────────────────
 export function TableSkeleton({
@@ -158,7 +159,9 @@ export function Drawer({
   );
 }
 
-// ── Confirm dialog ────────────────────────────────────────────────────────────
+// ── Confirm dialog ───────────────────────────────────────────────────────────
+// Adapter that maps the legacy manage-screen API onto the canonical SP6
+// ConfirmDialog. New screens should use @/components/ConfirmDialog directly.
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
@@ -172,52 +175,21 @@ export function ConfirmDialog({
   open,
   title,
   message,
+  error,
   onConfirm,
   onCancel,
   loading,
-  error,
 }: ConfirmDialogProps) {
-  if (!open) return null;
+  const description = error ? `${message}\n\n${error}` : message;
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-title"
-      onKeyDown={(e) => e.key === "Escape" && onCancel()}
-    >
-      <div className="bg-background rounded-lg shadow-xl w-full max-w-sm border">
-        <div className="p-4 border-b">
-          <h2 id="confirm-title" className="text-base font-semibold">
-            {title}
-          </h2>
-        </div>
-        <div className="p-4 space-y-3">
-          <p className="text-sm text-muted-foreground">{message}</p>
-          {error && (
-            <p role="alert" className="text-xs text-destructive">
-              {error}
-            </p>
-          )}
-        </div>
-        <div className="flex justify-end gap-2 p-4 border-t">
-          <button
-            onClick={onCancel}
-            disabled={loading}
-            className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={loading}
-            className="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-          >
-            {loading ? "Deleting…" : "Delete"}
-          </button>
-        </div>
-      </div>
-    </div>
+    <SharedConfirmDialog
+      open={open}
+      title={title}
+      description={description}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+      isLoading={loading}
+    />
   );
 }
 

@@ -5,128 +5,137 @@
  * Both components share the same items array. If a route is added/removed,
  * one edit here propagates to desktop sidebar AND mobile tab bar automatically.
  *
- * Freeze §User Roles — visibility rules (FE-006: derived from activeRole):
- *   Teacher:  dashboard, timetable, attendance/record
- *   Admin:    all routes including manage/* and attendance summary
- *   Student:  dashboard, timetable (read-only)
+ * Freeze §5 nav.ts (CR-FE-017):
+ *   icon is a LucideIcon — no string-based NavIcon pattern (banned §1.6 S17).
+ *   Role visibility rules:
+ *     Teacher:  Dashboard, Timetable, Record Attendance, Monthly Sheet
+ *     Admin:    Dashboard, Timetable, Attendance Summary, Monthly Sheet,
+ *               Manage group (6 sub-items), Events
+ *     Student:  Dashboard, Timetable
  */
+import type { LucideIcon } from "lucide-react";
+import {
+  LayoutDashboard,
+  CalendarDays,
+  ClipboardCheck,
+  BarChart3,
+  Sheet,
+  Users,
+  GraduationCap,
+  BookOpen,
+  Layers,
+  BookMarked,
+  Clock,
+  CalendarRange,
+} from "lucide-react";
+
+export type Role = "Teacher" | "Admin" | "Student";
 
 export interface NavItem {
   label: string;
-  href: string;
-  /** roles whose activeRole matches can see this item */
-  roles: Array<"Teacher" | "Admin" | "Student">;
-  /** matches child paths too (e.g. /manage matches /manage/users) */
+  url: string;
+  /** Roles whose activeRole matches can see this item */
+  allowedRoles: Role[];
+  /** LucideIcon component — no string icons (Freeze §1.6 S17) */
+  icon: LucideIcon;
+  /** Matches child paths too (e.g. /manage matches /manage/users) */
   matchPrefix?: boolean;
-  icon:
-    | "dashboard"
-    | "timetable"
-    | "attendance"
-    | "summary"
-    | "manage"
-    | "periods"
-    | "users"
-    | "students"
-    | "classes"
-    | "batches"
-    | "subjects"
-    | "monthly-sheet"
-    | "events";
-  /** if true, renders as an indented sub-item under a group */
+  /** If true, renders as an indented sub-item under a group */
   isSubItem?: boolean;
-  /** group header label — renders a non-clickable divider above this item */
+  /** Group header label — renders a non-clickable divider above this item */
   groupLabel?: string;
 }
 
 export const NAV_ITEMS: NavItem[] = [
   {
     label: "Dashboard",
-    href: "/dashboard",
-    roles: ["Teacher", "Admin", "Student"],
-    icon: "dashboard",
+    url: "/dashboard",
+    allowedRoles: ["Teacher", "Admin", "Student"],
+    icon: LayoutDashboard,
   },
   {
     label: "Timetable",
-    href: "/timetable",
-    roles: ["Teacher", "Admin", "Student"],
-    icon: "timetable",
+    url: "/timetable",
+    allowedRoles: ["Teacher", "Admin", "Student"],
+    icon: CalendarDays,
   },
   {
     label: "Record Attendance",
-    href: "/attendance/record",
-    roles: ["Teacher", "Admin"],
-    icon: "attendance",
+    url: "/attendance/record",
+    allowedRoles: ["Teacher", "Admin"],
+    icon: ClipboardCheck,
   },
   {
     label: "Attendance Summary",
-    href: "/attendance/summary",
-    roles: ["Admin"],
-    icon: "summary",
+    url: "/attendance/summary",
+    allowedRoles: ["Admin"],
+    icon: BarChart3,
   },
   // v4.5 CR-36: Monthly sheet — Admin + Teacher
   {
     label: "Monthly Sheet",
-    href: "/attendance/monthly-sheet",
-    roles: ["Admin", "Teacher"],
-    icon: "monthly-sheet",
+    url: "/attendance/monthly-sheet",
+    allowedRoles: ["Admin", "Teacher"],
+    icon: Sheet,
   },
   // ── Manage group ─────────────────────────────────────────────────────────────
   {
     label: "Users",
-    href: "/manage/users",
-    roles: ["Admin"],
-    icon: "users",
-    groupLabel: "Manage", // renders a section header above this item
+    url: "/manage/users",
+    allowedRoles: ["Admin"],
+    icon: Users,
+    groupLabel: "Manage",
     isSubItem: true,
   },
   {
     label: "Students",
-    href: "/manage/students",
-    roles: ["Admin"],
-    icon: "students",
+    url: "/manage/students",
+    allowedRoles: ["Admin"],
+    icon: GraduationCap,
     isSubItem: true,
   },
   {
     label: "Classes",
-    href: "/manage/classes",
-    roles: ["Admin"],
-    icon: "classes",
+    url: "/manage/classes",
+    allowedRoles: ["Admin"],
+    icon: BookOpen,
     isSubItem: true,
   },
   {
     label: "Batches",
-    href: "/manage/batches",
-    roles: ["Admin"],
-    icon: "batches",
+    url: "/manage/batches",
+    allowedRoles: ["Admin"],
+    icon: Layers,
     isSubItem: true,
   },
   {
     label: "Subjects",
-    href: "/manage/subjects",
-    roles: ["Admin"],
-    icon: "subjects",
+    url: "/manage/subjects",
+    allowedRoles: ["Admin"],
+    icon: BookMarked,
     isSubItem: true,
   },
   {
     label: "School Periods",
-    href: "/manage/school-periods",
-    roles: ["Admin"],
-    icon: "periods",
+    url: "/manage/school-periods",
+    allowedRoles: ["Admin"],
+    icon: Clock,
     isSubItem: true,
   },
   // v4.5 CR-37: Events — Admin only
   {
     label: "Events",
-    href: "/manage/events",
-    roles: ["Admin"],
-    icon: "events",
+    url: "/manage/events",
+    allowedRoles: ["Admin"],
+    icon: CalendarRange,
     isSubItem: true,
   },
 ];
 
-/** Bottom tab bar shows only Teacher/Student-relevant primary actions (max 4 tabs) */
-export const BOTTOM_TAB_ITEMS: NavItem[] = NAV_ITEMS.filter(
-  (item) =>
-    (item.roles.includes("Teacher") || item.roles.includes("Student")) &&
-    ["dashboard", "timetable", "attendance"].includes(item.icon),
-);
+/**
+ * Bottom tab bar source — all non-sub-items.
+ * Role filtering + slice(0, 5) happens at render time in BottomTabBar,
+ * NOT here — slicing before role filter would expose forbidden-role items (E5 fix).
+ * Freeze §5 nav.ts (CR-FE-017).
+ */
+export const BOTTOM_TAB_NAV_ITEMS = NAV_ITEMS.filter((item) => !item.isSubItem);

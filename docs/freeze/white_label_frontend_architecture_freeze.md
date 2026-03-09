@@ -3,10 +3,10 @@
 
 ---
 
-**Version:** 2.0 (IMMUTABLE)
+**Version:** 2.1 (IMMUTABLE)
 **Date:** 2026-03-09
 **Status:** APPROVED FOR EXECUTION
-**Supersedes:** v1.9 (2026-03-08)
+**Supersedes:** v2.0 (2026-03-09)
 **Backend Freeze:** v4.5 (2026-03-08)
 **OpenAPI:** v4.5.0
 
@@ -14,11 +14,37 @@
 
 ## CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI)
 
-This document is the **Absolute Source of Truth**. v1.9 is **SUPERSEDED**.
+This document is the **Absolute Source of Truth**. v2.0 is **SUPERSEDED**.
 
 You have **NO authority** to modify routes, API assumptions, or constraints defined below.
 
 If any request contradicts this document, you must **REFUSE** and open a **Change Request** instead.
+
+---
+
+## CHANGE SUMMARY: v2.0 → v2.1
+
+### Change Requests Applied
+
+| CR | Title | Type | Impact |
+|----|-------|------|--------|
+| **CR-FE-018** | v2.0 Error Corrections (6 bugs, 1 omission) | Corrective (no scope/API change) | §1.6, §5, §5.7, §8 |
+
+### What Changed
+
+**No scope changes. No API/backend changes. OpenAPI unchanged at v4.5.0.**
+
+All 7 items are corrections to errors introduced in v2.0 (CR-FE-017):
+
+| # | Severity | Location | Error | Fix |
+|---|----------|----------|-------|-----|
+| E1 | 🔴 Runtime | §5 Typography | `next/font` referenced — Next.js-only API, incompatible with Vite | Replaced with `@fontsource/montserrat` |
+| E2 | 🔴 Runtime | §5.7 Print Rules | `-webkit-print-color-adjust` and `print-color-adjust` were bare properties outside any CSS selector — invalid CSS, ignored by browsers | Moved inside `*, *::before, *::after {}` block |
+| E3 | 🔴 Runtime | §8 CSP | `VITE_API_BASE_URL` used literally in static `_headers` file — Vite env vars are not interpolated in static files | Replaced with build-step note and per-environment instruction |
+| E4 | 🟡 Misleading | §5.5 SP1, SP4 | `class=` used in JSX component specs — must be `className=` in React | Corrected to `className=` |
+| E5 | 🟡 Logic | §5 nav.ts | `BOTTOM_TAB_ITEMS` statically sliced to 5 before role filtering — would include forbidden-role items | Export renamed `BOTTOM_TAB_NAV_ITEMS`, slice moved to render-time after role filter |
+| E6 | 🟡 Doc | §15 | v2.0 version history entry contained copy-pasted v1.9 content appended at end | Truncated to correct v2.0 summary only |
+| O1 | ⚪ Omission | §1.6 | `next-themes` missing from tech stack table despite being used for `ThemeProvider` | Added to stack table |
 
 ---
 
@@ -344,6 +370,7 @@ VITE_APP_NAME=Platform Admin
 | **Date handling** | date-fns v3.x |
 | **HTTP client** | axios v1.x (typed interceptors) |
 | **Icons** | lucide-react (latest stable) |
+| **Theme** | `next-themes` (latest stable) |
 | **Error boundaries** | `react-error-boundary` (latest stable) |
 
 ### Routing mode
@@ -1330,8 +1357,18 @@ Two tiers — applied via per-query `staleTime` override, not global:
 
 ### Typography (LOCKED — CR-FE-017)
 
-- **Font family:** Montserrat, loaded via `next/font` equivalent (CSS variable `--font-sans`)
-- **Weights loaded:** 100, 200, 300, 400, 500, 600, 700, 800, 900
+- **Font family:** Montserrat, loaded via `@fontsource/montserrat` package (CSS variable `--font-sans`)
+- **Installation:** `npm install @fontsource/montserrat`
+- **Import in `main.tsx`** (one import per weight used):
+  ```ts
+  import '@fontsource/montserrat/300.css'
+  import '@fontsource/montserrat/400.css'
+  import '@fontsource/montserrat/500.css'
+  import '@fontsource/montserrat/600.css'
+  import '@fontsource/montserrat/700.css'
+  ```
+- **CSS variable in `global.css`:** `--font-sans: 'Montserrat', sans-serif;`
+- **Weights loaded:** 300, 400, 500, 600, 700 (load only weights in use — all 9 weights unnecessary for a management UI)
 - **Scale:** Tailwind default `text-xs` through `text-4xl` — no custom scale additions
 - **Antialiasing:** Standard browser default (no `.poster-text` class — out of scope)
 
@@ -1415,7 +1452,15 @@ interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [/* ... */]
-export const BOTTOM_TAB_ITEMS = NAV_ITEMS.filter(item => !item.isSubItem).slice(0, 5)
+
+// All non-subitem routes — role filtering + slice(0,5) happens at render time in BottomTabBar
+// Do NOT slice here — slicing before role filter would include forbidden-role items
+export const BOTTOM_TAB_NAV_ITEMS = NAV_ITEMS.filter(item => !item.isSubItem)
+
+// Usage in BottomTabBar component:
+// const visibleTabs = BOTTOM_TAB_NAV_ITEMS
+//   .filter(item => item.allowedRoles.includes(activeRole))
+//   .slice(0, 5)
 ```
 
 **Rule:** Adding a route without adding it to `nav.ts` is a freeze violation.
@@ -1451,7 +1496,7 @@ These components are **mandatory shared implementations**. No per-screen bespoke
 
 ### SP1 — `<PageHeader title actions?>`
 
-- Root element: `<div class="flex items-center justify-between mb-6">`
+- Root element: `<div className="flex items-center justify-between mb-6">`
 - `title` renders as `<h1>` — the **only** `h1` on any screen
 - `actions` slot: right-aligned, flex row
 - Mobile: title hidden (`hidden md:block`) — TopBar owns mobile screen title
@@ -1470,7 +1515,7 @@ These components are **mandatory shared implementations**. No per-screen bespoke
 
 ### SP4 — `<InlineError message>`
 
-- `<p class="text-destructive text-sm mt-1">`
+- `<p className="text-destructive text-sm mt-1">`
 - Used for: field-level form errors, 403 inline messages (Monthly Sheet teacher restriction), section-level fetch errors
 - **Not** a toast — inline only
 
@@ -1533,10 +1578,12 @@ All custom hooks live in `src/hooks/`. No hook outside this list is authorised w
 
 ```css
 @media print {
-  /* Base */
-  * { font-size: 12px; }
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+  /* Base — color-adjust must be inside a selector, not bare */
+  *, *::before, *::after {
+    font-size: 12px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 
   /* Hide chrome */
   aside, nav, header, [data-radix-portal], .hide-on-print { display: none !important; }
@@ -1665,11 +1712,17 @@ Bundle size check on every PR — fail if limits exceeded.
 ### CSP (via Cloudflare Pages `_headers` file) — Unchanged from v1.8
 
 ```
-Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' VITE_API_BASE_URL; frame-ancestors 'none'
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.yourdomain.com; frame-ancestors 'none'
 X-Frame-Options: DENY
 X-Content-Type-Options: nosniff
 Referrer-Policy: strict-origin-when-cross-origin
 ```
+
+> **⚠ Build note (E3 fix):** Cloudflare Pages `_headers` is a **static file** — Vite env vars (`VITE_API_BASE_URL`) are never interpolated into it. The `connect-src` value must be a literal domain. Options:
+> - **Option A (recommended):** Use a `_headers` build script that writes the correct domain per environment before deploy. Add to `package.json` build command: `npm run build:headers && npm run build`.
+> - **Option B:** Hardcode the production API domain in `_headers` and accept that staging uses the same CSP. Acceptable for a solo project.
+> - **Option C:** Use Cloudflare Pages Transform Rules to set CSP headers dynamically (no static file needed).
+> Lock the chosen option before implementation. Default assumption: **Option A**.
 
 ---
 
@@ -1809,8 +1862,9 @@ All v1.8 checklist items unchanged. Append:
 - **v1.7** (2026-03-07): Backend v4.3 sync (CR-31). CR-FE-014 (a/b/c/d/e/f/g) applied.
 - **v1.8** (2026-03-08): Backend v4.4 sync (CR-32). CR-FE-015 (a/b/c/d/e) applied. `PUT /timetable/{id}` removed, delete-then-recreate correction workflow.
 - **v1.9** (2026-03-08): Backend v4.5 sync (CR-33–38). CR-FE-016 (a/b/c/d/e/f/g) applied. Breaking: `TenantUser.studentId` field added (CR-38), CG-01 Student dashboard placeholder resolved. Additive: API-driven Admin stat bar (CR-35), Timetable marking-status color (CR-35), At-Risk streaks panel in Record Attendance (CR-33), Teacher Class Rankings card on Dashboard (CR-34), Admin Toppers Rankings tab in Attendance Summary (CR-34), Monthly Sheet screen `/attendance/monthly-sheet` Admin+Teacher (CR-36), Academic Calendar screen `/manage/events` Admin (CR-37), Upcoming Events card on Dashboard all roles (CR-37), Student self-streak badges on Dashboard (CR-33+38). 2 new routes, 6 new TQ keys, 5 new types. Timeline: 9–13 weeks + 18 days.
-- **v2.0** (2026-03-09): CR-FE-017 — Scofist Pattern Adoption. No API/backend changes. Implementation architecture locked: CSS token system, Montserrat font, top-loader, scrollbar utilities, sidebar implementation rules, BottomTabBar spec, `nav.ts` single-source rule, role badge color mapping, shared component specs (SP1–SP9 + react-error-boundary for SP10), hook inventory (HK1–HK6 with HK4/HK5 banned), QueryClient config (QC1–QC4, TanStack Query v5 `QueryCache({onError})` pattern), print rules (PR1–PR7), A11y additions (skip link, aria-live/busy, prefers-reduced-motion, aria-hidden on decorative icons, heading hierarchy, no tabindex>0, axe-core/playwright in CI), 5 new forbidden patterns. 6 Scofist patterns explicitly rejected. Breaking: `TenantUser.studentId` field added (CR-38), CG-01 Student dashboard placeholder resolved. Additive: API-driven Admin stat bar (CR-35), Timetable marking-status color (CR-35), At-Risk streaks panel in Record Attendance (CR-33), Teacher Class Rankings card on Dashboard (CR-34), Admin Toppers Rankings tab in Attendance Summary (CR-34), Monthly Sheet screen `/attendance/monthly-sheet` Admin+Teacher (CR-36), Academic Calendar screen `/manage/events` Admin (CR-37), Upcoming Events card on Dashboard all roles (CR-37), Student self-streak badges on Dashboard (CR-33+38). 2 new routes, 6 new TQ keys, 5 new types. Timeline: 9–13 weeks + 18 days.
+- **v2.0** (2026-03-09): CR-FE-017 — Scofist Pattern Adoption. No API/backend changes. Implementation architecture locked: CSS token system, Montserrat font, top-loader, scrollbar utilities, sidebar implementation rules, BottomTabBar spec, `nav.ts` single-source rule, role badge color mapping, shared component specs (SP1–SP9 + react-error-boundary for SP10), hook inventory (HK1–HK6 with HK4/HK5 banned), QueryClient config (QC1–QC4, TanStack Query v5 `QueryCache({onError})` pattern), print rules (PR1–PR7), A11y additions (skip link, aria-live/busy, prefers-reduced-motion, aria-hidden on decorative icons, heading hierarchy, no tabindex>0, axe-core/playwright in CI), 5 new forbidden patterns. 6 Scofist patterns explicitly rejected.
+- **v2.1** (2026-03-09): CR-FE-018 — v2.0 Error Corrections. 6 bugs fixed: E1 `next/font` → `@fontsource/montserrat`, E2 invalid bare CSS in print block, E3 `VITE_API_BASE_URL` literal in static CSP `_headers`, E4 `class=` → `className=` in SP1/SP4 specs, E5 `BOTTOM_TAB_ITEMS` static pre-role-filter slice → `BOTTOM_TAB_NAV_ITEMS` with runtime filter, E6 corrupted v2.0 history entry. 1 omission fixed: O1 `next-themes` added to §1.6 stack table. No scope, API, or backend changes.
 
 ---
 
-**END OF FRONTEND FREEZE v2.0**
+**END OF FRONTEND FREEZE v2.1**
