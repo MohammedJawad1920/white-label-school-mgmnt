@@ -4,12 +4,12 @@
 
 ## SOURCE OF TRUTH (read these before every task)
 
-| Artifact | Path | Status |
-|---|---|---|
-| Backend Freeze | `docs/freeze/white_label_backend_architecture_freeze.md` | IMMUTABLE |
-| Frontend Freeze | `docs/freeze/white_label_frontend_architecture_freeze.md` | IMMUTABLE |
-| OpenAPI (editable) | `server/docs/openapi.yaml` | CANONICAL CONTRACT |
-| OpenAPI (freeze snapshot) | `docs/freeze/white_label_openapi.yaml` | READ-ONLY REFERENCE |
+| Artifact                  | Path                                                      | Status              |
+| ------------------------- | --------------------------------------------------------- | ------------------- |
+| Backend Freeze            | `docs/freeze/white_label_backend_architecture_freeze.md`  | IMMUTABLE           |
+| Frontend Freeze           | `docs/freeze/white_label_frontend_architecture_freeze.md` | IMMUTABLE           |
+| OpenAPI (editable)        | `server/docs/openapi.yaml`                                | CANONICAL CONTRACT  |
+| OpenAPI (freeze snapshot) | `docs/freeze/white_label_openapi.yaml`                    | READ-ONLY REFERENCE |
 
 **Rule:** `server/docs/openapi.yaml` is the live contract. It must stay identical to the freeze snapshot unless a formal Change Request is raised. Never edit the freeze snapshot directly.
 
@@ -65,6 +65,7 @@ white-label-school-mgmt-main/
 For every new domain feature (e.g. "grades", "fees"):
 
 ### Backend
+
 - [ ] `server/src/modules/<feature>/controller.ts`
 - [ ] `server/src/modules/<feature>/routes.ts`
 - [ ] Register routes in `server/src/app.ts`
@@ -76,6 +77,7 @@ For every new domain feature (e.g. "grades", "fees"):
 - [ ] `server/docs/openapi.yaml` updated
 
 ### Frontend (tenant-app)
+
 - [ ] `apps/tenant-app/src/api/<feature>.ts` (typed, uses `apiClient`)
 - [ ] `apps/tenant-app/src/features/<feature>/` pages and components
 - [ ] Route registered in `App.tsx` with `ProtectedRoute` + `FeatureGate` + `RoleGate`
@@ -120,13 +122,13 @@ Standard codes: `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `VALIDATIO
 
 ## TESTING STANDARDS
 
-| Layer | Tool | What to test |
-|---|---|---|
-| Backend utils/middleware | Jest (unit) | Every branch, including edge cases |
-| Backend routes | Jest + Supertest (integration) | Happy path + all HTTP error codes |
-| Frontend components | Vitest + Testing Library | Render, user interaction, error state, loading state |
-| Frontend hooks | Vitest | State transitions |
-| Frontend API mocking | MSW | Never mock axios directly |
+| Layer                    | Tool                           | What to test                                         |
+| ------------------------ | ------------------------------ | ---------------------------------------------------- |
+| Backend utils/middleware | Jest (unit)                    | Every branch, including edge cases                   |
+| Backend routes           | Jest + Supertest (integration) | Happy path + all HTTP error codes                    |
+| Frontend components      | Vitest + Testing Library       | Render, user interaction, error state, loading state |
+| Frontend hooks           | Vitest                         | State transitions                                    |
+| Frontend API mocking     | MSW                            | Never mock axios directly                            |
 
 Coverage requirement: all new code must have tests. No untested happy paths shipped.
 

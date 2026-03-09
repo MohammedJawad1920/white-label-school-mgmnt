@@ -81,17 +81,13 @@ const router = Router();
 
 router.use(tenantContextMiddleware);
 
-router.get(
-  "/",
-  requireRole("Admin", "Teacher"),
-  asyncHandler(controller.list)
-);
+router.get("/", requireRole("Admin", "Teacher"), asyncHandler(controller.list));
 
 router.post(
   "/",
   requireRole("Admin"),
-  featureGuard("feature-key"),   // only if feature-flagged
-  asyncHandler(controller.create)
+  featureGuard("feature-key"), // only if feature-flagged
+  asyncHandler(controller.create),
 );
 
 export default router;
@@ -101,20 +97,27 @@ export default router;
 // modules/<feature>/controller.ts
 import { Request, Response } from "express";
 import { pool } from "../../db/pool";
-import { send200, send201, send400, send404, send409 } from "../../utils/errors";
+import {
+  send200,
+  send201,
+  send400,
+  send404,
+  send409,
+} from "../../utils/errors";
 import { logger } from "../../utils/logger";
 
 export async function list(req: Request, res: Response): Promise<void> {
   const { tenantId } = req;
   const { rows } = await pool.query(
     `SELECT * FROM <table> WHERE tenant_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC`,
-    [tenantId]
+    [tenantId],
   );
   send200(res, rows);
 }
 ```
 
 Register in `app.ts`:
+
 ```typescript
 import featureRouter from "./modules/<feature>/routes";
 app.use("/api/<feature>", featureRouter);
@@ -144,7 +147,10 @@ app.use("/api/<feature>", featureRouter);
 Always use the `errors.ts` helpers — never write raw `res.status().json()`:
 
 ```typescript
-send400(res, "Validation failed", "VALIDATION_ERROR", { field: "email", issue: "required" });
+send400(res, "Validation failed", "VALIDATION_ERROR", {
+  field: "email",
+  issue: "required",
+});
 send401(res);
 send403(res, "Feature not enabled", "FEATURE_DISABLED");
 send404(res, "Student not found");
@@ -168,11 +174,13 @@ All unhandled async errors propagate through `asyncHandler` → global error mid
 ## TESTING
 
 ### Unit tests (`tests/unit/`)
+
 - Test every util function and middleware in isolation.
 - Mock `pool.query` with `jest.fn()` — never hit real DB in unit tests.
 - Cover: happy path, error path, edge cases (empty input, nulls, boundary values).
 
 ### Integration tests (`tests/integration/`)
+
 - Use real PostgreSQL test DB (separate from dev DB).
 - Each test suite: setup tenant + seed minimal data in `beforeAll`, cleanup in `afterAll`.
 - Test every endpoint: 200/201, 400, 401, 403, 404, 409 where applicable.
@@ -180,6 +188,7 @@ All unhandled async errors propagate through `asyncHandler` → global error mid
 - Do not share state between tests — each test is independent.
 
 ### Test file naming
+
 - `tests/unit/<module>.test.ts`
 - `tests/integration/<module>.test.ts`
 

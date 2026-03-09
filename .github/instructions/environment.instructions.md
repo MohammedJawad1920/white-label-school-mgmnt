@@ -123,11 +123,13 @@ psql -U postgres -c "CREATE DATABASE school_management_test;"
 ```
 
 Run integration tests:
+
 ```bash
 cd server && npm run test:integration
 ```
 
 Run unit tests:
+
 ```bash
 cd server && npm test
 ```
@@ -157,6 +159,7 @@ Never silence startup env errors — a missing `JWT_SECRET` in production is a c
 ## SECRETS ROTATION
 
 When rotating `JWT_SECRET`:
+
 - All existing JWTs are immediately invalidated (all users logged out).
 - Coordinate with a deployment — do not rotate mid-session in production without a plan.
 - Update the secret in your secrets manager / deployment env, not in `.env` files committed to repo.

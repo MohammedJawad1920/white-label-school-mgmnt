@@ -13,19 +13,19 @@ Read the freeze doc before implementing anything.
 
 ## STACK (locked — do not upgrade or swap)
 
-| Concern | Library | Version |
-|---|---|---|
-| Framework | React | 18.x |
-| Build | Vite | 5.x |
-| Language | TypeScript | strict mode |
-| Routing | React Router | v6 |
-| Server state | TanStack Query | v5 |
-| HTTP client | axios | typed client layer |
-| Forms | React Hook Form + Zod | — |
-| Styling | Tailwind CSS | v3 |
-| UI primitives | Radix UI | — |
-| Testing | Vitest + Testing Library | — |
-| API mocking | MSW | v2 |
+| Concern       | Library                  | Version            |
+| ------------- | ------------------------ | ------------------ |
+| Framework     | React                    | 18.x               |
+| Build         | Vite                     | 5.x                |
+| Language      | TypeScript               | strict mode        |
+| Routing       | React Router             | v6                 |
+| Server state  | TanStack Query           | v5                 |
+| HTTP client   | axios                    | typed client layer |
+| Forms         | React Hook Form + Zod    | —                  |
+| Styling       | Tailwind CSS             | v3                 |
+| UI primitives | Radix UI                 | —                  |
+| Testing       | Vitest + Testing Library | —                  |
+| API mocking   | MSW                      | v2                 |
 
 ---
 
@@ -33,13 +33,13 @@ Read the freeze doc before implementing anything.
 
 The two apps are completely isolated. Never share code, tokens, or state between them.
 
-| | `tenant-app` | `superadmin-app` |
-|---|---|---|
-| Port | 5173 | 5174 |
-| localStorage key | `auth` | `sa-auth` |
-| axios instance | `apiClient` | `saApiClient` |
-| Auth context | `AuthContext` | `SAAuthContext` |
-| Protected route | `ProtectedRoute` | `SAProtectedRoute` |
+|                  | `tenant-app`     | `superadmin-app`   |
+| ---------------- | ---------------- | ------------------ |
+| Port             | 5173             | 5174               |
+| localStorage key | `auth`           | `sa-auth`          |
+| axios instance   | `apiClient`      | `saApiClient`      |
+| Auth context     | `AuthContext`    | `SAAuthContext`    |
+| Protected route  | `ProtectedRoute` | `SAProtectedRoute` |
 
 ---
 
@@ -96,7 +96,9 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     try {
       const { token } = JSON.parse(raw) as { token?: string };
       if (token) config.headers.Authorization = `Bearer ${token}`;
-    } catch { /* malformed — skip */ }
+    } catch {
+      /* malformed — skip */
+    }
   }
   return config;
 });
@@ -110,27 +112,33 @@ apiClient.interceptors.response.use(
       window.dispatchEvent(new Event("session-expired"));
     }
     return Promise.reject(error);
-  }
+  },
 );
 ```
 
 ```typescript
 // api/students.ts — typed API function example
 import { apiClient } from "./client";
-import type { Student, CreateStudentPayload, ApiListResponse } from "../types/api";
+import type {
+  Student,
+  CreateStudentPayload,
+  ApiListResponse,
+} from "../types/api";
 
 export const studentsApi = {
   list: (params?: { status?: string }) =>
-    apiClient.get<ApiListResponse<Student>>("/students", { params }).then(r => r.data),
+    apiClient
+      .get<ApiListResponse<Student>>("/students", { params })
+      .then((r) => r.data),
 
   create: (payload: CreateStudentPayload) =>
-    apiClient.post<Student>("/students", payload).then(r => r.data),
+    apiClient.post<Student>("/students", payload).then((r) => r.data),
 
   update: (id: string, payload: Partial<CreateStudentPayload>) =>
-    apiClient.patch<Student>(`/students/${id}`, payload).then(r => r.data),
+    apiClient.patch<Student>(`/students/${id}`, payload).then((r) => r.data),
 
   delete: (ids: string[]) =>
-    apiClient.delete("/students", { data: { ids } }).then(r => r.data),
+    apiClient.delete("/students", { data: { ids } }).then((r) => r.data),
 };
 ```
 
@@ -207,7 +215,7 @@ export const navItems = [
     path: "/timetable",
     icon: CalendarIcon,
     roles: ["Admin", "Teacher"],
-    featureKey: "timetable",  // undefined = always show
+    featureKey: "timetable", // undefined = always show
   },
 ];
 ```
@@ -234,7 +242,11 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormValues>({
+const {
+  register,
+  handleSubmit,
+  formState: { errors, isSubmitting },
+} = useForm<FormValues>({
   resolver: zodResolver(schema),
 });
 ```
@@ -249,7 +261,9 @@ import axios from "axios";
 
 export function parseApiError(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    return error.response?.data?.error?.message ?? "An unexpected error occurred";
+    return (
+      error.response?.data?.error?.message ?? "An unexpected error occurred"
+    );
   }
   return "An unexpected error occurred";
 }
@@ -275,6 +289,7 @@ Never swallow errors silently — log to logger or show toast at minimum.
 ## TESTING
 
 ### Component tests
+
 ```typescript
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -301,6 +316,7 @@ test("shows error state on API failure", async () => {
 ```
 
 Required test cases for every page:
+
 - Renders loading state
 - Renders data on success
 - Renders error state on API failure
@@ -308,6 +324,7 @@ Required test cases for every page:
 - Role/feature gate hides content when unauthorized
 
 ### AppProviders wrapper (set up once)
+
 ```typescript
 // __tests__/utils.tsx
 export function AppProviders({ children }: { children: React.ReactNode }) {
