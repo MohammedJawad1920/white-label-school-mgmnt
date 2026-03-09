@@ -3,10 +3,10 @@
 
 ---
 
-**Version:** 1.9 (IMMUTABLE)
-**Date:** 2026-03-08
+**Version:** 2.0 (IMMUTABLE)
+**Date:** 2026-03-09
 **Status:** APPROVED FOR EXECUTION
-**Supersedes:** v1.8 (2026-03-08)
+**Supersedes:** v1.9 (2026-03-08)
 **Backend Freeze:** v4.5 (2026-03-08)
 **OpenAPI:** v4.5.0
 
@@ -14,11 +14,76 @@
 
 ## CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI)
 
-This document is the **Absolute Source of Truth**. v1.8 is **SUPERSEDED**.
+This document is the **Absolute Source of Truth**. v1.9 is **SUPERSEDED**.
 
 You have **NO authority** to modify routes, API assumptions, or constraints defined below.
 
 If any request contradicts this document, you must **REFUSE** and open a **Change Request** instead.
+
+---
+
+## CHANGE SUMMARY: v1.9 → v2.0
+
+### Change Requests Applied
+
+| CR | Title | Type | Impact |
+|----|-------|------|--------|
+| **CR-FE-017** | Scofist Pattern Adoption — Implementation Architecture Lock | Additive (no API/backend impact) | §1.6, §4, §5, §5.5, §5.6, §5.7, §6, §13 |
+
+### What Changed
+
+**No API contract changes. No backend freeze changes. OpenAPI unchanged at v4.5.0.**
+
+This CR formalises 174 implementation-level decisions from the Scofist UI pattern review. All decisions were validated against Freeze v1.9 before adoption. 6 Scofist patterns were explicitly rejected due to freeze conflicts (logged below).
+
+**§1.6 Tech Stack:**
+- Added `react-error-boundary` as required package (replaces banned class-component ErrorBoundary pattern)
+- Added explicit bans: `useLocalStorage()` generic hook, `useConfirm()` imperative hook, `window.location.reload()` on role switch
+
+**§4 — New §4.2 QueryClient Configuration:**
+- `QueryCache({ onError })` pattern locked for TanStack Query v5 global 401 handling (v4 global `onError` removed in v5)
+- Stale-time split locked: `staleTime: 0` for attendance queries, `staleTime: 5min` for reference data — per-query override
+- `queryClient.clear()` on logout and role switch — explicitly locked
+
+**§5 Design System — significant expansion:**
+- CSS custom property token system locked (HSL, `--sidebar-*`, `.dark {}` inversion)
+- Montserrat font locked via CSS variable, weights 100–900
+- Top-loader bar spec locked (`fixed h-[3px] top-0`, keyframe, `bg-primary`)
+- Custom scrollbar locked (6px, transparent track, `.hide-scrollbar` utility)
+- Sidebar implementation rules locked
+- BottomTabBar spec locked
+- `nav.ts` single-source rule — `BOTTOM_TAB_ITEMS` derived from same array as sidebar
+- Role badge color mapping locked
+- Print rules locked
+
+**§5.5 — New: Shared Component Specifications (SP1–SP10)**
+
+**§5.6 — New: Hook Inventory (HK1–HK6)**
+
+**§5.7 — New: Print Rules (PR1–PR7)**
+
+**§6 A11y additions:** skip link, aria-live/busy, prefers-reduced-motion, aria-hidden on decorative icons, heading hierarchy, no tabindex>0, axe-core/playwright in CI
+
+**§13:** 4 new forbidden patterns added
+
+### Explicitly Rejected Scofist Patterns (6)
+
+| Item | Pattern | Reason |
+|------|---------|--------|
+| T10 | `.poster-text` antialiasing | YAGNI — no certificates in scope |
+| S8 | Role switch → `window.location.reload()` | Freeze mandates no-reload role switch (§4, Success Definition §1.1 item 4) |
+| S17 | `NavIcon` inline SVG component | `lucide-react` is locked stack; inline SVGs create parallel icon system |
+| SP10 | Custom class-component `<ErrorBoundary>` | Freeze §1.6 bans class components → replaced by `react-error-boundary` package |
+| HK4 | `useConfirm()` imperative hook | Duplicates SP6 declarative `<ConfirmDialog>` pattern |
+| HK5 | `useLocalStorage()` generic hook | Only `localStorage.auth` is authorised (§8); generic hook enables undisciplined storage use |
+
+### Backend Contract Sync
+
+None. Backend Freeze v4.5 and OpenAPI v4.5.0 unchanged.
+
+### Timeline Impact
+
+None. Implementation architecture constraints only — no new user stories or screens.
 
 ---
 
@@ -279,6 +344,7 @@ VITE_APP_NAME=Platform Admin
 | **Date handling** | date-fns v3.x |
 | **HTTP client** | axios v1.x (typed interceptors) |
 | **Icons** | lucide-react (latest stable) |
+| **Error boundaries** | `react-error-boundary` (latest stable) |
 
 ### Routing mode
 
@@ -296,10 +362,13 @@ VITE_APP_NAME=Platform Admin
 - No jQuery, no Moment.js
 - No `dangerouslySetInnerHTML`
 - No inline styles (Tailwind classes only)
-- No class components (hooks only)
+- No class components (hooks only) — including custom `ErrorBoundary` class components; use `react-error-boundary` package
 - No direct `fetch` calls outside `src/api`
 - No prop drilling beyond 2 levels
 - No hardcoded tenant slugs, IDs, or API URLs in component files
+- No `useLocalStorage()` generic hook — only `localStorage.auth` and `localStorage.sa-auth` are authorised storage keys (§8)
+- No `useConfirm()` imperative hook — use `<ConfirmDialog>` (SP6, declarative) everywhere
+- No `window.location.reload()` on role switch — role switch is context update + `queryClient.clear()` only (§4)
 
 ---
 
@@ -1184,9 +1253,58 @@ window.addEventListener('ROLE_SWITCHED', () => {
 
 ## 4.1 ERROR BOUNDARY STRATEGY (LOCKED) — Unchanged from v1.8
 
-- **Per-route boundary:** Every route wrapped in its own `<ErrorBoundary>`. Inline error card + Retry button.
+- **Per-route boundary:** Every route wrapped in its own `<ErrorBoundary>` from `react-error-boundary`. Inline error card + Retry button.
 - **Root boundary:** Single boundary at `App.tsx`.
 - **Observability:** Console logs only in dev. Stripped in production.
+- **Implementation:** `react-error-boundary` package only. No custom class-component ErrorBoundary (banned §1.6).
+
+---
+
+## 4.2 QUERYLIENT CONFIGURATION (LOCKED — CR-FE-017)
+
+### QueryClient instantiation
+
+```ts
+import { QueryClient, QueryCache } from '@tanstack/react-query'
+
+export const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error: unknown) => {
+      if (isAxiosError(error) && error.response?.status === 401) {
+        window.dispatchEvent(new CustomEvent('AUTH_EXPIRED'))
+      }
+    }
+  }),
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        if (isAxiosError(error) && error.response?.status) return false // never retry 4xx
+        return failureCount < 3 // retry network errors up to 3 times
+      },
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
+      refetchOnWindowFocus: true,
+    },
+    mutations: {
+      retry: false, // never auto-retry mutations
+    }
+  }
+})
+```
+
+### Stale-time rules (LOCKED)
+
+Two tiers — applied via per-query `staleTime` override, not global:
+
+| Tier | Queries | staleTime |
+|------|---------|-----------|
+| **Attendance** (must reflect current state) | `attendance-streaks`, `attendance-daily-summary`, `attendance-monthly-sheet`, `student-attendance` | `0` (always refetch on mount) |
+| **Reference data** (stable within session) | `timetable`, `students`, `users`, `classes`, `batches`, `subjects`, `school-periods`, `events`, `sa-tenants`, `sa-features`, `attendance-toppers` | Per §3.3 table |
+
+### Cache clear rules (LOCKED)
+
+- **Logout:** `queryClient.clear()` + clear `localStorage.auth` + reset `AuthContext`
+- **Role switch:** `queryClient.clear()` triggered by `ROLE_SWITCHED` custom event listener in `App.tsx` (§4)
+- **No partial cache invalidation on role switch** — full clear prevents cross-role data leaks
 
 ---
 
@@ -1202,18 +1320,116 @@ window.addEventListener('ROLE_SWITCHED', () => {
 - **Attendance % null:** Display "—" (em dash), `text-muted-foreground`
 - **Contrast minimum:** 4.5:1 (WCAG 2.1 AA)
 
-### Typography (LOCKED) — Unchanged from v1.8
+### Token System (LOCKED — CR-FE-017)
+
+- **CSS custom properties:** HSL format for all color tokens — `--background: H S% L%`, enables runtime opacity modifiers via `bg-background/50`
+- **Dark mode:** `.dark {}` class on `<html>` defines fully inverted token set — zero JS theme logic in components; Tailwind reads CSS vars
+- **Sidebar tokens:** Independent `--sidebar-background`, `--sidebar-foreground`, `--sidebar-primary`, `--sidebar-accent`, `--sidebar-border` token set — sidebar themed independently from main surface
+- **Border radius:** `--radius: 0.5rem` (shadcn/ui default)
+- **`ThemeProvider`** at root: `defaultTheme="system" enableSystem disableTransitionOnChange`
+
+### Typography (LOCKED — CR-FE-017)
+
+- **Font family:** Montserrat, loaded via `next/font` equivalent (CSS variable `--font-sans`)
+- **Weights loaded:** 100, 200, 300, 400, 500, 600, 700, 800, 900
+- **Scale:** Tailwind default `text-xs` through `text-4xl` — no custom scale additions
+- **Antialiasing:** Standard browser default (no `.poster-text` class — out of scope)
 
 ### Spacing scale — Unchanged from v1.8
 
-### Sidebar
+### Scrollbar utilities (LOCKED — CR-FE-017)
 
-- Fixed left, `w-56` desktop, collapses on mobile
-- Top: app name, RoleSwitcher dropdown (if `roles.length > 1`) + role badge
-- Active nav: `bg-primary/10 text-primary font-medium rounded-lg`; Inactive: `text-muted-foreground hover:bg-muted`
-- **v1.9 additions:**
-  - Teacher sidebar: + "Monthly Sheet" (`/attendance/monthly-sheet`)
-  - Admin sidebar: + "Monthly Sheet" (`/attendance/monthly-sheet`), + "Events" (`/manage/events`)
+```css
+/* global.css */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
+.hide-scrollbar { scrollbar-width: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+```
+
+### Top-loader bar (LOCKED — CR-FE-017)
+
+Replaces NProgress. Pure CSS — no JS library.
+
+```css
+/* Triggered by adding .loading class to <html> during route transitions */
+.top-loader {
+  position: fixed; top: 0; left: 0;
+  width: 100%; height: 3px;
+  background: hsl(var(--primary));
+  animation: toploader 1s ease-in-out infinite;
+  z-index: 9999;
+}
+@keyframes toploader {
+  0% { width: 0; } 70% { width: 70%; } 100% { width: 100%; opacity: 0; }
+}
+```
+
+Respects `prefers-reduced-motion` — animation disabled when user opts out (§6, A17).
+
+### Sidebar (LOCKED — CR-FE-017)
+
+- Fixed left, `w-60 hidden md:flex flex-col` — CSS-only mobile hide (no JS)
+- `SidebarProvider`: `defaultOpen={true}` on `md+` breakpoint, `defaultOpen={false}` on mobile
+- **Nav item filtering:** `useMemo(() => menuItems.filter(item => item.allowedRoles.includes(activeRole)), [activeRole])` — zero re-renders on unrelated state
+- **`allowedRoles: Role[]`** per nav item in `nav.ts` — single `.filter()` gates visibility
+- **Sub-menus:** `SidebarMenuSub / SidebarMenuSubItem / SidebarMenuSubButton` for "Manage" group (6 items: Users, Students, Classes, Batches, Subjects, School Periods)
+- **Active state:** `data-active={location.pathname.startsWith(item.url)}` — `useLocation()` from `react-router-dom`, **not** `usePathname()`. Supports `matchPrefix` so `/manage/users` keeps "Manage" group highlighted
+- **Icon stroke:** `strokeWidth={1.75}` on all sidebar icons (lucide-react) — consistent, softer than lucide default `2`
+- **Auto-close on navigation:** `useEffect` listening on `location.pathname` (React Router v6)
+- **Auto-close on outside click:** `mousedown` listener + `useCallback` + cleanup on unmount
+- **Brand section:** Small logo mark + `VITE_APP_NAME` from env — white-label tenant name
+- **Group divider:** Non-clickable `groupLabel` + `isSubItem` pattern for "Manage" section header
+- **Bottom of sidebar:** `RoleSwitcher` (Popover + Command, shown only when `user.roles.length > 1`) + user initials avatar + name + `activeRole` badge + logout
+- **Touch target:** `min-h-[40px]` on all nav items (WCAG 2.1 AA)
+- **v1.9 sidebar items:**
+  - Teacher: Dashboard, Timetable, Record Attendance, Monthly Sheet
+  - Admin: Dashboard, Timetable, Attendance Summary, Student Attendance History, Monthly Sheet, Manage (group with 6 sub-items), Events
+  - Student: Dashboard, Timetable
+
+### BottomTabBar — Mobile (LOCKED — CR-FE-017)
+
+Shown only on `< md` breakpoint. Sidebar is hidden on mobile.
+
+- **Container:** `fixed bottom-0 left-0 w-full h-16 bg-background border-t flex md:hidden z-20`
+- **Source:** Derived from same `nav.ts` array as sidebar via `BOTTOM_TAB_ITEMS` export — **not a separate hardcoded list**
+- **Max tabs:** 5 visible. Overflow items (Admin role) collapse into "More" `<Sheet>` — items in sheet still use `allowedRoles[]` from `nav.ts`
+- **Active indicator:** `strokeWidth={2.5}` + `font-medium` label (active) vs `strokeWidth={1.75}` (inactive). No filled icon variants — lucide-react has none
+- **Active detection:** `useLocation().pathname` from `react-router-dom`
+- **Label:** Truncate at 10 characters, `text-[10px]` — e.g. "Monthly Sheet" → "Monthly"
+- **A11y:** `role="tablist"` on container, `aria-label` per tab, `aria-current="page"` on active tab, `min-h-[40px]` on each tab
+
+### `nav.ts` — Single Source of Truth (LOCKED — CR-FE-017)
+
+`src/app/nav.ts` is the **only** place nav items are defined. Both sidebar and BottomTabBar derive from it.
+
+```ts
+interface NavItem {
+  label: string
+  url: string
+  icon: LucideIcon
+  allowedRoles: Role[]
+  isSubItem?: boolean
+  groupLabel?: string
+}
+
+export const NAV_ITEMS: NavItem[] = [/* ... */]
+export const BOTTOM_TAB_ITEMS = NAV_ITEMS.filter(item => !item.isSubItem).slice(0, 5)
+```
+
+**Rule:** Adding a route without adding it to `nav.ts` is a freeze violation.
+
+### Role Badge Color Mapping (LOCKED — CR-FE-017)
+
+Used in TopBar, user popover, sidebar bottom identity anchor, and User Management table.
+
+| Role | Badge variant |
+|------|--------------|
+| Teacher | `bg-blue-100 text-blue-800` |
+| Admin | `bg-purple-100 text-purple-800` |
+| Student | `bg-green-100 text-green-800` |
+| SuperAdmin | `bg-red-100 text-red-800` |
 
 ### Component standards — Unchanged from v1.8
 
@@ -1221,7 +1437,128 @@ window.addEventListener('ROLE_SWITCHED', () => {
 
 Button, Input, Select, Checkbox, RadioGroup, Switch, Badge, Card, Table, Sheet, Dialog, Popover, DropdownMenu, Toast (Sonner), Skeleton, Avatar, Tooltip, Copy button, **Accordion**, **Tabs**.
 
+Shared components (see §5.5): `<PageHeader>`, `<DataCard>`, `<EmptyState>`, `<InlineError>`, `<LoadingSpinner>`, `<ConfirmDialog>`, `<ToastProvider>` / `useAppToast`, `<RoleBadge>`, `<SectionCard>`.
+
+Error boundary: `<ErrorBoundary>` from `react-error-boundary` package (not a custom component).
+
 ### Responsiveness — Unchanged from v1.8
+
+---
+
+## 5.5 SHARED COMPONENT SPECIFICATIONS (LOCKED — CR-FE-017)
+
+These components are **mandatory shared implementations**. No per-screen bespoke equivalents.
+
+### SP1 — `<PageHeader title actions?>`
+
+- Root element: `<div class="flex items-center justify-between mb-6">`
+- `title` renders as `<h1>` — the **only** `h1` on any screen
+- `actions` slot: right-aligned, flex row
+- Mobile: title hidden (`hidden md:block`) — TopBar owns mobile screen title
+- Used on every protected screen
+
+### SP2 — `<DataCard>`
+
+- `<Card>` wrapper with `<CardHeader>` + `<CardContent>` + optional `<CardFooter>`
+- Used for: dashboard stat bar, upcoming events card, class rankings card, student degraded state card
+
+### SP3 — `<EmptyState icon message action?>`
+
+- Centered layout, illustration-free (no image assets in scope)
+- `message`: string. `action`: optional CTA button
+- Used on every screen with a data list or table
+
+### SP4 — `<InlineError message>`
+
+- `<p class="text-destructive text-sm mt-1">`
+- Used for: field-level form errors, 403 inline messages (Monthly Sheet teacher restriction), section-level fetch errors
+- **Not** a toast — inline only
+
+### SP5 — `<LoadingSpinner size?>`
+
+- Centered `<Loader2>` from `lucide-react` with `animate-spin`
+- Default size: `h-6 w-6`. Accepts `size` prop for larger contexts
+
+### SP6 — `<ConfirmDialog title description onConfirm onCancel>`
+
+- Radix `AlertDialog` wrapper
+- Used for: delete timetable slot, promote/graduate class, delete event, bulk-delete users, logout confirmation
+- Radix handles focus trap + Escape key natively
+- `aria-describedby` on confirm button pointing to `description` text
+- **This is the only confirm pattern.** `useConfirm()` imperative hook is banned (§1.6)
+
+### SP7 — `useAppToast()`
+
+- Wraps shadcn/ui `useToast()` / Sonner
+- Exposes only: `success(message)` and `mutationError(message)`
+- **Toasts for mutation feedback only** (create/update/delete success, mutation errors)
+- **Never** for fetch/GET errors — those are inline via SP4 or screen-level error state
+- Raw `useToast()` / `toast()` calls outside `useAppToast()` are a freeze violation
+
+### SP8 — `<RoleBadge role>`
+
+- `<Badge>` with color mapping from §5 Role Badge Color Mapping table
+- Used in: TopBar, user popover, sidebar bottom identity, User Management table
+
+### SP9 — `<SectionCard title children>`
+
+- Lighter card for grouping subsections within a screen — no full `<Card>` chrome
+- Used for: At-Risk Students panel, Class Rankings card sections, Monthly Sheet filter bar
+
+### SP10 — Error Boundary
+
+- **Implementation:** `<ErrorBoundary>` imported from `react-error-boundary` package
+- **No custom class-component ErrorBoundary** — banned (§1.6)
+- Per-route: inline error card + Retry button as `fallbackRender`
+- Root: minimal fallback at `App.tsx`
+
+---
+
+## 5.6 HOOK INVENTORY (LOCKED — CR-FE-017)
+
+All custom hooks live in `src/hooks/`. No hook outside this list is authorised without a new Freeze version.
+
+| Hook | Purpose | Notes |
+|------|---------|-------|
+| `useAuth()` | Reads `AuthContext`. Exposes: `user`, `token`, `activeRole`, `setActiveRole`, `logout`, `isAuthenticated`, `isExpired` | All components use this. No direct `localStorage` reads outside `src/api` |
+| `usePermission(requiredRole: Role)` | Returns `boolean` — `activeRole === requiredRole` | For conditional renders. Prevents inline `activeRole === 'Admin'` checks everywhere |
+| `useDebounce(value, delay)` | Debounces search input before API call | Used in User Management and Student Management search fields. Prevents per-keystroke requests |
+| `useTodaySlots(role)` | Derives today's timetable slots filtered by role from TQ cache | Shared between Dashboard and Record Attendance. No extra fetch — reads existing `timetable` query cache |
+| ~~`useConfirm()`~~ | **BANNED** | Duplicates SP6 `<ConfirmDialog>` declarative pattern. Use SP6 |
+| ~~`useLocalStorage(key, default)`~~ | **BANNED** | Only `localStorage.auth` and `localStorage.sa-auth` are authorised. Generic hook enables undisciplined storage use |
+
+---
+
+## 5.7 PRINT RULES (LOCKED — CR-FE-017)
+
+```css
+@media print {
+  /* Base */
+  * { font-size: 12px; }
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+
+  /* Hide chrome */
+  aside, nav, header, [data-radix-portal], .hide-on-print { display: none !important; }
+
+  /* Fully expand scrollable content */
+  .scrollable { overflow: visible !important; max-height: none !important; }
+
+  /* Top-loader */
+  .top-loader { display: none; }
+}
+```
+
+**Per-screen print rules:**
+
+| Screen | Print behaviour |
+|--------|----------------|
+| Monthly Sheet | Primary print target. Full student × day grid expanded (`print:block` on grid container). `overflow-x-auto` removed |
+| Student History | Table fully expanded |
+| Dashboard panels (At-Risk, Class Rankings) | **Do NOT force-expand** — `print:hidden` on collapsible panels. Dashboard is not a print target |
+| All other screens | Default — nav/sidebar hidden, content visible |
+
+**Print trigger:** `window.print()` button on Monthly Sheet and Student History only. No server-side PDF generation.
 
 ---
 
@@ -1229,23 +1566,64 @@ Button, Input, Select, Checkbox, RadioGroup, Switch, Badge, Card, Table, Sheet, 
 
 **Target:** WCAG 2.1 AA
 
-### Mandatory behaviors (v1.9 additions appended)
+### Mandatory behaviors (v2.0 — complete locked list)
 
-All v1.8 behaviors unchanged. Append:
+**Navigation & structure:**
+- `<SkipLink href="#main-content">` as first DOM element — targets `id="main-content"` on `<main>` (§2 L6)
+- `role="tablist"` on BottomTabBar container, `aria-label` per tab, `aria-current="page"` on active tab
+- Heading hierarchy: one `<h1>` per page (via SP1 `<PageHeader>`), sections use `<h2>` / `<h3>`. No skipped levels
+- No `tabindex > 0` anywhere — natural DOM order only
 
+**Focus & keyboard:**
+- Keyboard navigation works for all flows
+- Visible focus ring — `focus-visible:ring-2` — never `outline: none` without replacement
+- Dialog focus trap + Escape handling — Radix `Dialog` / `AlertDialog` handles natively
+- `autoFocus` on first field of modal forms; Radix handles trap automatically
+
+**Interactive elements:**
+- `min-h-[40px] min-w-[40px]` on **all** interactive elements (buttons, tabs, row actions, nav items) — WCAG minimum touch target
+- `aria-hidden="true"` on all decorative lucide icons beside text labels — prevents screen reader double-reading
+- Color is never the sole indicator — always pair with icon or text label (SB1 badges use text label + color)
+
+**Async / loading:**
+- `aria-live="polite"` on all async status regions (loading → content transitions)
+- `aria-busy="true"` on loading containers while fetching
+
+**Forms:**
+- `htmlFor` on all form labels
+- `aria-describedby` linking error messages to fields
+- `role="alert"` on global form error messages; `aria-describedby` on field-level errors
+- Form errors announced — screen readers must hear validation feedback
+
+**Screen-specific (v1.9 — carried forward):**
 - At-Risk Students accordion: `aria-expanded`, `aria-controls`
 - Streak badge: `aria-label="{N} consecutive absent day(s) for {subjectName}"`
-- At-Risk panel region: `role="region"` with `aria-label="At-risk students"`
-- Class Rankings accordion (Teacher dashboard): `aria-expanded`
+- At-Risk panel: `role="region"` with `aria-label="At-risk students"`
+- Class Rankings accordion: `aria-expanded`
 - Upcoming Events list: `role="list"`, each event `role="listitem"`
 - Attendance Summary tabs: `role="tablist"`, `role="tab"`, `aria-selected`, `role="tabpanel"`
-- Monthly sheet grid: `role="grid"`, `role="row"`, `role="gridcell"`, corrected-record asterisk: `aria-label="Corrected record"`, status indicators: `aria-label="{status}"` (not color-only)
+- Monthly Sheet grid: `role="grid"`, `role="row"`, `role="gridcell"`, corrected asterisk: `aria-label="Corrected record"`, status: `aria-label="{status}"` (not color-only)
 - Event type badges: `aria-label="{type}"`
 - Events delete confirm: focus trap, Escape cancels, confirm button `aria-describedby` warning text
+- Timetable grid: `role="grid"`, empty cell: `aria-label="Add slot for {dayOfWeek} Period {n}"`
+
+**Motion:**
+- `prefers-reduced-motion`: disable `animate-spin`, top-loader animation, and all transitions for users who opt out
+- Use Tailwind `motion-safe:` / `motion-reduce:` utilities — **not** raw CSS `@media (prefers-reduced-motion)`
+
+**Images & icons:**
+- `alt=""` on decorative images, meaningful `alt` on informative
+- `aria-hidden="true"` on all decorative lucide icons (those beside a visible text label)
+- Meaningful `aria-label` on icon-only buttons
+
+**Tables:**
+- `aria-label` on all tables, `scope="col"` on all column headers
 
 ### Testing
 
-axe-core in CI on all 18 screens (was 16).
+- `@axe-core/playwright` automated checks in CI on all 18 tenant app screens + 3 SuperAdmin screens
+- Run as part of E2E suite (Playwright already in stack)
+- CI fails if any WCAG 2.1 AA violation detected on key screens
 
 ---
 
@@ -1389,6 +1767,11 @@ All v1.8 checklist items unchanged. Append:
 - Expose `GET /attendance/monthly-sheet` to Student role (backend 403 is authoritative)
 - Add `GET /attendance/streaks` as a standalone screen (streaks are inline-only in this Freeze)
 - Surface event soft-delete restore UI (no backend support)
+- Use `window.location.reload()` on role switch — role switch is context + `queryClient.clear()` only (CR-FE-017)
+- Write a custom class-component `ErrorBoundary` — use `react-error-boundary` package (CR-FE-017)
+- Use `useLocalStorage()` generic hook — only `localStorage.auth` / `localStorage.sa-auth` are authorised (CR-FE-017)
+- Use `useConfirm()` imperative hook — use SP6 `<ConfirmDialog>` everywhere (CR-FE-017)
+- Define nav items outside `src/app/nav.ts` — sidebar and BottomTabBar must derive from the same array (CR-FE-017)
 
 **If requested:** create Change Request → re-price → approve/reject.
 
@@ -1405,7 +1788,7 @@ All v1.8 checklist items unchanged. Append:
 - **Cost impact:** {self-funded / N/A}
 - **Risk impact:** {Low/Medium/High}
 - **Decision:** Approved / Rejected
-- **New Freeze version:** {e.g., v1.9}
+- **New Freeze version:** {e.g., v2.1}
 - **Backend Freeze dependency:** unchanged / updated → backend Freeze version {value}
 - **OpenAPI dependency:** unchanged / updated → new OpenAPI version {value}
 
@@ -1426,7 +1809,8 @@ All v1.8 checklist items unchanged. Append:
 - **v1.7** (2026-03-07): Backend v4.3 sync (CR-31). CR-FE-014 (a/b/c/d/e/f/g) applied.
 - **v1.8** (2026-03-08): Backend v4.4 sync (CR-32). CR-FE-015 (a/b/c/d/e) applied. `PUT /timetable/{id}` removed, delete-then-recreate correction workflow.
 - **v1.9** (2026-03-08): Backend v4.5 sync (CR-33–38). CR-FE-016 (a/b/c/d/e/f/g) applied. Breaking: `TenantUser.studentId` field added (CR-38), CG-01 Student dashboard placeholder resolved. Additive: API-driven Admin stat bar (CR-35), Timetable marking-status color (CR-35), At-Risk streaks panel in Record Attendance (CR-33), Teacher Class Rankings card on Dashboard (CR-34), Admin Toppers Rankings tab in Attendance Summary (CR-34), Monthly Sheet screen `/attendance/monthly-sheet` Admin+Teacher (CR-36), Academic Calendar screen `/manage/events` Admin (CR-37), Upcoming Events card on Dashboard all roles (CR-37), Student self-streak badges on Dashboard (CR-33+38). 2 new routes, 6 new TQ keys, 5 new types. Timeline: 9–13 weeks + 18 days.
+- **v2.0** (2026-03-09): CR-FE-017 — Scofist Pattern Adoption. No API/backend changes. Implementation architecture locked: CSS token system, Montserrat font, top-loader, scrollbar utilities, sidebar implementation rules, BottomTabBar spec, `nav.ts` single-source rule, role badge color mapping, shared component specs (SP1–SP9 + react-error-boundary for SP10), hook inventory (HK1–HK6 with HK4/HK5 banned), QueryClient config (QC1–QC4, TanStack Query v5 `QueryCache({onError})` pattern), print rules (PR1–PR7), A11y additions (skip link, aria-live/busy, prefers-reduced-motion, aria-hidden on decorative icons, heading hierarchy, no tabindex>0, axe-core/playwright in CI), 5 new forbidden patterns. 6 Scofist patterns explicitly rejected. Breaking: `TenantUser.studentId` field added (CR-38), CG-01 Student dashboard placeholder resolved. Additive: API-driven Admin stat bar (CR-35), Timetable marking-status color (CR-35), At-Risk streaks panel in Record Attendance (CR-33), Teacher Class Rankings card on Dashboard (CR-34), Admin Toppers Rankings tab in Attendance Summary (CR-34), Monthly Sheet screen `/attendance/monthly-sheet` Admin+Teacher (CR-36), Academic Calendar screen `/manage/events` Admin (CR-37), Upcoming Events card on Dashboard all roles (CR-37), Student self-streak badges on Dashboard (CR-33+38). 2 new routes, 6 new TQ keys, 5 new types. Timeline: 9–13 weeks + 18 days.
 
 ---
 
-**END OF FRONTEND FREEZE v1.9**
+**END OF FRONTEND FREEZE v2.0**
