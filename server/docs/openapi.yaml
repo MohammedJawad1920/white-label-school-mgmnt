@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: White-Label School Management System
-  version: "4.4.0"
+  version: "4.5.0"
   description: >
     Multi-tenant school management API. Supports SuperAdmin (platform-level)
     and tenant-scoped Admin/Teacher/Student roles.
@@ -9,6 +9,12 @@ info:
     v4.0.0 (CR-21): students.classId nullable; PUT /classes/{id}/promote supports action:graduate.
     v4.0.0 (CR-22): students.status field (Active|DroppedOff|Graduated).
     v4.0.0 (CR-23): batches.status Archived renamed to Graduated.
+    v4.5.0 (CR-33): GET /attendance/streaks — consecutive absent streak per student×subject.
+    v4.5.0 (CR-34): GET /attendance/toppers — ranked attendance percentage.
+    v4.5.0 (CR-35): GET /attendance/daily-summary — per-slot marking status for a date.
+    v4.5.0 (CR-36): GET /attendance/monthly-sheet — student×day attendance grid.
+    v4.5.0 (CR-37): POST/GET/PUT/DELETE /events — academic calendar events.
+    v4.5.0 (CR-38): studentId added to TenantUser (JWT payload + login/switch-role response).
 
 servers:
   - url: http://localhost:3000/api
@@ -48,7 +54,7 @@ components:
 
     TenantUser:
       type: object
-      required: [id, tenantId, name, email, roles, activeRole]
+      required: [id, tenantId, name, email, roles, activeRole, studentId]
       properties:
         id:
           type: string
@@ -68,6 +74,12 @@ components:
         activeRole:
           type: string
           enum: [Teacher, Admin, Student]
+        studentId:
+          type: string
+          nullable: true
+          description: >-
+            v4.5 CR-38: Student record ID linked to this user when activeRole is Student;
+            null for Admin/Teacher roles or if no student record is linked.
 
     SuperAdminProfile:
       type: object
@@ -335,6 +347,148 @@ components:
         recordedBy:
           type: string
         recordedAt:
+          type: string
+          format: date-time
+
+    # v4.5 CR-33: Attendance Streak
+    AttendanceStreak:
+      type: object
+      required: [studentId, consecutiveAbsentCount]
+      properties:
+        studentId:
+          type: string
+        consecutiveAbsentCount:
+          type: integer
+          description: Number of leading consecutive Absent records (most recent first)
+          minimum: 0
+
+    # v4.5 CR-34: Attendance Topper entry
+    AttendanceTopper:
+      type: object
+      required:
+        [
+          rank,
+          studentId,
+          studentName,
+          presentCount,
+          totalPeriods,
+          attendancePercentage,
+        ]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        studentId:
+          type: string
+        studentName:
+          type: string
+        presentCount:
+          type: integer
+        totalPeriods:
+          type: integer
+        attendancePercentage:
+          type: number
+          format: float
+          description: (presentCount / totalPeriods) * 100; null when totalPeriods is 0
+          nullable: true
+
+    # v4.5 CR-35: Daily summary — per-slot entry
+    DailySummarySlot:
+      type: object
+      required:
+        [
+          timeSlotId,
+          periodNumber,
+          subjectId,
+          subjectName,
+          teacherId,
+          teacherName,
+          attendanceMarked,
+          totalStudents,
+          absentCount,
+        ]
+      properties:
+        timeSlotId:
+          type: string
+        periodNumber:
+          type: integer
+        subjectId:
+          type: string
+        subjectName:
+          type: string
+        teacherId:
+          type: string
+        teacherName:
+          type: string
+        attendanceMarked:
+          type: boolean
+          description: true if at least one record exists for this slot on this date
+        totalStudents:
+          type: integer
+        absentCount:
+          type: integer
+          description: 0 when attendanceMarked is false
+
+    # v4.5 CR-36: Monthly sheet row — one per student
+    MonthlySheetRow:
+      type: object
+      required: [studentId, studentName, admissionNumber, days]
+      properties:
+        studentId:
+          type: string
+        studentName:
+          type: string
+        admissionNumber:
+          type: string
+        days:
+          type: object
+          description: >
+            Dense map keyed "1"…"<daysInMonth>". Each value is an array of {timeSlotId, status}
+            for that day+subject. Empty array [] when no records exist (weekend/holiday/not-marked).
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              required: [timeSlotId, status]
+              properties:
+                timeSlotId:
+                  type: string
+                status:
+                  type: string
+                  enum: [Present, Absent, Late]
+
+    # v4.5 CR-37: Academic calendar event
+    Event:
+      type: object
+      required:
+        [id, title, type, startDate, endDate, createdBy, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+          maxLength: 255
+        type:
+          type: string
+          enum: [Holiday, Exam, Event, Other]
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          description: Inclusive end date; must be >= startDate
+        description:
+          type: string
+          maxLength: 1000
+          nullable: true
+        createdBy:
+          type: string
+          description: User ID of the Admin who created the event
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
           type: string
           format: date-time
 
@@ -2632,6 +2786,250 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  # v4.5 CR-33: Attendance streaks
+  /attendance/streaks:
+    get:
+      summary: Get consecutive absent streaks per student×subject (CR-33)
+      description: >-
+        Returns students whose most-recent attendance records for a given time slot
+        form a consecutive Absent run (streak).
+        Teacher: only their own timeslots. Student: only their own records.
+        Admin: all classes in tenant.
+        Requires attendance feature enabled.
+      operationId: getAttendanceStreaks
+      tags: [Attendance]
+      parameters:
+        - name: timeSlotId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Streak data
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classId, subjectId, streaks]
+                properties:
+                  classId:
+                    type: string
+                  subjectId:
+                    type: string
+                  streaks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AttendanceStreak"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # v4.5 CR-34: Attendance toppers
+  /attendance/toppers:
+    get:
+      summary: Get ranked attendance percentages for a class+date range (CR-34)
+      description: >-
+        Returns students ranked by attendance percentage (descending).
+        Teacher guard: only classes the caller has an active timeslot for.
+        Student: can view their own class toppers.
+        Requires attendance feature enabled.
+      operationId: getAttendanceToppers
+      tags: [Attendance]
+      parameters:
+        - name: classId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        "200":
+          description: Topper list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classId, from, to, total, limit, offset, toppers]
+                properties:
+                  classId:
+                    type: string
+                  from:
+                    type: string
+                    format: date
+                  to:
+                    type: string
+                    format: date
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+                  toppers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AttendanceTopper"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # v4.5 CR-35: Attendance daily summary
+  /attendance/daily-summary:
+    get:
+      summary: Get per-slot attendance marking status for a class on a given date (CR-35)
+      description: >-
+        For each timetable timeslot scheduled on the given date's day-of-week,
+        reports whether attendance was marked and the present/absent/late counts.
+        Teacher guard: only classes where the caller has an active timeslot.
+        Requires timetable feature enabled.
+      operationId: getAttendanceDailySummary
+      tags: [Attendance]
+      parameters:
+        - name: classId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Daily summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classId, date, dayOfWeek, slots]
+                properties:
+                  classId:
+                    type: string
+                  date:
+                    type: string
+                    format: date
+                  dayOfWeek:
+                    type: string
+                    enum:
+                      [
+                        Monday,
+                        Tuesday,
+                        Wednesday,
+                        Thursday,
+                        Friday,
+                        Saturday,
+                        Sunday,
+                      ]
+                  slots:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DailySummarySlot"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # v4.5 CR-36: Attendance monthly sheet
+  /attendance/monthly-sheet:
+    get:
+      summary: Get a student×day attendance grid for a class+subject+month (CR-36)
+      description: >-
+        Returns one row per active+non-graduated student in the class.
+        Each row's `days` map has keys "1"…"<daysInMonth>"; each value is an array
+        of {timeSlotId, status} for records on that day (filtered to the given subjectId).
+        Teacher guard: caller must have an active timeslot for BOTH the classId AND the subjectId.
+        Student role: 403 FORBIDDEN.
+        Requires attendance feature enabled.
+      operationId: getAttendanceMonthlySheet
+      tags: [Attendance]
+      parameters:
+        - name: classId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: subjectId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            example: 2026
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            example: 3
+      responses:
+        "200":
+          description: Monthly sheet
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [year, month, classId, subjectId, students]
+                properties:
+                  year:
+                    type: integer
+                  month:
+                    type: integer
+                  classId:
+                    type: string
+                  subjectId:
+                    type: string
+                  students:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MonthlySheetRow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   # v3.4 CR-09: Correct an attendance record
   /attendance/{recordId}:
     put:
@@ -3330,3 +3728,222 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  # ─────────────────────────────────────────
+  # EVENTS — Academic Calendar (v4.5 CR-37)
+  # ─────────────────────────────────────────
+
+  /events:
+    post:
+      summary: Create an academic calendar event (Admin only)
+      operationId: createEvent
+      tags: [Events]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, type, startDate, endDate]
+              properties:
+                title:
+                  type: string
+                  maxLength: 255
+                type:
+                  type: string
+                  enum: [Holiday, Exam, Event, Other]
+                startDate:
+                  type: string
+                  format: date
+                endDate:
+                  type: string
+                  format: date
+                  description: Inclusive end date; must be >= startDate
+                description:
+                  type: string
+                  maxLength: 1000
+                  nullable: true
+            examples:
+              holiday:
+                summary: Create a holiday
+                value:
+                  title: Republic Day
+                  type: Holiday
+                  startDate: "2026-01-26"
+                  endDate: "2026-01-26"
+                  description: National holiday
+      responses:
+        "201":
+          description: Event created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [event]
+                properties:
+                  event:
+                    $ref: "#/components/schemas/Event"
+              examples:
+                success:
+                  value:
+                    event:
+                      id: evt_01HXY123
+                      title: Republic Day
+                      type: Holiday
+                      startDate: "2026-01-26"
+                      endDate: "2026-01-26"
+                      description: National holiday
+                      createdBy: U001
+                      createdAt: "2026-01-01T07:00:00Z"
+                      updatedAt: "2026-01-01T07:00:00Z"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    get:
+      summary: List academic calendar events for a date range (Admin, Teacher, Student)
+      description: >-
+        Returns events where start_date <= :to AND end_date >= :from (range overlap).
+        Default range: current month in tenant timezone when from/to are omitted.
+        Optional type filter to narrow results.
+      operationId: listEvents
+      tags: [Events]
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Range start (inclusive). Defaults to 1st of current month.
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Range end (inclusive). Defaults to last day of current month.
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [Holiday, Exam, Event, Other]
+          description: Optional filter by event type.
+      responses:
+        "200":
+          description: Event list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, total]
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Event"
+                  total:
+                    type: integer
+                    description: Total number of events returned (unfiltered by pagination)
+              examples:
+                success:
+                  value:
+                    events:
+                      - id: evt_01HXY123
+                        title: Republic Day
+                        type: Holiday
+                        startDate: "2026-01-26"
+                        endDate: "2026-01-26"
+                        description: National holiday
+                        createdBy: U001
+                        createdAt: "2026-01-01T07:00:00Z"
+                        updatedAt: "2026-01-01T07:00:00Z"
+                    total: 1
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /events/{eventId}:
+    put:
+      summary: Update an academic calendar event (Admin only)
+      description: >-
+        Partial update — all fields optional; missing fields retain their current values.
+        Merged endDate must remain >= merged startDate.
+      operationId: updateEvent
+      tags: [Events]
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  maxLength: 255
+                type:
+                  type: string
+                  enum: [Holiday, Exam, Event, Other]
+                startDate:
+                  type: string
+                  format: date
+                endDate:
+                  type: string
+                  format: date
+                description:
+                  type: string
+                  maxLength: 1000
+                  nullable: true
+            examples:
+              update_title:
+                value:
+                  title: Updated Holiday Name
+      responses:
+        "200":
+          description: Event updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [event]
+                properties:
+                  event:
+                    $ref: "#/components/schemas/Event"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      summary: Soft-delete an academic calendar event (Admin only)
+      operationId: deleteEvent
+      tags: [Events]
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Event deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"

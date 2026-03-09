@@ -317,7 +317,9 @@ describe("GET/PUT /api/super-admin/tenants/:id/features", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.features)).toBe(true);
-    const keys = (res.body.features as { key: string }[]).map((f) => f.key);
+    const keys = (res.body.features as { featureKey: string }[]).map(
+      (f) => f.featureKey,
+    );
     expect(keys).toContain("timetable");
     expect(keys).toContain("attendance");
   });

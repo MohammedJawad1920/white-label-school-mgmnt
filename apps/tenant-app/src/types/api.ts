@@ -38,6 +38,8 @@ export interface TenantUser {
   email: string;
   roles: Array<UserRole>;
   activeRole: UserRole;
+  /** v4.5 CR-38: Student record ID when activeRole is Student; null otherwise */
+  studentId: string | null;
 }
 export interface TenantLoginRequest {
   email: string;
@@ -394,4 +396,117 @@ export interface BulkDeleteRequest {
 }
 export interface BulkDeleteResponse {
   deletedCount: number;
+}
+
+// ─── ATTENDANCE ANALYTICS (v4.5 CR-33–36) ────────────────────────────────────
+
+/** CR-33: Consecutive absent streak per student (one entry per student in the timeslot's class) */
+export interface AttendanceStreak {
+  studentId: string;
+  consecutiveAbsentCount: number;
+}
+export interface GetAttendanceStreaksResponse {
+  classId: string;
+  subjectId: string;
+  streaks: AttendanceStreak[];
+}
+
+/** CR-34: Ranked attendance percentage entry */
+export interface AttendanceTopper {
+  rank: number;
+  studentId: string;
+  studentName: string;
+  presentCount: number;
+  totalPeriods: number;
+  /** (presentCount / totalPeriods) * 100; null when totalPeriods is 0 */
+  attendancePercentage: number | null;
+}
+export interface GetAttendanceToppersResponse {
+  classId: string;
+  from: string;
+  to: string;
+  total: number;
+  limit: number;
+  offset: number;
+  toppers: AttendanceTopper[];
+}
+
+/** CR-35: Per-slot marking status for a single class on a given date */
+export interface DailySummarySlot {
+  timeSlotId: string;
+  periodNumber: number;
+  subjectId: string;
+  subjectName: string;
+  teacherId: string;
+  teacherName: string;
+  /** true if at least one attendance record exists for this slot on this date */
+  attendanceMarked: boolean;
+  totalStudents: number;
+  /** 0 when attendanceMarked is false */
+  absentCount: number;
+}
+export interface AttendanceDailySummaryResponse {
+  classId: string;
+  date: string;
+  dayOfWeek: string;
+  slots: DailySummarySlot[];
+}
+
+/** CR-36: One row per student in the monthly sheet */
+export interface MonthlySheetRow {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  /**
+   * Dense map keyed "1"…"<daysInMonth>".
+   * Each value is an array of {timeSlotId, status} records for that day+subject.
+   * Empty array [] when no records exist (weekend/holiday/not-marked).
+   */
+  days: Record<string, Array<{ timeSlotId: string; status: AttendanceStatus }>>;
+}
+export interface MonthlySheetResponse {
+  year: number;
+  month: number;
+  classId: string;
+  subjectId: string;
+  students: MonthlySheetRow[];
+}
+
+// ─── EVENTS — Academic Calendar (v4.5 CR-37) ─────────────────────────────────
+export type EventType = "Holiday" | "Exam" | "Event" | "Other";
+
+export interface Event {
+  id: string;
+  title: string;
+  type: EventType;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD (inclusive)
+  description: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CreateEventRequest {
+  title: string;
+  type: EventType;
+  startDate: string;
+  endDate: string;
+  description?: string | null;
+}
+export interface CreateEventResponse {
+  event: Event;
+}
+export interface UpdateEventRequest {
+  title?: string;
+  type?: EventType;
+  startDate?: string;
+  endDate?: string;
+  description?: string | null;
+}
+export interface UpdateEventResponse {
+  event: Event;
+}
+export interface ListEventsResponse {
+  events: Event[];
+  total: number;
 }

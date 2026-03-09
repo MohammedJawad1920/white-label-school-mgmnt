@@ -299,12 +299,11 @@ describe("DELETE /api/users/:id and bulk", () => {
     ]);
     const ids = [r1.body.user.id as string, r2.body.user.id as string];
     const res = await makeAgent()
-      .delete("/api/users/bulk")
+      .post("/api/users/bulk")
       .set("Authorization", `Bearer ${token}`)
-      .send({ ids });
+      .send({ userIds: ids });
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty("deleted");
-    expect(res.body).toHaveProperty("failed");
-    expect(res.body.deleted.length).toBe(2);
+    expect(res.body).toHaveProperty("deletedCount");
+    expect(res.body.deletedCount).toBe(2);
   });
 });

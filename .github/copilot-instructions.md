@@ -2,15 +2,15 @@
 
 SOURCE OF TRUTH (must follow exactly):
 
-- Backend Freeze: docs/freeze/white_label_backend_architecture_freeze.md (v4.4) [IMMUTABLE]
-- Frontend Freeze: docs/freeze/white_label_frontend_architecture_freeze.md (v1.8) [IMMUTABLE]
-- OpenAPI: docs/openapi.yaml (v4.4.0) [CANONICAL CONTRACT]
+- Backend Freeze: docs/freeze/white_label_backend_architecture_freeze.md (v4.5) [IMMUTABLE]
+- Frontend Freeze: docs/freeze/white_label_frontend_architecture_freeze.md (v1.9) [IMMUTABLE]
+- OpenAPI: docs/openapi.yaml (v4.5.0) [CANONICAL CONTRACT]
 
 NON-NEGOTIABLE RULE:
 
 - Do NOT change scope, schema, endpoints, request/response shapes, status codes, error codes, or invariants.
 - If any request conflicts with the Freeze/OpenAPI, REFUSE and reply:
-  "This conflicts with Freeze [Backend v4.3 / Frontend v1.7] — Section [X]. Raise a Change Request to proceed."
+  "This conflicts with Freeze [Backend v4.5 / Frontend v1.9] — Section [X]. Raise a Change Request to proceed."
 
 MONOREPO MAP (do not invent new apps):
 

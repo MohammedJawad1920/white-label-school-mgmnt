@@ -169,13 +169,12 @@ describe("POST /api/attendance/record-class", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 TIMESLOT_ENDED when timeslot has effectiveTo in the past", async () => {
+  it("returns 404 when timeslot has been deleted (CR-31: effectiveTo removed)", async () => {
     if (SKIP) return;
-    // End the timeslot
+    // Soft-delete the timeslot (PUT /end removed in CR-31; deletion replaces it)
     await makeAgent()
-      .put(`/api/timetable/${timeslotId}/end`)
-      .set("Authorization", `Bearer ${token}`)
-      .send({ effectiveTo: "2024-09-01" });
+      .delete(`/api/timetable/${timeslotId}`)
+      .set("Authorization", `Bearer ${token}`);
 
     const anotherDate = "2024-09-05";
     const res = await makeAgent()
@@ -186,8 +185,7 @@ describe("POST /api/attendance/record-class", () => {
         date: anotherDate,
         defaultStatus: "Present",
       });
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe("TIMESLOT_ENDED");
+    expect(res.status).toBe(404);
   });
 });
 
@@ -242,12 +240,17 @@ describe("GET /api/students/:studentId/attendance", () => {
 describe("GET /api/attendance/summary", () => {
   let tenant: TestTenant;
   let token: string;
+  let classId: string;
 
   beforeAll(async () => {
     if (SKIP) return;
     tenant = await createTestTenant();
     token = await loginAsAdmin(tenant);
-    const { timeslotId } = await scaffoldAttendanceData(token, tenant);
+    const { timeslotId, classId: cid } = await scaffoldAttendanceData(
+      token,
+      tenant,
+    );
+    classId = cid;
 
     // Seed one attendance session
     await makeAgent()
@@ -265,14 +268,16 @@ describe("GET /api/attendance/summary", () => {
     await cleanupTenant(tenant.tenantId);
   });
 
-  it("returns 200 with summary object and byStudent array", async () => {
+  it("returns 200 with summary object", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/attendance/summary?from=2024-11-01&to=2024-11-30")
+      .get(
+        `/api/attendance/summary?classId=${classId}&from=2024-11-01&to=2024-11-30`,
+      )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("summary");
-    expect(res.body.summary).toHaveProperty("totalRecords");
-    expect(Array.isArray(res.body.byStudent)).toBe(true);
+    expect(res.body.summary).toHaveProperty("totalClasses");
+    expect(res.body.summary).toHaveProperty("averageAttendanceRate");
   });
 });

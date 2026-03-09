@@ -9,6 +9,7 @@ const teacher: TenantUser = {
   email: "alice@school.com",
   roles: ["Teacher"],
   activeRole: "Teacher",
+  studentId: null,
 };
 
 const admin: TenantUser = {
@@ -18,6 +19,7 @@ const admin: TenantUser = {
   email: "bob@school.com",
   roles: ["Admin"],
   activeRole: "Admin",
+  studentId: null,
 };
 
 const multiRole: TenantUser = {
@@ -27,6 +29,7 @@ const multiRole: TenantUser = {
   email: "carol@school.com",
   roles: ["Teacher", "Admin"],
   activeRole: "Teacher",
+  studentId: null,
 };
 
 describe("hasRole", () => {

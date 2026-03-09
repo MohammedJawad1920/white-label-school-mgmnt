@@ -98,7 +98,7 @@ export async function deleteSubject(
   }
   const tsCheck = await pool.query<{ count: string }>(
     `SELECT COUNT(*) as count FROM timeslots
-     WHERE subject_id = $1 AND effective_to IS NULL AND deleted_at IS NULL`,
+     WHERE subject_id = $1 AND deleted_at IS NULL`,
     [id],
   );
   if (parseInt(tsCheck.rows[0]?.count ?? "0", 10) > 0) {
@@ -142,7 +142,7 @@ export async function bulkDeleteSubjects(
     async (id, _tid, p) => {
       const check = await p.query<{ count: string }>(
         `SELECT COUNT(*) as count FROM timeslots
-       WHERE subject_id = $1 AND effective_to IS NULL AND deleted_at IS NULL`,
+       WHERE subject_id = $1 AND deleted_at IS NULL`,
         [id],
       );
       return parseInt(check.rows[0]?.count ?? "0", 10) > 0

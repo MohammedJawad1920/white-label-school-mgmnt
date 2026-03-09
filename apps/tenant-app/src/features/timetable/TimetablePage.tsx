@@ -20,12 +20,14 @@
  * using <table> (which is hard to make responsive).
  */
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { timetableApi } from "@/api/timetable";
+import { attendanceApi } from "@/api/attendance";
 import { schoolPeriodsApi } from "@/api/schoolPeriods";
 import { classesApi } from "@/api/classes";
 import { usersApi } from "@/api/users";
+import { todayISO, todayDayOfWeek } from "@/utils/dates";
 import { parseApiError } from "@/utils/errors";
 import { CreateSlotDrawer } from "./CreateSlotDrawer";
 import { DeleteSlotDialog } from "./EndSlotDialog";
@@ -95,11 +97,18 @@ interface SlotCellProps {
   slot: TimeSlot;
   isAdmin: boolean;
   onDelete: (slot: TimeSlot) => void;
+  markingStatus?: "marked" | "unmarked" | null;
 }
 
-function SlotCell({ slot, isAdmin, onDelete }: SlotCellProps) {
+function SlotCell({ slot, isAdmin, onDelete, markingStatus }: SlotCellProps) {
+  const bg =
+    markingStatus === "marked"
+      ? "bg-green-100"
+      : markingStatus === "unmarked"
+        ? "bg-yellow-50"
+        : "bg-primary/5";
   return (
-    <div className="rounded border bg-primary/5 p-2 text-xs space-y-1 h-full">
+    <div className={`rounded border ${bg} p-2 text-xs space-y-1 h-full`}>
       <p className="font-medium truncate">{slot.className}</p>
       <p className="text-muted-foreground truncate">{slot.subjectName}</p>
       <p className="text-muted-foreground truncate">{slot.teacherName}</p>
@@ -166,6 +175,42 @@ export default function TimetablePage() {
     staleTime: 2 * 60 * 1000,
   });
 
+  // ── Marking-status queries (CR-FE-016c) — hoisted before early return ──────
+  // useQueries must be called before any conditional return (Rules of Hooks).
+  const slots = timetableQ.data?.timetable ?? [];
+  const activeDays = filterDay ? [filterDay] : DAYS;
+  const todayDay = todayDayOfWeek() as Day;
+  const todayInGrid = activeDays.some((d) => d === todayDay);
+  const todayClassIds = todayInGrid
+    ? Array.from(
+        new Set(
+          slots.filter((s) => s.dayOfWeek === todayDay).map((s) => s.classId),
+        ),
+      )
+    : [];
+
+  const dailySummaryQueries = useQueries({
+    queries: todayClassIds.map((classId) => ({
+      queryKey: ["daily-summary", classId, todayISO()],
+      queryFn: () => attendanceApi.getDailySummary(classId, todayISO()),
+      staleTime: 2 * 60 * 1000,
+      enabled: todayInGrid,
+    })),
+  });
+
+  // Build marking map keyed by "classId:periodNumber"
+  const markingMap = new Map<string, "marked" | "unmarked">();
+  for (const q of dailySummaryQueries) {
+    if (q.data) {
+      for (const s of q.data.slots) {
+        markingMap.set(
+          `${q.data.classId}:${s.periodNumber}`,
+          s.attendanceMarked ? "marked" : "unmarked",
+        );
+      }
+    }
+  }
+
   // ── Feature-disabled check ─────────────────────────────────────────────────
   const apiError = timetableQ.isError ? parseApiError(timetableQ.error) : null;
   if (apiError?.code === "FEATURE_DISABLED")
@@ -176,11 +221,10 @@ export default function TimetablePage() {
     );
 
   // ── Build grid ─────────────────────────────────────────────────────────────
-  const slots = timetableQ.data?.timetable ?? [];
+  // (slots and activeDays hoisted above for Rules-of-Hooks compliance)
   const periods = [...(periodsQ.data?.periods ?? [])].sort(
     (a, b) => a.periodNumber - b.periodNumber,
   );
-  const activeDays = filterDay ? [filterDay] : DAYS;
 
   // Map: periodNumber → dayOfWeek → slots[]
   const grid: Record<number, Record<string, TimeSlot[]>> = {};
@@ -432,6 +476,13 @@ export default function TimetablePage() {
                             slot={slot}
                             isAdmin={isAdmin}
                             onDelete={setDeleteSlot}
+                            markingStatus={
+                              day === todayDay
+                                ? (markingMap.get(
+                                    `${slot.classId}:${period.periodNumber}`,
+                                  ) ?? null)
+                                : null
+                            }
                           />
                         ))}
                       </div>

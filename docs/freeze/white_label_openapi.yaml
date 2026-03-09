@@ -1,8 +1,22 @@
 openapi: 3.1.0
 info:
   title: White-Label School Management System API
-  version: 4.4.0
-  description: Backend API for white-label school management system with timetable scheduling and attendance tracking
+  version: 4.5.0
+  description: |-
+    Backend API for white-label school management system.
+    
+    **v4.5.0 changes (CR-33–CR-38):**
+    - BREAKING: `POST /auth/login` and `POST /auth/switch-role` response `user` object gains
+      `studentId: string | null`. JWT payload gains same field. Old tokens without `studentId`
+      remain valid — middleware treats missing field as null. No forced re-login required.
+    - NEW: `GET /attendance/streaks` — consecutive absence streak per student per subject (CR-33)
+    - NEW: `GET /attendance/toppers` — students ranked by overall attendance % (CR-34)
+    - NEW: `GET /attendance/daily-summary` — per-slot attendance counts for timetable cell display (CR-35)
+    - NEW: `GET /attendance/monthly-sheet` — monthly student × day attendance grid (CR-36)
+    - NEW: `POST/GET /events` and `PUT/DELETE /events/{eventId}` — academic calendar (CR-37)
+    
+    **v4.4.0 changes (CR-32):**
+    - BREAKING: `PUT /timetable/{timeSlotId}` removed. Use DELETE + POST to correct a slot.
   contact:
     name: API Support
 
@@ -35,10 +49,16 @@ tags:
     description: Timetable management
   - name: Attendance
     description: Attendance tracking
+  - name: Events
+    description: Academic calendar events
 
 paths:
+
+  # ─── Auth ────────────────────────────────────────────────────────────────────
+
   /auth/login:
     post:
+      operationId: tenantLogin
       summary: Tenant user login
       tags: [Auth]
       requestBody:
@@ -63,17 +83,19 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [token, user]
                 properties:
                   token:
                     type: string
                   user:
-                    $ref: '#/components/schemas/User'
+                    $ref: '#/components/schemas/AuthUser'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
   /auth/logout:
     post:
-      summary: Logout (client-side token discard, server no-op)
+      operationId: tenantLogout
+      summary: Logout (server no-op — client must discard token)
       tags: [Auth]
       security:
         - BearerAuth: []
@@ -93,7 +115,13 @@ paths:
 
   /auth/switch-role:
     post:
-      summary: Switch active role
+      operationId: switchRole
+      summary: Switch active role — re-issues JWT with new activeRole
+      description: |-
+        Reads roles from DB (not JWT). Returns a new token and updated user object.
+        **CR-38:** Response user object gains `studentId: string | null`.
+        When switching to Student role, `studentId` is resolved from the linked student record.
+        When switching to Admin/Teacher, `studentId` is null.
       tags: [Auth]
       security:
         - BearerAuth: []
@@ -103,30 +131,34 @@ paths:
           application/json:
             schema:
               type: object
-              required: [activeRole]
+              required: [role]
               properties:
-                activeRole:
+                role:
                   type: string
                   enum: [Teacher, Admin, Student]
       responses:
         '200':
-          description: Role switched
+          description: Role switched — new token issued
           content:
             application/json:
               schema:
                 type: object
+                required: [token, user]
                 properties:
                   token:
                     type: string
-                  activeRole:
-                    type: string
+                  user:
+                    $ref: '#/components/schemas/AuthUser'
         '400':
           $ref: '#/components/responses/ValidationError'
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  # ─── SuperAdmin ───────────────────────────────────────────────────────────────
+
   /super-admin/auth/login:
     post:
+      operationId: superAdminLogin
       summary: SuperAdmin login
       tags: [SuperAdmin]
       requestBody:
@@ -159,6 +191,7 @@ paths:
 
   /super-admin/tenants:
     get:
+      operationId: listTenants
       summary: List tenants
       tags: [SuperAdmin]
       security:
@@ -182,6 +215,7 @@ paths:
                     items:
                       $ref: '#/components/schemas/Tenant'
     post:
+      operationId: createTenant
       summary: Create tenant
       tags: [SuperAdmin]
       security:
@@ -225,16 +259,13 @@ paths:
 
   /super-admin/tenants/{tenantId}:
     get:
+      operationId: getTenant
       summary: Get tenant
       tags: [SuperAdmin]
       security:
         - BearerAuth: []
       parameters:
-        - name: tenantId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/TenantIdPath'
       responses:
         '200':
           description: Tenant details
@@ -248,16 +279,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     put:
+      operationId: updateTenant
       summary: Update tenant
       tags: [SuperAdmin]
       security:
         - BearerAuth: []
       parameters:
-        - name: tenantId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/TenantIdPath'
       requestBody:
         required: true
         content:
@@ -282,16 +310,13 @@ paths:
 
   /super-admin/tenants/{tenantId}/deactivate:
     post:
+      operationId: deactivateTenant
       summary: Deactivate tenant
       tags: [SuperAdmin]
       security:
         - BearerAuth: []
       parameters:
-        - name: tenantId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/TenantIdPath'
       responses:
         '200':
           description: Tenant deactivated
@@ -305,16 +330,13 @@ paths:
 
   /super-admin/tenants/{tenantId}/reactivate:
     post:
+      operationId: reactivateTenant
       summary: Reactivate tenant
       tags: [SuperAdmin]
       security:
         - BearerAuth: []
       parameters:
-        - name: tenantId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/TenantIdPath'
       responses:
         '200':
           description: Tenant reactivated
@@ -328,16 +350,13 @@ paths:
 
   /super-admin/tenants/{tenantId}/features:
     get:
+      operationId: listTenantFeatures
       summary: List tenant features
       tags: [SuperAdmin]
       security:
         - BearerAuth: []
       parameters:
-        - name: tenantId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/TenantIdPath'
       responses:
         '200':
           description: Features list
@@ -353,16 +372,13 @@ paths:
 
   /super-admin/tenants/{tenantId}/features/{featureKey}:
     put:
-      summary: Toggle tenant feature
+      operationId: toggleTenantFeature
+      summary: Toggle tenant feature flag
       tags: [SuperAdmin]
       security:
         - BearerAuth: []
       parameters:
-        - name: tenantId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/TenantIdPath'
         - name: featureKey
           in: path
           required: true
@@ -391,9 +407,12 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
 
+  # ─── Features ─────────────────────────────────────────────────────────────────
+
   /features:
     get:
-      summary: List enabled features
+      operationId: listFeatures
+      summary: List enabled features for tenant
       tags: [Features]
       security:
         - BearerAuth: []
@@ -410,8 +429,11 @@ paths:
                     items:
                       $ref: '#/components/schemas/TenantFeature'
 
+  # ─── Users ────────────────────────────────────────────────────────────────────
+
   /users:
     get:
+      operationId: listUsers
       summary: List users (excludes Student role)
       tags: [Users]
       security:
@@ -429,7 +451,8 @@ paths:
                     items:
                       $ref: '#/components/schemas/User'
     post:
-      summary: Create user (Admin/Teacher only)
+      operationId: createUser
+      summary: Create user (Admin or Teacher role only)
       tags: [Users]
       security:
         - BearerAuth: []
@@ -472,16 +495,13 @@ paths:
 
   /users/{userId}:
     get:
+      operationId: getUser
       summary: Get user
       tags: [Users]
       security:
         - BearerAuth: []
       parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/UserIdPath'
       responses:
         '200':
           description: User details
@@ -495,16 +515,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     put:
+      operationId: updateUser
       summary: Update user
       tags: [Users]
       security:
         - BearerAuth: []
       parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/UserIdPath'
       requestBody:
         required: true
         content:
@@ -529,32 +546,26 @@ paths:
                   user:
                     $ref: '#/components/schemas/User'
     delete:
+      operationId: deleteUser
       summary: Soft-delete user
       tags: [Users]
       security:
         - BearerAuth: []
       parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/UserIdPath'
       responses:
         '204':
           description: User deleted
 
   /users/{userId}/roles:
     put:
+      operationId: updateUserRoles
       summary: Update user roles
       tags: [Users]
       security:
         - BearerAuth: []
       parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/UserIdPath'
       requestBody:
         required: true
         content:
@@ -583,6 +594,7 @@ paths:
 
   /users/bulk:
     post:
+      operationId: bulkDeleteUsers
       summary: Bulk soft-delete users
       tags: [Users]
       security:
@@ -597,6 +609,7 @@ paths:
               properties:
                 userIds:
                   type: array
+                  minItems: 1
                   items:
                     type: string
       responses:
@@ -610,8 +623,11 @@ paths:
                   deletedCount:
                     type: integer
 
+  # ─── Batches ──────────────────────────────────────────────────────────────────
+
   /batches:
     get:
+      operationId: listBatches
       summary: List batches
       tags: [Batches]
       security:
@@ -635,6 +651,7 @@ paths:
                     items:
                       $ref: '#/components/schemas/Batch'
     post:
+      operationId: createBatch
       summary: Create batch
       tags: [Batches]
       security:
@@ -666,6 +683,7 @@ paths:
 
   /batches/{batchId}:
     get:
+      operationId: getBatch
       summary: Get batch
       tags: [Batches]
       security:
@@ -689,6 +707,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     put:
+      operationId: updateBatch
       summary: Update batch
       tags: [Batches]
       security:
@@ -722,6 +741,7 @@ paths:
                   batch:
                     $ref: '#/components/schemas/Batch'
     delete:
+      operationId: deleteBatch
       summary: Soft-delete batch
       tags: [Batches]
       security:
@@ -738,6 +758,7 @@ paths:
 
   /batches/bulk:
     post:
+      operationId: bulkDeleteBatches
       summary: Bulk soft-delete batches
       tags: [Batches]
       security:
@@ -752,6 +773,7 @@ paths:
               properties:
                 batchIds:
                   type: array
+                  minItems: 1
                   items:
                     type: string
       responses:
@@ -765,8 +787,11 @@ paths:
                   deletedCount:
                     type: integer
 
+  # ─── Subjects ─────────────────────────────────────────────────────────────────
+
   /subjects:
     get:
+      operationId: listSubjects
       summary: List subjects
       tags: [Subjects]
       security:
@@ -784,6 +809,7 @@ paths:
                     items:
                       $ref: '#/components/schemas/Subject'
     post:
+      operationId: createSubject
       summary: Create subject
       tags: [Subjects]
       security:
@@ -813,16 +839,13 @@ paths:
 
   /subjects/{subjectId}:
     get:
+      operationId: getSubject
       summary: Get subject
       tags: [Subjects]
       security:
         - BearerAuth: []
       parameters:
-        - name: subjectId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/SubjectIdPath'
       responses:
         '200':
           description: Subject details
@@ -836,16 +859,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     put:
+      operationId: updateSubject
       summary: Update subject
       tags: [Subjects]
       security:
         - BearerAuth: []
       parameters:
-        - name: subjectId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/SubjectIdPath'
       requestBody:
         required: true
         content:
@@ -868,22 +888,20 @@ paths:
                   subject:
                     $ref: '#/components/schemas/Subject'
     delete:
+      operationId: deleteSubject
       summary: Soft-delete subject
       tags: [Subjects]
       security:
         - BearerAuth: []
       parameters:
-        - name: subjectId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/SubjectIdPath'
       responses:
         '204':
           description: Subject deleted
 
   /subjects/bulk:
     post:
+      operationId: bulkDeleteSubjects
       summary: Bulk soft-delete subjects
       tags: [Subjects]
       security:
@@ -898,6 +916,7 @@ paths:
               properties:
                 subjectIds:
                   type: array
+                  minItems: 1
                   items:
                     type: string
       responses:
@@ -911,8 +930,11 @@ paths:
                   deletedCount:
                     type: integer
 
+  # ─── Classes ──────────────────────────────────────────────────────────────────
+
   /classes:
     get:
+      operationId: listClasses
       summary: List classes
       tags: [Classes]
       security:
@@ -930,6 +952,7 @@ paths:
                     items:
                       $ref: '#/components/schemas/Class'
     post:
+      operationId: createClass
       summary: Create class
       tags: [Classes]
       security:
@@ -959,16 +982,13 @@ paths:
 
   /classes/{classId}:
     get:
+      operationId: getClass
       summary: Get class
       tags: [Classes]
       security:
         - BearerAuth: []
       parameters:
-        - name: classId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/ClassIdPath'
       responses:
         '200':
           description: Class details
@@ -982,16 +1002,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     put:
+      operationId: updateClass
       summary: Update class
       tags: [Classes]
       security:
         - BearerAuth: []
       parameters:
-        - name: classId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/ClassIdPath'
       requestBody:
         required: true
         content:
@@ -1012,23 +1029,21 @@ paths:
                   class:
                     $ref: '#/components/schemas/Class'
     delete:
+      operationId: deleteClass
       summary: Soft-delete class
       tags: [Classes]
       security:
         - BearerAuth: []
       parameters:
-        - name: classId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/ClassIdPath'
       responses:
         '204':
           description: Class deleted
 
   /classes/{sourceClassId}/promote:
     put:
-      summary: Promote or graduate students
+      operationId: promoteClass
+      summary: Promote or graduate students in a class
       tags: [Classes]
       security:
         - BearerAuth: []
@@ -1077,6 +1092,7 @@ paths:
 
   /classes/bulk:
     post:
+      operationId: bulkDeleteClasses
       summary: Bulk soft-delete classes
       tags: [Classes]
       security:
@@ -1091,6 +1107,7 @@ paths:
               properties:
                 classIds:
                   type: array
+                  minItems: 1
                   items:
                     type: string
       responses:
@@ -1104,8 +1121,11 @@ paths:
                   deletedCount:
                     type: integer
 
+  # ─── Students ─────────────────────────────────────────────────────────────────
+
   /students:
     get:
+      operationId: listStudents
       summary: List students
       tags: [Students]
       security:
@@ -1137,7 +1157,8 @@ paths:
                     items:
                       $ref: '#/components/schemas/Student'
     post:
-      summary: Create student with auto-generated account
+      operationId: createStudent
+      summary: Create student with auto-generated user account
       tags: [Students]
       security:
         - BearerAuth: []
@@ -1176,16 +1197,13 @@ paths:
 
   /students/{studentId}:
     get:
+      operationId: getStudent
       summary: Get student
       tags: [Students]
       security:
         - BearerAuth: []
       parameters:
-        - name: studentId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/StudentIdPath'
       responses:
         '200':
           description: Student details
@@ -1201,16 +1219,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     put:
-      summary: Update student (cannot set status=Graduated)
+      operationId: updateStudent
+      summary: Update student (cannot set status=Graduated via this endpoint)
       tags: [Students]
       security:
         - BearerAuth: []
       parameters:
-        - name: studentId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/StudentIdPath'
       requestBody:
         required: true
         content:
@@ -1239,32 +1254,26 @@ paths:
                   student:
                     $ref: '#/components/schemas/Student'
     delete:
+      operationId: deleteStudent
       summary: Soft-delete student
       tags: [Students]
       security:
         - BearerAuth: []
       parameters:
-        - name: studentId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/StudentIdPath'
       responses:
         '204':
           description: Student deleted
 
   /students/{studentId}/attendance:
     get:
-      summary: Get student attendance history
+      operationId: getStudentAttendance
+      summary: Get student attendance history (paginated)
       tags: [Students]
       security:
         - BearerAuth: []
       parameters:
-        - name: studentId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/StudentIdPath'
         - name: from
           in: query
           schema:
@@ -1275,6 +1284,16 @@ paths:
           schema:
             type: string
             format: date
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
       responses:
         '200':
           description: Attendance records
@@ -1292,16 +1311,13 @@ paths:
 
   /students/{studentId}/attendance/summary:
     get:
-      summary: Get student attendance summary for a month
+      operationId: getStudentAttendanceSummary
+      summary: Get student monthly attendance summary
       tags: [Students]
       security:
         - BearerAuth: []
       parameters:
-        - name: studentId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/StudentIdPath'
         - name: year
           in: query
           required: true
@@ -1316,7 +1332,7 @@ paths:
             maximum: 12
       responses:
         '200':
-          description: Attendance summary
+          description: Monthly attendance summary
           content:
             application/json:
               schema:
@@ -1329,6 +1345,7 @@ paths:
 
   /students/bulk:
     post:
+      operationId: bulkDeleteStudents
       summary: Bulk soft-delete students
       tags: [Students]
       security:
@@ -1343,6 +1360,7 @@ paths:
               properties:
                 studentIds:
                   type: array
+                  minItems: 1
                   items:
                     type: string
       responses:
@@ -1356,8 +1374,11 @@ paths:
                   deletedCount:
                     type: integer
 
+  # ─── School Periods ───────────────────────────────────────────────────────────
+
   /school-periods:
     get:
+      operationId: listSchoolPeriods
       summary: List school periods
       tags: [SchoolPeriods]
       security:
@@ -1375,6 +1396,7 @@ paths:
                     items:
                       $ref: '#/components/schemas/SchoolPeriod'
     post:
+      operationId: createSchoolPeriod
       summary: Create school period
       tags: [SchoolPeriods]
       security:
@@ -1413,6 +1435,7 @@ paths:
 
   /school-periods/{periodId}:
     get:
+      operationId: getSchoolPeriod
       summary: Get school period
       tags: [SchoolPeriods]
       security:
@@ -1436,6 +1459,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     put:
+      operationId: updateSchoolPeriod
       summary: Update school period
       tags: [SchoolPeriods]
       security:
@@ -1472,6 +1496,7 @@ paths:
                   schoolPeriod:
                     $ref: '#/components/schemas/SchoolPeriod'
     delete:
+      operationId: deleteSchoolPeriod
       summary: Delete school period
       tags: [SchoolPeriods]
       security:
@@ -1486,10 +1511,16 @@ paths:
         '204':
           description: School period deleted
 
+  # ─── Timetable ────────────────────────────────────────────────────────────────
+
   /timetable:
     get:
+      operationId: getTimetable
       summary: Get timetable
-      description: Returns all non-deleted timeslots matching the provided filters.
+      description: |-
+        Returns all non-deleted timeslots matching the provided filters.
+        **CR-31:** `date` and `status` query params removed.
+        Teacher role filters client-side to own slots.
       tags: [Timetable]
       security:
         - BearerAuth: []
@@ -1522,7 +1553,8 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
-      summary: Create timeslot
+      operationId: createTimeslot
+      summary: Create timeslot (Admin only)
       tags: [Timetable]
       security:
         - BearerAuth: []
@@ -1556,15 +1588,23 @@ paths:
                 properties:
                   timeSlot:
                     $ref: '#/components/schemas/TimeSlot'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
 
   /timetable/{timeSlotId}:
-    # PUT removed by CR-32. Returns 404. Use DELETE + POST /timetable to correct a slot.
     delete:
-      summary: Soft-delete timeslot
-      tags:
-        - Timetable
+      operationId: deleteTimeslot
+      summary: Soft-delete timeslot (Admin only)
+      description: |-
+        Soft-deletes the timeslot. Existing attendance records are preserved (orphaned timeslot_id
+        is acceptable for historical audit). Use DELETE + POST /timetable to correct a slot.
+        **CR-32:** PUT /timetable/{timeSlotId} has been removed. This endpoint (DELETE) is the
+        only mutation available on an existing timeslot.
+      tags: [Timetable]
       security:
         - BearerAuth: []
       parameters:
@@ -1575,15 +1615,18 @@ paths:
             type: string
       responses:
         '204':
-          description: Timeslot deleted
+          description: Timeslot soft-deleted
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
+  # ─── Attendance ───────────────────────────────────────────────────────────────
+
   /attendance/record-class:
     post:
-      summary: Record class attendance
+      operationId: recordClassAttendance
+      summary: Record class attendance for a timeslot and date
       tags: [Attendance]
       security:
         - BearerAuth: []
@@ -1600,8 +1643,10 @@ paths:
                 date:
                   type: string
                   format: date
+                  description: Must not be a future date in tenant timezone.
                 attendance:
                   type: array
+                  minItems: 1
                   items:
                     type: object
                     required: [studentId, status]
@@ -1618,6 +1663,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [recorded, failed]
                 properties:
                   recorded:
                     type: integer
@@ -1630,6 +1676,8 @@ paths:
                           type: string
                         reason:
                           type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '403':
           $ref: '#/components/responses/Forbidden'
         '409':
@@ -1637,7 +1685,8 @@ paths:
 
   /attendance/{recordId}:
     put:
-      summary: Correct attendance record
+      operationId: correctAttendance
+      summary: Correct a single attendance record (Admin or Teacher)
       tags: [Attendance]
       security:
         - BearerAuth: []
@@ -1668,12 +1717,17 @@ paths:
                 properties:
                   record:
                     $ref: '#/components/schemas/AttendanceRecord'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /attendance/summary:
     get:
-      summary: Get class attendance summary by date range
+      operationId: getClassAttendanceSummary
+      summary: Get class attendance aggregate summary for a date range
       tags: [Attendance]
       security:
         - BearerAuth: []
@@ -1705,6 +1759,7 @@ paths:
                 properties:
                   summary:
                     type: object
+                    required: [classId, className, from, to, totalStudents, totalClasses, averageAttendanceRate]
                     properties:
                       classId:
                         type: string
@@ -1723,17 +1778,554 @@ paths:
                       averageAttendanceRate:
                         type: number
                         format: float
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /attendance/streaks:
+    get:
+      operationId: getAttendanceStreaks
+      summary: Get consecutive absence streaks per student for a subject (CR-33)
+      description: |-
+        For a given timeslot, resolves the subject and class, then returns the current consecutive
+        absence streak per active student. Streak = count of consecutive `Absent` records ordered
+        by date DESC, stopping at first non-Absent. Effective status uses
+        `COALESCE(corrected_status, status)`.
+        
+        **Roles:**
+        - Admin: full list for any timeslot
+        - Teacher: full list, own assigned timeslots only → 403 otherwise
+        - Student: own entry only (filtered by linked studentId)
+        - SuperAdmin: 403
+      tags: [Attendance]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: timeSlotId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Streak data returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classId, subjectId, streaks]
+                properties:
+                  classId:
+                    type: string
+                  subjectId:
+                    type: string
+                  streaks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StreakEntry'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrFeatureDisabled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /attendance/toppers:
+    get:
+      operationId: getAttendanceToppers
+      summary: Get students ranked by overall attendance percentage for a class (CR-34)
+      description: |-
+        Ranks active students in the class by overall attendance % across all subjects
+        in the date range. `presentCount` includes Present and Late statuses.
+        Effective status uses `COALESCE(corrected_status, status)`.
+        `attendancePercentage` is null (not 0) when `totalPeriods = 0`.
+        `rank` is global (pre-pagination).
+        
+        **Roles:**
+        - Admin: any classId
+        - Teacher: own assigned classes only → 403 otherwise
+        - Student: full ranking (sees own position)
+        - SuperAdmin: 403
+      tags: [Attendance]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: classId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            description: Must be >= from
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Ranked attendance list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classId, from, to, total, limit, offset, toppers]
+                properties:
+                  classId:
+                    type: string
+                  from:
+                    type: string
+                    format: date
+                  to:
+                    type: string
+                    format: date
+                  total:
+                    type: integer
+                    minimum: 0
+                    description: Total active students in class (for pagination)
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+                  toppers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TopperEntry'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrFeatureDisabled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /attendance/daily-summary:
+    get:
+      operationId: getAttendanceDailySummary
+      summary: Get per-slot attendance summary for a class on a specific date (CR-35)
+      description: |-
+        Returns one entry per non-deleted timeslot for the class whose dayOfWeek matches
+        the derived day from `date`. `dayOfWeek` is resolved server-side.
+        Empty `slots` array is a valid 200 (e.g. Sunday or no timetable configured).
+        No restriction on future dates — valid 200 with `attendanceMarked: false`.
+        Feature guard: timetable feature flag (not attendance).
+        
+        **Roles:**
+        - Admin: any classId
+        - Teacher: own assigned classes only → 403 otherwise
+        - Student: full slot list, class-level counts only (no PII)
+        - SuperAdmin: 403
+      tags: [Attendance]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: classId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Per-slot daily attendance summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classId, date, dayOfWeek, slots]
+                properties:
+                  classId:
+                    type: string
+                  date:
+                    type: string
+                    format: date
+                  dayOfWeek:
+                    type: string
+                    enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+                  slots:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DailySlotSummary'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrFeatureDisabled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /attendance/monthly-sheet:
+    get:
+      operationId: getAttendanceMonthlySheet
+      summary: Get monthly attendance grid for a class and subject (CR-36)
+      description: |-
+        Returns a student × day grid for the specified class, subject, year, and month.
+        `days` object always contains keys "1" through "<daysInMonth>" — no sparse keys.
+        Future days have empty arrays. Each array entry is one attendance record.
+        Effective status uses `COALESCE(corrected_status, status)`.
+        Entries within each day are ordered by `periodNumber ASC`.
+        
+        **Roles:**
+        - Admin: any classId + subjectId
+        - Teacher: only where ≥1 non-deleted timeslot matches BOTH classId AND subjectId → 403
+        - Student: 403
+        - SuperAdmin: 403
+      tags: [Attendance]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: classId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: subjectId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2099
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        '200':
+          description: Monthly attendance sheet
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [classId, subjectId, subjectName, year, month, daysInMonth, students]
+                properties:
+                  classId:
+                    type: string
+                  subjectId:
+                    type: string
+                  subjectName:
+                    type: string
+                  year:
+                    type: integer
+                  month:
+                    type: integer
+                  daysInMonth:
+                    type: integer
+                    minimum: 28
+                    maximum: 31
+                  students:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MonthlySheetStudent'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrFeatureDisabled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── Events ───────────────────────────────────────────────────────────────────
+
+  /events:
+    post:
+      operationId: createEvent
+      summary: Create academic calendar event (Admin only)
+      tags: [Events]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, type, startDate, endDate]
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                type:
+                  type: string
+                  enum: [Holiday, Exam, Event, Other]
+                startDate:
+                  type: string
+                  format: date
+                endDate:
+                  type: string
+                  format: date
+                  description: Must be >= startDate
+                description:
+                  type: string
+                  maxLength: 1000
+                  nullable: true
+      responses:
+        '201':
+          description: Event created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [event]
+                properties:
+                  event:
+                    $ref: '#/components/schemas/Event'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '403':
           $ref: '#/components/responses/Forbidden'
 
+    get:
+      operationId: listEvents
+      summary: List academic calendar events within a date range
+      description: |-
+        Returns events where `start_date <= to AND end_date >= from` — range overlap semantics,
+        correctly captures multi-day events crossing the boundary.
+        Defaults to current calendar month in tenant timezone when from/to are omitted.
+        
+        **Roles:**
+        - Admin, Teacher, Student: 200
+        - SuperAdmin: 403
+      tags: [Events]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Default — current month start in tenant timezone
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Default — current month end in tenant timezone
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [Holiday, Exam, Event, Other]
+      responses:
+        '200':
+          description: Event list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, total]
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Event'
+                  total:
+                    type: integer
+                    minimum: 0
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /events/{eventId}:
+    put:
+      operationId: updateEvent
+      summary: Update academic calendar event (Admin only)
+      description: |-
+        Partial update — all fields optional. After merging patch onto existing record,
+        `endDate >= startDate` must hold → 400 VALIDATION_ERROR otherwise.
+        Setting `description: null` clears the field.
+      tags: [Events]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                type:
+                  type: string
+                  enum: [Holiday, Exam, Event, Other]
+                startDate:
+                  type: string
+                  format: date
+                endDate:
+                  type: string
+                  format: date
+                description:
+                  type: string
+                  maxLength: 1000
+                  nullable: true
+      responses:
+        '200':
+          description: Event updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [event]
+                properties:
+                  event:
+                    $ref: '#/components/schemas/Event'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      operationId: deleteEvent
+      summary: Soft-delete academic calendar event (Admin only)
+      description: Sets `deleted_at = NOW()`. Not reversible via API.
+      tags: [Events]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventIdPath'
+      responses:
+        '204':
+          description: Event deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+# ─── Components ───────────────────────────────────────────────────────────────
+
 components:
+
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
 
+  parameters:
+    TenantIdPath:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+    UserIdPath:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+    StudentIdPath:
+      name: studentId
+      in: path
+      required: true
+      schema:
+        type: string
+    ClassIdPath:
+      name: classId
+      in: path
+      required: true
+      schema:
+        type: string
+    SubjectIdPath:
+      name: subjectId
+      in: path
+      required: true
+      schema:
+        type: string
+    EventIdPath:
+      name: eventId
+      in: path
+      required: true
+      schema:
+        type: string
+
   schemas:
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+
+    AuthUser:
+      description: |-
+        User object returned in auth responses (login, switch-role).
+        CR-38: gains `studentId` field. Populated only when `activeRole = Student`
+        and a linked student record exists. Null for Admin/Teacher roles and for
+        Student with no linked record.
+      type: object
+      required: [id, tenantId, name, email, roles, activeRole, studentId]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [Teacher, Admin, Student]
+        activeRole:
+          type: string
+          enum: [Teacher, Admin, Student]
+        studentId:
+          type: string
+          nullable: true
+          description: |-
+            Populated when activeRole = Student and a linked student record exists.
+            null for Admin/Teacher roles.
+            null for Student with no linked record (orphaned user account).
+
+    # ── Domain entities ───────────────────────────────────────────────────────
+
     Tenant:
       type: object
       properties:
@@ -1777,6 +2369,7 @@ components:
           format: date-time
 
     User:
+      description: User object returned from user management endpoints (not auth).
       type: object
       properties:
         id:
@@ -2004,6 +2597,7 @@ components:
 
     AttendanceSummary:
       type: object
+      required: [studentId, year, month, totalClasses, present, absent, late, attendancePercentage]
       properties:
         studentId:
           type: string
@@ -2039,80 +2633,229 @@ components:
           format: date-time
           nullable: true
 
+    # ── CR-33: Attendance Streaks ─────────────────────────────────────────────
+
+    StreakEntry:
+      type: object
+      required: [studentId, consecutiveAbsentCount]
+      properties:
+        studentId:
+          type: string
+        consecutiveAbsentCount:
+          type: integer
+          minimum: 0
+          description: |-
+            Number of consecutive absent periods for this student in the subject,
+            ordered by date DESC. 0 means no current streak (no records, or last
+            record was Present/Late).
+
+    # ── CR-34: Attendance Toppers ─────────────────────────────────────────────
+
+    TopperEntry:
+      type: object
+      required: [rank, studentId, studentName, totalPeriods, presentCount, attendancePercentage]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+          description: Global rank (pre-pagination). Student at offset 10 has rank 11.
+        studentId:
+          type: string
+        studentName:
+          type: string
+        totalPeriods:
+          type: integer
+          minimum: 0
+          description: Count of marked attendance records for this student in the date range.
+        presentCount:
+          type: integer
+          minimum: 0
+          description: Count of Present or Late effective statuses.
+        attendancePercentage:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          nullable: true
+          description: |-
+            ROUND(presentCount / totalPeriods * 100, 2).
+            null (not 0) when totalPeriods = 0.
+
+    # ── CR-35: Daily Slot Summary ─────────────────────────────────────────────
+
+    DailySlotSummary:
+      type: object
+      required: [timeSlotId, periodNumber, subjectId, subjectName, teacherId, teacherName, attendanceMarked, totalStudents, absentCount]
+      properties:
+        timeSlotId:
+          type: string
+        periodNumber:
+          type: integer
+          minimum: 1
+        subjectId:
+          type: string
+        subjectName:
+          type: string
+        teacherId:
+          type: string
+        teacherName:
+          type: string
+        attendanceMarked:
+          type: boolean
+          description: true if any attendance_records exist for this timeSlotId + date.
+        totalStudents:
+          type: integer
+          minimum: 0
+          description: Count of active students in the class (always populated).
+        absentCount:
+          type: integer
+          minimum: 0
+          description: |-
+            Count of effective Absent statuses for this slot on this date.
+            0 when attendanceMarked = false (not null).
+
+    # ── CR-36: Monthly Attendance Sheet ──────────────────────────────────────
+
+    AttendanceDayEntry:
+      type: object
+      required: [recordId, periodNumber, effectiveStatus, isCorrected]
+      properties:
+        recordId:
+          type: string
+        periodNumber:
+          type: integer
+          minimum: 1
+        effectiveStatus:
+          type: string
+          enum: [Present, Absent, Late]
+          description: COALESCE(corrected_status, status) — raw status never exposed.
+        isCorrected:
+          type: boolean
+          description: true when corrected_status IS NOT NULL on the underlying record.
+
+    MonthlySheetStudent:
+      type: object
+      required: [studentId, studentName, admissionNumber, days]
+      properties:
+        studentId:
+          type: string
+        studentName:
+          type: string
+        admissionNumber:
+          type: string
+        days:
+          type: object
+          description: |-
+            Keys "1" through "<daysInMonth>" — always fully populated, no sparse keys.
+            Future days have empty arrays [].
+            Entries within each day are ordered by periodNumber ASC.
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/AttendanceDayEntry'
+
+    # ── CR-37: Academic Calendar Events ──────────────────────────────────────
+
+    Event:
+      type: object
+      required: [id, title, type, startDate, endDate, description, createdBy, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+          enum: [Holiday, Exam, Event, Other]
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          description: Always >= startDate (enforced by DB CHECK constraint).
+        description:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          description: userId of the Admin who created the event.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ── Shared error envelope ─────────────────────────────────────────────────
+
+    ErrorResponse:
+      type: object
+      required: [error, requestId, timestamp]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code (e.g. VALIDATION_ERROR, NOT_FOUND)
+            message:
+              type: string
+              description: Human-readable message
+            details:
+              type: object
+              description: Additional context (may be empty object)
+        requestId:
+          type: string
+          description: Correlation ID from x-request-id header
+        timestamp:
+          type: string
+          format: date-time
+
   responses:
+
     Unauthorized:
-      description: Unauthorized
+      description: Unauthorized — missing or invalid token
       content:
         application/json:
           schema:
-            type: object
-            properties:
-              error:
-                type: object
-                properties:
-                  code:
-                    type: string
-                  message:
-                    type: string
+            $ref: '#/components/schemas/ErrorResponse'
 
     Forbidden:
-      description: Forbidden
+      description: Forbidden — insufficient role or ownership
       content:
         application/json:
           schema:
-            type: object
-            properties:
-              error:
-                type: object
-                properties:
-                  code:
-                    type: string
-                  message:
-                    type: string
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ForbiddenOrFeatureDisabled:
+      description: |-
+        Forbidden (403) — two possible error codes:
+        - FORBIDDEN: insufficient role or resource ownership
+        - FEATURE_DISABLED: required feature flag is off for this tenant
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
 
     NotFound:
       description: Not found
       content:
         application/json:
           schema:
-            type: object
-            properties:
-              error:
-                type: object
-                properties:
-                  code:
-                    type: string
-                  message:
-                    type: string
+            $ref: '#/components/schemas/ErrorResponse'
 
     Conflict:
-      description: Conflict
+      description: Conflict — resource already exists or business rule violated
       content:
         application/json:
           schema:
-            type: object
-            properties:
-              error:
-                type: object
-                properties:
-                  code:
-                    type: string
-                  message:
-                    type: string
+            $ref: '#/components/schemas/ErrorResponse'
 
     ValidationError:
-      description: Validation error
+      description: Validation error — invalid or missing request parameters
       content:
         application/json:
           schema:
-            type: object
-            properties:
-              error:
-                type: object
-                properties:
-                  code:
-                    type: string
-                  message:
-                    type: string
-                  details:
-                    type: object
+            $ref: '#/components/schemas/ErrorResponse'

@@ -17,11 +17,18 @@ import jwt from "jsonwebtoken";
 import { pool } from "../../db/pool";
 import { config } from "../../config/env";
 import { send400, send401, send404 } from "../../utils/errors";
-import { UserRow, TenantRow, UserRole, TenantJwtPayload } from "../../types";
+import {
+  UserRow,
+  StudentRow,
+  TenantRow,
+  UserRole,
+  TenantJwtPayload,
+} from "../../types";
 
 function formatUser(
   u: Pick<UserRow, "id" | "tenant_id" | "name" | "email" | "roles">,
   activeRole: UserRole,
+  studentId: string | null,
 ) {
   return {
     id: u.id,
@@ -30,7 +37,25 @@ function formatUser(
     email: u.email,
     roles: u.roles,
     activeRole,
+    studentId,
   };
+}
+
+// CR-38: Resolve studentId for Student-role logins.
+// Returns the student's id if a linked record exists, null otherwise.
+async function resolveStudentId(
+  userId: string,
+  tenantId: string,
+  activeRole: UserRole,
+): Promise<string | null> {
+  if (activeRole !== "Student") return null;
+  const result = await pool.query<Pick<StudentRow, "id">>(
+    `SELECT id FROM students
+     WHERE user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+     LIMIT 1`,
+    [userId, tenantId],
+  );
+  return result.rows[0]?.id ?? null;
 }
 
 // POST /api/auth/login
@@ -108,17 +133,21 @@ export async function tenantLogin(req: Request, res: Response): Promise<void> {
   }
 
   const activeRole = user.roles[0] as UserRole;
+  const studentId = await resolveStudentId(user.id, tenant.id, activeRole);
   const payload: TenantJwtPayload = {
     userId: user.id,
     tenantId: tenant.id,
     roles: user.roles,
     activeRole,
+    studentId,
   };
   const token = jwt.sign(payload, config.JWT_SECRET, {
     expiresIn: config.JWT_EXPIRES_IN,
   } as jwt.SignOptions);
 
-  res.status(200).json({ token, user: formatUser(user, activeRole) });
+  res
+    .status(200)
+    .json({ token, user: formatUser(user, activeRole, studentId) });
 }
 
 // POST /api/auth/logout — stateless server no-op (CR-26); client must discard token
@@ -126,7 +155,7 @@ export async function tenantLogout(
   _req: Request,
   res: Response,
 ): Promise<void> {
-  res.status(200).json({ message: "Logged out successfully" });
+  res.status(204).send();
 }
 
 // POST /api/auth/switch-role
@@ -191,11 +220,17 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
   }
 
   const newActiveRole = role as UserRole;
+  const studentId = await resolveStudentId(
+    user.id,
+    user.tenant_id,
+    newActiveRole,
+  );
   const payload: TenantJwtPayload = {
     userId: user.id,
     tenantId: user.tenant_id,
     roles: user.roles,
     activeRole: newActiveRole,
+    studentId,
   };
   const token = jwt.sign(payload, config.JWT_SECRET, {
     expiresIn: config.JWT_EXPIRES_IN,
@@ -203,6 +238,6 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
 
   res.status(200).json({
     token,
-    user: formatUser(user, newActiveRole),
+    user: formatUser(user, newActiveRole, studentId),
   });
 }

@@ -1,25 +1,25 @@
 /**
- * DashboardPage — Freeze §Screen: Dashboard
+ * DashboardPage — Freeze §Screen: Dashboard (v4.5 CR-FE-016b/c/e/g)
  *
- * Query: GET /timetable?dayOfWeek={todayDayName}
- * TQ key: ['timetable', { dayOfWeek }] — stale 5 min, refetch on focus
- *
- * Role rules (Freeze §Screen: Dashboard):
- *   Teacher → filter client-side: only slots where teacherId === currentUser.id
- *   Admin   → show all slots
- *
- * Error codes handled:
- *   403 FEATURE_DISABLED → full-page feature-disabled state (via FeatureGate pattern)
- *   network/500          → toast with retry button
+ * Role rules:
+ *   Teacher → today's own slots + Class Rankings card (toppers, collapsed)
+ *   Admin   → today's all slots + API-driven stat bar (daily-summary)
+ *   Student → today's timetable (read-only) + live attendance history + streak badges
+ *   All     → Upcoming Events card (CR-FE-016g)
  */
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import { timetableApi } from "@/api/timetable";
+import { attendanceApi } from "@/api/attendance";
+import { eventsApi } from "@/api/events";
 import { useAuth } from "@/hooks/useAuth";
-import { todayISO, todayDayOfWeek } from "@/utils/dates";
+import { todayISO, todayDayOfWeek, formatDisplayDate } from "@/utils/dates";
 import { parseApiError } from "@/utils/errors";
+import { format, subDays } from "date-fns";
+import type { Event, AttendanceTopper } from "@/types/api";
 
 const TODAY = todayISO();
+const THIRTY_DAYS_AGO = format(subDays(new Date(), 30), "yyyy-MM-dd");
 
 // ── Skeleton card ─────────────────────────────────────────────────────────────
 function SlotSkeleton() {
@@ -186,6 +186,381 @@ function SlotCard({ slot, onRecordAttendance }: SlotCardProps) {
   );
 }
 
+// ── Upcoming Events card (all roles, CR-FE-016g) ─────────────────────────────
+function UpcomingEventsCard() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["events", "dashboard"],
+    queryFn: () => eventsApi.list(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const events = data?.events ?? [];
+
+  if (isLoading) {
+    return (
+      <div className="rounded-lg border bg-card p-4 animate-pulse">
+        <div className="h-4 bg-muted rounded w-1/3 mb-3" />
+        <div className="space-y-2">
+          <div className="h-3 bg-muted rounded w-2/3" />
+          <div className="h-3 bg-muted rounded w-1/2" />
+        </div>
+      </div>
+    );
+  }
+
+  function typeColor(type: Event["type"]) {
+    switch (type) {
+      case "Holiday":
+        return "bg-red-100 text-red-700";
+      case "Exam":
+        return "bg-amber-100 text-amber-700";
+      case "Event":
+        return "bg-blue-100 text-blue-700";
+      default:
+        return "bg-muted text-muted-foreground";
+    }
+  }
+
+  return (
+    <section
+      aria-label="Upcoming events"
+      className="rounded-lg border bg-card p-4"
+    >
+      <h2 className="text-sm font-semibold mb-3">Upcoming Events</h2>
+      {events.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No events this month.</p>
+      ) : (
+        <ul className="space-y-2">
+          {events.map((ev) => (
+            <li key={ev.id} className="flex items-start gap-2 text-sm">
+              <span
+                className={`mt-0.5 shrink-0 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${typeColor(ev.type)}`}
+              >
+                {ev.type}
+              </span>
+              <div className="min-w-0">
+                <p className="font-medium truncate">{ev.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {ev.startDate === ev.endDate
+                    ? formatDisplayDate(ev.startDate)
+                    : `${formatDisplayDate(ev.startDate)} – ${formatDisplayDate(ev.endDate)}`}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ── Admin stat bar (CR-FE-016c) ───────────────────────────────────────────────
+function AdminStatBar({ classIds }: { classIds: string[] }) {
+  const dailySummaryQueries = useQueries({
+    queries: classIds.map((classId) => ({
+      queryKey: ["daily-summary", classId, TODAY],
+      queryFn: () => attendanceApi.getDailySummary(classId, TODAY),
+      staleTime: 2 * 60 * 1000,
+    })),
+  });
+
+  const isLoading = dailySummaryQueries.some((q) => q.isLoading);
+  if (isLoading) {
+    return (
+      <div
+        className="animate-pulse h-10 bg-muted rounded-lg mb-4"
+        aria-busy="true"
+      />
+    );
+  }
+
+  let totalPeriods = 0;
+  let marked = 0;
+  for (const q of dailySummaryQueries) {
+    if (q.data) {
+      for (const slot of q.data.slots) {
+        totalPeriods++;
+        if (slot.attendanceMarked) marked++;
+      }
+    }
+  }
+  const unmarked = totalPeriods - marked;
+
+  return (
+    <div
+      className="flex flex-wrap gap-4 rounded-lg border bg-muted/30 px-4 py-2.5 mb-4 text-sm"
+      role="status"
+      aria-label="Today's attendance marking status"
+    >
+      <span>
+        Total Periods: <strong>{totalPeriods}</strong>
+      </span>
+      <span className="text-green-700">
+        Marked: <strong>{marked}</strong>
+      </span>
+      <span className="text-amber-700">
+        Unmarked: <strong>{unmarked}</strong>
+      </span>
+    </div>
+  );
+}
+
+// ── Teacher Class Rankings card (CR-FE-016e) ──────────────────────────────────
+import React from "react";
+
+function ClassRankingsCard({ classIds }: { classIds: string[] }) {
+  const [open, setOpen] = React.useState(false);
+
+  const topperQueries = useQueries({
+    queries: classIds.map((classId) => ({
+      queryKey: ["toppers", classId, THIRTY_DAYS_AGO, TODAY],
+      queryFn: () =>
+        attendanceApi.getToppers({
+          classId,
+          from: THIRTY_DAYS_AGO,
+          to: TODAY,
+          limit: 5,
+        }),
+      enabled: open,
+      staleTime: 5 * 60 * 1000,
+    })),
+  });
+
+  return (
+    <section className="rounded-lg border bg-card overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold hover:bg-muted/30 transition-colors"
+      >
+        <span>Class Rankings (last 30 days)</span>
+        <svg
+          className={`h-4 w-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 border-t">
+          {classIds.map((classId, i) => {
+            const q = topperQueries[i];
+            return (
+              <div key={classId} className="mt-3">
+                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                  Class {classId}
+                </h3>
+                {q?.isLoading ? (
+                  <div className="animate-pulse space-y-1.5">
+                    {[...Array(3)].map((_, k) => (
+                      <div key={k} className="h-3 bg-muted rounded w-full" />
+                    ))}
+                  </div>
+                ) : q?.isError ? (
+                  <p className="text-xs text-destructive">Failed to load.</p>
+                ) : (q?.data?.toppers.length ?? 0) === 0 ? (
+                  <p className="text-xs text-muted-foreground">No data yet.</p>
+                ) : (
+                  <ol className="space-y-1.5">
+                    {(q!.data!.toppers as AttendanceTopper[]).map((t) => (
+                      <li
+                        key={t.studentId}
+                        className="flex items-center justify-between text-sm gap-2"
+                      >
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs text-muted-foreground w-4 shrink-0">
+                            #{t.rank}
+                          </span>
+                          <span className="truncate">{t.studentName}</span>
+                        </span>
+                        <span
+                          className={`shrink-0 font-medium ${
+                            (t.attendancePercentage ?? 0) >= 75
+                              ? "text-green-700"
+                              : "text-amber-700"
+                          }`}
+                        >
+                          {t.attendancePercentage !== null
+                            ? `${t.attendancePercentage.toFixed(1)}%`
+                            : "—"}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ── Student attendance history + streak (CR-FE-016b/story 18) ─────────────────
+function StudentDashboard() {
+  const { user } = useAuth();
+  const studentId = user?.studentId ?? null;
+
+  const { data: attendanceData, isLoading: loadingHistory } = useQuery({
+    queryKey: ["student-attendance", studentId, { limit: 10 }],
+    queryFn: () =>
+      attendanceApi.getStudentHistory(studentId!, { limit: 10, offset: 0 }),
+    enabled: !!studentId,
+    staleTime: 3 * 60 * 1000,
+  });
+
+  const { data: timetableData } = useQuery({
+    queryKey: ["timetable"],
+    queryFn: () => timetableApi.list({}),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const uniqueTimeSlotIds = React.useMemo(() => {
+    const set = new Set<string>();
+    timetableData?.timetable?.forEach((s) => set.add(s.id));
+    return Array.from(set);
+  }, [timetableData]);
+
+  const streakQueries = useQueries({
+    queries: uniqueTimeSlotIds.map((tsId) => ({
+      queryKey: ["streaks", tsId],
+      queryFn: () => attendanceApi.getStreaks(tsId),
+      enabled: !!studentId && uniqueTimeSlotIds.length > 0,
+      staleTime: 5 * 60 * 1000,
+    })),
+  });
+
+  // Aggregate streaks: per subject, find max consecutiveAbsentCount
+  const streakMap = React.useMemo(() => {
+    const map: Record<string, { subjectName: string; streak: number }> = {};
+    for (const q of streakQueries) {
+      if (q.data) {
+        const subjectId = q.data.subjectId;
+        const subjectName =
+          timetableData?.timetable?.find((sl) => sl.subjectId === subjectId)
+            ?.subjectName ?? subjectId;
+        for (const s of q.data.streaks) {
+          const count = s.consecutiveAbsentCount;
+          if (!map[subjectId] || map[subjectId]!.streak < count) {
+            map[subjectId] = { subjectName, streak: count };
+          }
+        }
+      }
+    }
+    return Object.values(map).filter((e) => e.streak > 0);
+  }, [streakQueries, timetableData]);
+
+  if (!studentId) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 px-4 text-center rounded-lg border bg-muted/30">
+        <svg
+          className="h-10 w-10 text-muted-foreground/40 mb-3"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"
+          />
+        </svg>
+        <p className="text-sm font-medium">
+          Your student profile is not yet linked.
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Contact your administrator.
+        </p>
+      </div>
+    );
+  }
+
+  const records = attendanceData?.records ?? [];
+
+  return (
+    <div className="space-y-4">
+      {/* Streak badges */}
+      {streakMap.length > 0 && (
+        <section
+          className="rounded-lg border bg-amber-50 p-4"
+          aria-label="Absence streaks"
+        >
+          <h2 className="text-sm font-semibold mb-2 text-amber-800">
+            Consecutive Absence Streaks
+          </h2>
+          <ul className="flex flex-wrap gap-2">
+            {streakMap.map((s) => (
+              <li
+                key={s.subjectName}
+                className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800"
+              >
+                {s.subjectName}
+                <span className="rounded-full bg-amber-600 text-white px-1.5 py-0.5 text-xs font-bold">
+                  {s.streak}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Recent attendance history */}
+      <section className="rounded-lg border bg-card p-4">
+        <h2 className="text-sm font-semibold mb-3">Recent Attendance</h2>
+        {loadingHistory ? (
+          <div className="animate-pulse space-y-2">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-4 bg-muted rounded w-full" />
+            ))}
+          </div>
+        ) : records.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No attendance records yet.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {records.slice(0, 8).map((r) => (
+              <li
+                key={r.id}
+                className="flex items-center justify-between text-sm"
+              >
+                <span className="text-muted-foreground text-xs">{r.date}</span>
+                <span className="text-xs">
+                  {r.timeSlot?.subjectName ?? "—"}
+                </span>
+                <span
+                  className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${
+                    r.status === "Present"
+                      ? "bg-green-100 text-green-700"
+                      : r.status === "Absent"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  {r.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -208,8 +583,7 @@ export default function DashboardPage() {
     );
   }
 
-  // Student view — CG-01: own attendance view
-  // NOTE: studentId is not yet in JWT (pending backend CR); show placeholder until resolved.
+  // Student view — CR-FE-016b: live attendance + streak badges
   if (user?.activeRole === "Student") {
     return (
       <div className="p-4 md:p-6 max-w-3xl mx-auto">
@@ -220,27 +594,9 @@ export default function DashboardPage() {
             {user && <span className="ml-2">· {user.name}</span>}
           </p>
         </div>
-        <div className="flex flex-col items-center justify-center py-16 px-4 text-center rounded-lg border bg-muted/30">
-          <svg
-            className="h-12 w-12 text-muted-foreground/40 mb-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
-            />
-          </svg>
-          <p className="text-base font-medium text-muted-foreground">
-            My Attendance coming soon…
-          </p>
-          <p className="text-sm text-muted-foreground mt-1">
-            Your personal attendance dashboard is being built.
-          </p>
+        <div className="space-y-4">
+          <StudentDashboard />
+          <UpcomingEventsCard />
         </div>
       </div>
     );
@@ -252,6 +608,9 @@ export default function DashboardPage() {
     user?.activeRole === "Teacher"
       ? allSlots.filter((s) => s.teacherId === user.id)
       : allSlots;
+
+  // Unique classIds for stat bar (Admin) and ranking card (Teacher)
+  const uniqueClassIds = Array.from(new Set(slots.map((s) => s.classId)));
 
   function handleRecordAttendance(slotId: string) {
     // Navigate to record page with slotId pre-selected via state
@@ -268,6 +627,11 @@ export default function DashboardPage() {
           {user && <span className="ml-2">· {user.name}</span>}
         </p>
       </div>
+
+      {/* Admin: API-driven stat bar (CR-FE-016c) */}
+      {user?.activeRole === "Admin" &&
+        !isLoading &&
+        uniqueClassIds.length > 0 && <AdminStatBar classIds={uniqueClassIds} />}
 
       {/* Loading */}
       {isLoading && (
@@ -305,6 +669,20 @@ export default function DashboardPage() {
             ))}
         </div>
       )}
+
+      {/* Teacher: Class Rankings card (CR-FE-016e) */}
+      {user?.activeRole === "Teacher" &&
+        !isLoading &&
+        uniqueClassIds.length > 0 && (
+          <div className="mt-4">
+            <ClassRankingsCard classIds={uniqueClassIds} />
+          </div>
+        )}
+
+      {/* All roles: Upcoming Events (CR-FE-016g) */}
+      <div className="mt-4">
+        <UpcomingEventsCard />
+      </div>
     </div>
   );
 }

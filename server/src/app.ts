@@ -19,6 +19,7 @@ import timetableRouter from "./modules/timetable/routes";
 import attendanceRouter, {
   studentAttendanceRouter,
 } from "./modules/attendance/routes";
+import eventsRouter from "./modules/events/routes";
 
 export function createApp(): Application {
   const app = express();
@@ -36,7 +37,7 @@ export function createApp(): Application {
   app.get("/health", (_req, res) => {
     res.json({
       status: "ok",
-      version: "4.2.0",
+      version: "4.5.0",
       timestamp: new Date().toISOString(),
     });
   });
@@ -58,8 +59,7 @@ export function createApp(): Application {
   app.use("/api/school-periods", schoolPeriodsRouter);
   app.use("/api/timetable", timetableRouter);
   app.use("/api/attendance", attendanceRouter);
-
-  // Phase 4+ — uncomment as phases complete:
+  app.use("/api/events", eventsRouter);
   // app.use('/api/timetable',  featureGuard('timetable'),  timetableRouter);
   // app.use('/api/attendance', featureGuard('attendance'), attendanceRouter);
 

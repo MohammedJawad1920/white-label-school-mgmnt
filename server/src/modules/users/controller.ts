@@ -309,7 +309,7 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
   // Check for active timeslot assignments or attendance records
   const tsCheck = await pool.query<{ count: string }>(
     `SELECT COUNT(*) as count FROM timeslots
-     WHERE teacher_id = $1 AND tenant_id = $2 AND effective_to IS NULL AND deleted_at IS NULL`,
+     WHERE teacher_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
     [id, tenantId],
   );
   if (parseInt(tsCheck.rows[0]?.count ?? "0", 10) > 0) {
@@ -362,7 +362,7 @@ export async function bulkDeleteUsers(
     async (id, tid, p) => {
       const check = await p.query<{ count: string }>(
         `SELECT COUNT(*) as count FROM timeslots
-       WHERE teacher_id = $1 AND tenant_id = $2 AND effective_to IS NULL AND deleted_at IS NULL`,
+       WHERE teacher_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
         [id, tid],
       );
       if (parseInt(check.rows[0]?.count ?? "0", 10) > 0) {

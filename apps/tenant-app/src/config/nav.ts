@@ -29,7 +29,9 @@ export interface NavItem {
     | "students"
     | "classes"
     | "batches"
-    | "subjects";
+    | "subjects"
+    | "monthly-sheet"
+    | "events";
   /** if true, renders as an indented sub-item under a group */
   isSubItem?: boolean;
   /** group header label — renders a non-clickable divider above this item */
@@ -60,6 +62,13 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/attendance/summary",
     roles: ["Admin"],
     icon: "summary",
+  },
+  // v4.5 CR-36: Monthly sheet — Admin + Teacher
+  {
+    label: "Monthly Sheet",
+    href: "/attendance/monthly-sheet",
+    roles: ["Admin", "Teacher"],
+    icon: "monthly-sheet",
   },
   // ── Manage group ─────────────────────────────────────────────────────────────
   {
@@ -103,6 +112,14 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/manage/school-periods",
     roles: ["Admin"],
     icon: "periods",
+    isSubItem: true,
+  },
+  // v4.5 CR-37: Events — Admin only
+  {
+    label: "Events",
+    href: "/manage/events",
+    roles: ["Admin"],
+    icon: "events",
     isSubItem: true,
   },
 ];

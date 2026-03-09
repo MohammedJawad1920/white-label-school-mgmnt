@@ -1,8 +1,17 @@
 /**
  * globalTeardown — runs once after all integration test suites.
- * Nothing to do here since each suite cleans up its own tenant data.
- * Kept as a placeholder for future needs (e.g., closing a shared pool).
+ *
+ * Closes both the test helper pool (testPool) and the production app pool
+ * so Jest exits cleanly and PostgreSQL connections are freed immediately.
+ *
+ * WHY this matters: without explicit pool.end() calls, idle connections
+ * accumulate across repeated test runs. Combined with the dev server's own
+ * pool, this quickly exhausts PostgreSQL's max_connections, causing
+ * "sorry, too many clients already" errors that crash the dev server.
  */
+import { closePool as closeTestPool } from "./db";
+import { closePool as closeAppPool } from "../../../src/db/pool";
+
 export default async function globalTeardown(): Promise<void> {
-  // no-op
+  await Promise.allSettled([closeTestPool(), closeAppPool()]);
 }

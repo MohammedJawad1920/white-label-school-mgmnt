@@ -6,11 +6,15 @@
  * TQ key: ['student-attendance-summary', studentId, year, month]  stale: 5 min
  *
  * CR-FE-013d: empty-state guard uses summary.totalClasses === 0
+ *
+ * CR-FE-016e: Rankings tab — Admin only, GET /attendance/toppers, paginated (10 per page)
  */
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { attendanceApi } from "@/api/attendance";
 import { studentsApi } from "@/api/students";
+import { classesApi } from "@/api/classes";
+import { todayISO } from "@/utils/dates";
 import { parseApiError } from "@/utils/errors";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -97,13 +101,268 @@ function SummarySkeleton() {
   );
 }
 
-// ── Select helpers ────────────────────────────────────────────────────────────
+// ── Select helpers ————————————————————————————————————————————
 const selectCls =
   "rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const labelCls = "block text-xs font-medium text-muted-foreground mb-1";
 
+// ── Rankings tab (CR-FE-016e) ———————————————————————————————————————
+const RANKINGS_LIMIT = 10;
+
+function RankingsTab() {
+  const [classId, setClassId] = useState("");
+  const [from, setFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [to, setTo] = useState(todayISO);
+  const [offset, setOffset] = useState(0);
+
+  const classesQ = useQuery({
+    queryKey: ["classes"],
+    queryFn: () => classesApi.list(),
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const toppersQ = useQuery({
+    queryKey: ["toppers", classId, from, to, offset],
+    queryFn: () =>
+      attendanceApi.getToppers({
+        classId,
+        from,
+        to,
+        limit: RANKINGS_LIMIT,
+        offset,
+      }),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!classId,
+  });
+
+  const toppers = toppersQ.data?.toppers ?? [];
+  const total = toppersQ.data?.total ?? 0;
+  const totalPages = Math.ceil(total / RANKINGS_LIMIT);
+  const currentPage = Math.floor(offset / RANKINGS_LIMIT) + 1;
+
+  return (
+    <div className="space-y-4">
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <div>
+          <label htmlFor="rankClassFilter" className={labelCls}>
+            Class
+          </label>
+          <select
+            id="rankClassFilter"
+            value={classId}
+            onChange={(e) => {
+              setClassId(e.target.value);
+              setOffset(0);
+            }}
+            className={selectCls}
+            aria-label="Select class for rankings"
+          >
+            <option value="">— Select a class —</option>
+            {classesQ.data?.classes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="rankFrom" className={labelCls}>
+            From
+          </label>
+          <input
+            id="rankFrom"
+            type="date"
+            value={from}
+            max={to}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              setOffset(0);
+            }}
+            className={selectCls}
+          />
+        </div>
+        <div>
+          <label htmlFor="rankTo" className={labelCls}>
+            To
+          </label>
+          <input
+            id="rankTo"
+            type="date"
+            value={to}
+            min={from}
+            max={todayISO()}
+            onChange={(e) => {
+              setTo(e.target.value);
+              setOffset(0);
+            }}
+            className={selectCls}
+          />
+        </div>
+      </div>
+
+      {/* No class selected */}
+      {!classId && (
+        <p className="text-sm text-muted-foreground py-10 text-center">
+          Select a class to view rankings.
+        </p>
+      )}
+
+      {/* Loading */}
+      {classId && toppersQ.isLoading && (
+        <div
+          className="animate-pulse space-y-2"
+          aria-busy="true"
+          aria-label="Loading rankings"
+        >
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-10 bg-muted rounded" />
+          ))}
+        </div>
+      )}
+
+      {/* Error */}
+      {classId && toppersQ.isError && (
+        <div
+          role="alert"
+          className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          {parseApiError(toppersQ.error).message ?? "Failed to load rankings."}
+        </div>
+      )}
+
+      {/* Empty */}
+      {classId &&
+        !toppersQ.isLoading &&
+        !toppersQ.isError &&
+        toppers.length === 0 && (
+          <p className="text-sm text-muted-foreground py-10 text-center">
+            No attendance data for this class in the selected period.
+          </p>
+        )}
+
+      {/* Rankings table */}
+      {classId &&
+        !toppersQ.isLoading &&
+        !toppersQ.isError &&
+        toppers.length > 0 && (
+          <>
+            <div className="rounded-lg border overflow-hidden">
+              <div
+                role="table"
+                aria-label="Attendance rankings"
+                className="w-full text-sm"
+              >
+                {/* Header */}
+                <div
+                  role="row"
+                  className="flex bg-muted/50 border-b font-medium text-xs text-muted-foreground"
+                >
+                  <div role="columnheader" className="w-12 px-3 py-2 shrink-0">
+                    #
+                  </div>
+                  <div role="columnheader" className="flex-1 px-3 py-2">
+                    Student
+                  </div>
+                  <div
+                    role="columnheader"
+                    className="w-24 px-3 py-2 text-right"
+                  >
+                    Attended
+                  </div>
+                  <div
+                    role="columnheader"
+                    className="w-24 px-3 py-2 text-right"
+                  >
+                    %
+                  </div>
+                </div>
+                {/* Rows */}
+                {toppers.map((t) => (
+                  <div
+                    key={t.studentId}
+                    role="row"
+                    className="flex items-center border-b last:border-b-0 hover:bg-muted/20"
+                  >
+                    <div
+                      role="cell"
+                      className="w-12 px-3 py-2.5 shrink-0 text-muted-foreground"
+                    >
+                      {t.rank}
+                    </div>
+                    <div
+                      role="cell"
+                      className="flex-1 px-3 py-2.5 font-medium truncate"
+                    >
+                      {t.studentName}
+                    </div>
+                    <div
+                      role="cell"
+                      className="w-24 px-3 py-2.5 text-right tabular-nums"
+                    >
+                      {t.presentCount}/{t.totalPeriods}
+                    </div>
+                    <div
+                      role="cell"
+                      className={`w-24 px-3 py-2.5 text-right font-semibold tabular-nums ${
+                        (t.attendancePercentage ?? 0) >= 75
+                          ? "text-green-700"
+                          : "text-amber-700"
+                      }`}
+                    >
+                      {t.attendancePercentage !== null
+                        ? `${t.attendancePercentage.toFixed(1)}%`
+                        : "—"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div
+                className="flex items-center justify-between text-sm"
+                aria-label="Rankings pagination"
+              >
+                <span className="text-muted-foreground">
+                  Page {currentPage} of {totalPages} ({total} total)
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() =>
+                      setOffset(Math.max(0, offset - RANKINGS_LIMIT))
+                    }
+                    disabled={offset === 0}
+                    className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-muted transition-colors"
+                    aria-label="Previous page"
+                  >
+                    ← Prev
+                  </button>
+                  <button
+                    onClick={() => setOffset(offset + RANKINGS_LIMIT)}
+                    disabled={currentPage >= totalPages}
+                    className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-muted transition-colors"
+                    aria-label="Next page"
+                  >
+                    Next →
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AttendanceSummaryPage() {
+  const [tab, setTab] = useState<"summary" | "rankings">("summary");
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [selectedYear, setSelectedYear] = useState(THIS_YEAR);
   const [selectedMonth, setSelectedMonth] = useState(THIS_MONTH);
@@ -158,176 +417,227 @@ export default function AttendanceSummaryPage() {
         </p>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-5">
-        {/* Student selector */}
-        <div>
-          <label htmlFor="studentFilter" className={labelCls}>
-            Student
-          </label>
-          <select
-            id="studentFilter"
-            value={selectedStudentId}
-            onChange={(e) => setSelectedStudentId(e.target.value)}
-            className={selectCls}
-            aria-label="Select student"
+      {/* Tabs (CR-FE-016e) */}
+      <div
+        role="tablist"
+        aria-label="Attendance sections"
+        className="flex border-b mb-5"
+      >
+        {(["summary", "rankings"] as const).map((t) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={tab === t}
+            aria-controls={`tabpanel-${t}`}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors capitalize ${
+              tab === t
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
           >
-            <option value="">— Select a student —</option>
-            {studentsQ.data?.students.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Year selector */}
-        <div>
-          <label htmlFor="yearFilter" className={labelCls}>
-            Year
-          </label>
-          <select
-            id="yearFilter"
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className={selectCls}
-            aria-label="Select year"
-          >
-            {YEARS.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Month selector */}
-        <div>
-          <label htmlFor="monthFilter" className={labelCls}>
-            Month
-          </label>
-          <select
-            id="monthFilter"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(Number(e.target.value))}
-            className={selectCls}
-            aria-label="Select month"
-          >
-            {MONTHS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </div>
+            {t === "summary" ? "Summary" : "Rankings"}
+          </button>
+        ))}
       </div>
 
-      {/* No student selected */}
-      {!selectedStudentId && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="text-sm text-muted-foreground">
-            Select a student to view their attendance summary.
-          </p>
+      {/* Rankings tab panel */}
+      {tab === "rankings" && (
+        <div
+          role="tabpanel"
+          id="tabpanel-rankings"
+          aria-labelledby="tab-rankings"
+        >
+          <RankingsTab />
         </div>
       )}
 
-      {/* Error states */}
-      {selectedStudentId && is403 && (
+      {/* Summary tab panel */}
+      {tab === "summary" && (
         <div
-          role="alert"
-          className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground mb-4"
+          role="tabpanel"
+          id="tabpanel-summary"
+          aria-labelledby="tab-summary"
         >
-          Access denied — you are not authorised to view this student's
-          attendance.
-        </div>
-      )}
-      {selectedStudentId && is404 && (
-        <div
-          role="alert"
-          className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground mb-4"
-        >
-          Student not found.
-        </div>
-      )}
-      {selectedStudentId && summaryQ.isError && !is403 && !is404 && apiErr && (
-        <div
-          role="alert"
-          className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive mb-4"
-        >
-          {apiErr.message ?? "Failed to load attendance summary."}
-        </div>
-      )}
+          {/* Filters */}
+          <div className="flex flex-wrap gap-3 mb-5">
+            {/* Student selector */}
+            <div>
+              <label htmlFor="studentFilter" className={labelCls}>
+                Student
+              </label>
+              <select
+                id="studentFilter"
+                value={selectedStudentId}
+                onChange={(e) => setSelectedStudentId(e.target.value)}
+                className={selectCls}
+                aria-label="Select student"
+              >
+                <option value="">— Select a student —</option>
+                {studentsQ.data?.students.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-      {/* Loading skeleton */}
-      {selectedStudentId && summaryQ.isLoading && <SummarySkeleton />}
+            {/* Year selector */}
+            <div>
+              <label htmlFor="yearFilter" className={labelCls}>
+                Year
+              </label>
+              <select
+                id="yearFilter"
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className={selectCls}
+                aria-label="Select year"
+              >
+                {YEARS.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-      {/* Empty state — CR-FE-013d: guard on totalClasses */}
-      {selectedStudentId &&
-        !summaryQ.isLoading &&
-        !summaryQ.isError &&
-        summary &&
-        !hasData && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <p className="text-sm text-muted-foreground">
-              No attendance records for {selectedStudentName} in {monthLabel}{" "}
-              {selectedYear}.
-            </p>
+            {/* Month selector */}
+            <div>
+              <label htmlFor="monthFilter" className={labelCls}>
+                Month
+              </label>
+              <select
+                id="monthFilter"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className={selectCls}
+                aria-label="Select month"
+              >
+                {MONTHS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-        )}
 
-      {/* Results */}
-      {selectedStudentId &&
-        !summaryQ.isLoading &&
-        !summaryQ.isError &&
-        hasData &&
-        summary && (
-          <div className="space-y-5">
-            {/* Context label */}
-            <div className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">
-                {selectedStudentName}
-              </span>
-              <span className="mx-1.5">·</span>
-              <span>
-                {monthLabel} {selectedYear}
-              </span>
-              <span className="ml-1.5">
-                · {summary.totalClasses} classes recorded
-              </span>
+          {/* No student selected */}
+          {!selectedStudentId && (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <p className="text-sm text-muted-foreground">
+                Select a student to view their attendance summary.
+              </p>
             </div>
+          )}
 
-            {/* Stat cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <StatCard label="Total Classes" value={summary.totalClasses} />
-              <StatCard
-                label="Present"
-                value={summary.present}
-                color="text-green-600"
-              />
-              <StatCard
-                label="Absent"
-                value={summary.absent}
-                color="text-red-600"
-              />
-              <StatCard
-                label="Late"
-                value={summary.late}
-                color="text-yellow-600"
-              />
+          {/* Error states */}
+          {selectedStudentId && is403 && (
+            <div
+              role="alert"
+              className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground mb-4"
+            >
+              Access denied — you are not authorised to view this student's
+              attendance.
             </div>
-
-            {/* Attendance percentage bar */}
-            <div className="rounded-lg border bg-card p-4">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-medium">Attendance</span>
-                <span className="text-xs text-muted-foreground">
-                  (Present + Late counted)
-                </span>
+          )}
+          {selectedStudentId && is404 && (
+            <div
+              role="alert"
+              className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground mb-4"
+            >
+              Student not found.
+            </div>
+          )}
+          {selectedStudentId &&
+            summaryQ.isError &&
+            !is403 &&
+            !is404 &&
+            apiErr && (
+              <div
+                role="alert"
+                className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive mb-4"
+              >
+                {apiErr.message ?? "Failed to load attendance summary."}
               </div>
-              <PctBar pct={summary.attendancePercentage} />
-            </div>
-          </div>
-        )}
+            )}
+
+          {/* Loading skeleton */}
+          {selectedStudentId && summaryQ.isLoading && <SummarySkeleton />}
+
+          {/* Empty state — CR-FE-013d: guard on totalClasses */}
+          {selectedStudentId &&
+            !summaryQ.isLoading &&
+            !summaryQ.isError &&
+            summary &&
+            !hasData && (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <p className="text-sm text-muted-foreground">
+                  No attendance records for {selectedStudentName} in{" "}
+                  {monthLabel} {selectedYear}.
+                </p>
+              </div>
+            )}
+
+          {/* Results */}
+          {selectedStudentId &&
+            !summaryQ.isLoading &&
+            !summaryQ.isError &&
+            hasData &&
+            summary && (
+              <div className="space-y-5">
+                {/* Context label */}
+                <div className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">
+                    {selectedStudentName}
+                  </span>
+                  <span className="mx-1.5">·</span>
+                  <span>
+                    {monthLabel} {selectedYear}
+                  </span>
+                  <span className="ml-1.5">
+                    · {summary.totalClasses} classes recorded
+                  </span>
+                </div>
+
+                {/* Stat cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <StatCard
+                    label="Total Classes"
+                    value={summary.totalClasses}
+                  />
+                  <StatCard
+                    label="Present"
+                    value={summary.present}
+                    color="text-green-600"
+                  />
+                  <StatCard
+                    label="Absent"
+                    value={summary.absent}
+                    color="text-red-600"
+                  />
+                  <StatCard
+                    label="Late"
+                    value={summary.late}
+                    color="text-yellow-600"
+                  />
+                </div>
+
+                {/* Attendance percentage bar */}
+                <div className="rounded-lg border bg-card p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-medium">Attendance</span>
+                    <span className="text-xs text-muted-foreground">
+                      (Present + Late counted)
+                    </span>
+                  </div>
+                  <PctBar pct={summary.attendancePercentage} />
+                </div>
+              </div>
+            )}
+        </div>
+      )}
     </div>
   );
 }

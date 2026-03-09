@@ -36,6 +36,10 @@ const SubjectsPage = lazy(
 const SchoolPeriodsPage = lazy(
   () => import("@/features/manage/school-periods/SchoolPeriodsPage"),
 );
+const MonthlySheetPage = lazy(
+  () => import("@/features/attendance/MonthlySheetPage"),
+);
+const EventsPage = lazy(() => import("@/features/manage/events/EventsPage"));
 
 // ── QueryClient — retry rules from Freeze §3 ─────────────────────────────────
 const queryClient = new QueryClient({
@@ -190,6 +194,28 @@ export function App() {
                         <FeatureGate featureKey="timetable">
                           <SchoolPeriodsPage />
                         </FeatureGate>
+                      </RoleGate>
+                    }
+                  />
+
+                  {/* v4.5 CR-36: Monthly sheet — Admin + Teacher */}
+                  <Route
+                    path="/attendance/monthly-sheet"
+                    element={
+                      <RoleGate roles={["Admin", "Teacher"]}>
+                        <FeatureGate featureKey="attendance">
+                          <MonthlySheetPage />
+                        </FeatureGate>
+                      </RoleGate>
+                    }
+                  />
+
+                  {/* v4.5 CR-37: Events — Admin only */}
+                  <Route
+                    path="/manage/events"
+                    element={
+                      <RoleGate roles={["Admin"]}>
+                        <EventsPage />
                       </RoleGate>
                     }
                   />

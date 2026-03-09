@@ -347,10 +347,10 @@ describe("DELETE /api/students/:id and bulk", () => {
     ]);
     const ids = [r1.body.student.id as string, r2.body.student.id as string];
     const res = await makeAgent()
-      .delete("/api/students/bulk")
+      .post("/api/students/bulk")
       .set("Authorization", `Bearer ${token}`)
-      .send({ ids });
+      .send({ studentIds: ids });
     expect(res.status).toBe(200);
-    expect(res.body.deleted.length).toBe(2);
+    expect(res.body.deletedCount).toBe(2);
   });
 });

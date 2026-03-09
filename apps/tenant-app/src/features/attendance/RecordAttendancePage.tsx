@@ -38,7 +38,8 @@ import { attendanceApi } from "@/api/attendance";
 import { todayISO, todayDayOfWeek } from "@/utils/dates";
 import { parseApiError } from "@/utils/errors";
 import { cn } from "@/utils/cn";
-import type { TimeSlot, Student } from "@/types/api";
+import { AT_RISK_THRESHOLD } from "@/utils/attendance";
+import type { TimeSlot, Student, AttendanceStreak } from "@/types/api";
 
 type AttendanceStatus = "Present" | "Absent" | "Late";
 
@@ -196,6 +197,8 @@ export default function RecordAttendancePage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   // True after 409 — activates per-student PUT mode behind the same UI
   const [alreadyRecorded, setAlreadyRecorded] = useState(false);
+  // At-risk panel expansion state
+  const [atRiskOpen, setAtRiskOpen] = useState(false);
 
   // ── Slot list query ───────────────────────────────────────────────────────
   const slotsQ = useQuery({
@@ -221,6 +224,17 @@ export default function RecordAttendancePage() {
   const selectedSlot: TimeSlot | undefined = slots.find(
     (s) => s.id === selectedSlotId,
   );
+
+  // ── At-risk streaks query (CR-FE-016d) ──────────────────────────────────
+  const streaksQ = useQuery({
+    queryKey: ["streaks", selectedSlotId],
+    queryFn: () => attendanceApi.getStreaks(selectedSlotId),
+    staleTime: 3 * 60 * 1000,
+    enabled: !!selectedSlotId,
+  });
+  const atRiskStudents: AttendanceStreak[] = (
+    streaksQ.data?.streaks ?? []
+  ).filter((s) => s.consecutiveAbsentCount >= AT_RISK_THRESHOLD);
 
   // ── Students query — loads when slot selected ─────────────────────────────
   const studentsQ = useQuery({
@@ -331,6 +345,7 @@ export default function RecordAttendancePage() {
     setSubmitError(null);
     setSuccessMsg(null);
     setAlreadyRecorded(false);
+    setAtRiskOpen(false);
   }
 
   function handleDefaultStatusChange(status: AttendanceStatus) {
@@ -498,6 +513,81 @@ export default function RecordAttendancePage() {
           </div>
         </div>
       </div>
+
+      {/* At-Risk Students panel (CR-FE-016d) — shown when slot selected + at-risk exist */}
+      {selectedSlotId && !streaksQ.isLoading && atRiskStudents.length > 0 && (
+        <section
+          className="rounded-lg border border-amber-200 bg-amber-50 mb-4 overflow-hidden"
+          aria-label="At-risk students"
+        >
+          <button
+            type="button"
+            onClick={() => setAtRiskOpen((v) => !v)}
+            aria-expanded={atRiskOpen}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-amber-800 hover:bg-amber-100 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <svg
+                className="h-4 w-4 shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                />
+              </svg>
+              At-Risk Students —
+              <span className="inline-flex items-center rounded-full bg-amber-200 px-2 py-0.5 text-xs font-bold text-amber-900">
+                {atRiskStudents.length}
+              </span>
+              <span className="text-xs font-normal text-amber-700">
+                ({AT_RISK_THRESHOLD}+ consecutive absences)
+              </span>
+            </span>
+            <svg
+              className={`h-4 w-4 text-amber-600 transition-transform ${atRiskOpen ? "rotate-180" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </button>
+
+          {atRiskOpen && (
+            <ul
+              className="px-4 pb-3 space-y-1.5 border-t border-amber-200"
+              aria-label="At-risk student list"
+            >
+              {atRiskStudents.map((s) => (
+                <li
+                  key={s.studentId}
+                  className="flex items-center justify-between pt-2 text-sm"
+                >
+                  <span className="text-amber-900 font-medium truncate">
+                    {allStudents.find((st) => st.id === s.studentId)?.name ??
+                      s.studentId}
+                  </span>
+                  <span className="shrink-0 ml-2 inline-flex items-center rounded-full bg-amber-600 px-2 py-0.5 text-xs font-bold text-white">
+                    {s.consecutiveAbsentCount} absent
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* Step 2 — Default status */}
       {selectedSlotId && (

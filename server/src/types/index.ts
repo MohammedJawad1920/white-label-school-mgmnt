@@ -1,5 +1,5 @@
 // =====================================================
-// FREEZE v4.3 — Canonical Type Definitions (§3.2)
+// FREEZE v4.5 — Canonical Type Definitions (§3.2)
 // All application code must import from here.
 // =====================================================
 
@@ -171,6 +171,7 @@ export interface TenantJwtPayload {
   tenantId: string;
   roles: UserRole[];
   activeRole: UserRole; // v3.4: enum includes Student
+  studentId?: string | null; // v4.5 CR-38: populated when activeRole=Student and linked record exists; null otherwise; optional for backward-compat
   iat?: number;
   exp?: number;
 }
@@ -194,6 +195,7 @@ declare global {
       userRoles?: UserRole[];
       activeRole?: UserRole;
       superAdminId?: string;
+      studentId?: string | null; // v4.5 CR-38: attached by tenantContextMiddleware; null for non-Student roles
     }
   }
 }
@@ -207,6 +209,7 @@ export interface ApiUser {
   email: string;
   roles: UserRole[];
   activeRole: UserRole;
+  studentId: string | null; // v4.5 CR-38
 }
 
 export interface ApiTenant {
@@ -269,6 +272,36 @@ export interface ApiError {
     details: Record<string, unknown>;
   };
   timestamp: string;
+}
+
+// ─── Events (v4.5 CR-37) ────────────────────────────────────────────────────
+
+export type EventType = "Holiday" | "Exam" | "Event" | "Other";
+
+export interface EventRow {
+  id: string;
+  tenant_id: string;
+  title: string;
+  type: EventType;
+  start_date: string; // DATE as ISO string
+  end_date: string; // DATE as ISO string
+  description: string | null;
+  created_by: string;
+  created_at: Date;
+  updated_at: Date;
+  deleted_at: Date | null;
+}
+
+export interface ApiEvent {
+  id: string;
+  title: string;
+  type: EventType;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  description: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Bulk Delete (Phase 3) ───────────────────────────────────────────────────

@@ -278,7 +278,6 @@ export async function deletePeriod(req: Request, res: Response): Promise<void> {
     `SELECT COUNT(*) as count FROM timeslots
      WHERE tenant_id = $1
        AND period_number = $2
-       AND effective_to IS NULL
        AND deleted_at IS NULL`,
     [tenantId, periodNumber],
   );

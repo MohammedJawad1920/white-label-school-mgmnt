@@ -17,6 +17,7 @@
     "migrate:006": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/006_student_status_classid_nullable.sql', {stdio:'inherit', shell:true})\"",
     "migrate:007": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/007_batch_status_graduated.sql', {stdio:'inherit', shell:true})\"",
     "migrate:008": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/008_timeslot_remove_effective_dates.sql', {stdio:'inherit', shell:true})\"",
+    "migrate:009": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/009_academic_calendar_events.sql', {stdio:'inherit', shell:true})\"",
     "mock": "npx @stoplight/prism-cli@5.14.2 mock ./docs/openapi.yaml --port 4010",
     "mock:verbose": "npx @stoplight/prism-cli@5.14.2 mock ./docs/openapi.yaml --port 4010 --errors",
     "test": "jest --runInBand",

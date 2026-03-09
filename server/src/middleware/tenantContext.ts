@@ -119,6 +119,8 @@ export async function tenantContextMiddleware(
   req.userId = tenantPayload.userId;
   req.userRoles = tenantPayload.roles;
   req.activeRole = tenantPayload.activeRole;
+  // CR-38: studentId in JWT payload (field absent on old tokens → null for backward-compat)
+  req.studentId = tenantPayload.studentId ?? null;
 
   next();
 }

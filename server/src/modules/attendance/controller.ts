@@ -707,3 +707,637 @@ export async function getStudentAttendanceSummary(
     },
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// GET /api/attendance/streaks  (v4.5 CR-33)
+// ═══════════════════════════════════════════════════════════════════
+// Returns consecutive absent streak per student for the subject of the
+// given timeslot.
+// Admin: any non-deleted timeslot in tenant
+// Teacher: only timeslots where caller is the assigned teacher → 403
+// Student: any timeslot; response filtered to own entry only
+
+export async function getAttendanceStreaks(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const tenantId = req.tenantId!;
+  const callerId = req.userId!;
+  const callerRole = req.activeRole!;
+
+  const { timeSlotId } = req.query as { timeSlotId?: string };
+
+  if (!timeSlotId) {
+    send400(res, "timeSlotId is required", "VALIDATION_ERROR");
+    return;
+  }
+
+  // Fetch timeslot + resolve classId/subjectId
+  const tsResult = await pool.query<{
+    id: string;
+    class_id: string;
+    subject_id: string;
+    teacher_id: string;
+  }>(
+    `SELECT id, class_id, subject_id, teacher_id
+     FROM timeslots
+     WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+    [timeSlotId, tenantId],
+  );
+  if ((tsResult.rowCount ?? 0) === 0) {
+    send404(res, "Timeslot not found");
+    return;
+  }
+  const timeslot = tsResult.rows[0]!;
+
+  // Teacher guard: must be assigned to this timeslot
+  if (callerRole === "Teacher") {
+    if (timeslot.teacher_id !== callerId) {
+      send403(res, "You are not assigned to this timeslot", "FORBIDDEN");
+      return;
+    }
+  }
+
+  // Fetch active students in the class
+  let studentsQuery: string;
+  let studentsParams: unknown[];
+
+  if (callerRole === "Student") {
+    // Student sees only their own entry
+    studentsQuery = `SELECT s.id FROM students s
+                     WHERE s.class_id = $1 AND s.tenant_id = $2 AND s.deleted_at IS NULL
+                       AND s.user_id = $3`;
+    studentsParams = [timeslot.class_id, tenantId, callerId];
+  } else {
+    studentsQuery = `SELECT s.id FROM students s
+                     WHERE s.class_id = $1 AND s.tenant_id = $2 AND s.deleted_at IS NULL
+                     ORDER BY s.id`;
+    studentsParams = [timeslot.class_id, tenantId];
+  }
+
+  const studentsResult = await pool.query<{ id: string }>(
+    studentsQuery,
+    studentsParams,
+  );
+
+  // Compute consecutive absent streak for each student
+  // Streak = leading run of Absent records ordered by date DESC for this subject
+  const streaks: Array<{ studentId: string; consecutiveAbsentCount: number }> =
+    [];
+
+  for (const student of studentsResult.rows) {
+    const recordsResult = await pool.query<{
+      effective_status: string;
+    }>(
+      `SELECT COALESCE(ar.corrected_status, ar.status) AS effective_status
+       FROM attendance_records ar
+       JOIN timeslots t ON t.id = ar.timeslot_id
+       WHERE ar.student_id = $1
+         AND ar.tenant_id  = $2
+         AND t.subject_id  = $3
+       ORDER BY ar.date DESC`,
+      [student.id, tenantId, timeslot.subject_id],
+    );
+
+    let streak = 0;
+    for (const row of recordsResult.rows) {
+      if (row.effective_status === "Absent") {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    streaks.push({ studentId: student.id, consecutiveAbsentCount: streak });
+  }
+
+  res.status(200).json({
+    classId: timeslot.class_id,
+    subjectId: timeslot.subject_id,
+    streaks,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GET /api/attendance/toppers  (v4.5 CR-34)
+// ═══════════════════════════════════════════════════════════════════
+// Returns students ranked by overall attendance percentage for a class
+// over a date range.
+// Admin: any classId in tenant
+// Teacher: only classIds where caller has ≥1 non-deleted timeslot → 403
+// Student: full ranking returned (can see own position)
+
+export async function getAttendanceToppers(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const tenantId = req.tenantId!;
+  const callerId = req.userId!;
+  const callerRole = req.activeRole!;
+
+  const {
+    classId,
+    from,
+    to,
+    limit: limitStr,
+    offset: offsetStr,
+  } = req.query as {
+    classId?: string;
+    from?: string;
+    to?: string;
+    limit?: string;
+    offset?: string;
+  };
+
+  // Validation
+  if (!classId || !from || !to) {
+    send400(res, "classId, from, and to are required", "VALIDATION_ERROR");
+    return;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    send400(
+      res,
+      "from and to must be valid dates in YYYY-MM-DD format",
+      "VALIDATION_ERROR",
+    );
+    return;
+  }
+  if (from > to) {
+    send400(res, "'from' must not be after 'to'", "VALIDATION_ERROR");
+    return;
+  }
+
+  const limit = parseInt(limitStr ?? "10", 10);
+  const offset = Math.max(parseInt(offsetStr ?? "0", 10), 0);
+
+  if (isNaN(limit) || limit < 1 || limit > 50) {
+    send400(res, "limit must be between 1 and 50", "VALIDATION_ERROR");
+    return;
+  }
+
+  // Class lookup
+  const classResult = await pool.query<{ id: string }>(
+    "SELECT id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [classId, tenantId],
+  );
+  if ((classResult.rowCount ?? 0) === 0) {
+    send404(res, "Class not found");
+    return;
+  }
+
+  // Teacher guard
+  if (callerRole === "Teacher") {
+    const assignCheck = await pool.query<{ exists: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM timeslots
+         WHERE class_id = $1 AND teacher_id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+       ) AS exists`,
+      [classId, callerId, tenantId],
+    );
+    if (!assignCheck.rows[0]?.exists) {
+      send403(res, "You are not assigned to this class", "FORBIDDEN");
+      return;
+    }
+  }
+
+  // Fetch all active students
+  const studentsResult = await pool.query<{
+    id: string;
+    name: string;
+  }>(
+    `SELECT id, name FROM students
+     WHERE class_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+     ORDER BY name ASC`,
+    [classId, tenantId],
+  );
+
+  const total = studentsResult.rows.length;
+
+  // Compute attendance stats for each student
+  const ranked: Array<{
+    studentId: string;
+    studentName: string;
+    totalPeriods: number;
+    presentCount: number;
+    attendancePercentage: number | null;
+  }> = [];
+
+  // Batch query for all students at once for efficiency
+  const statsResult = await pool.query<{
+    student_id: string;
+    total_periods: string;
+    present_count: string;
+  }>(
+    `SELECT
+       ar.student_id,
+       COUNT(*) AS total_periods,
+       COUNT(*) FILTER (
+         WHERE COALESCE(ar.corrected_status, ar.status) IN ('Present', 'Late')
+       ) AS present_count
+     FROM attendance_records ar
+     JOIN students s ON s.id = ar.student_id
+     WHERE s.class_id = $1
+       AND ar.tenant_id = $2
+       AND ar.date BETWEEN $3 AND $4
+       AND ar.student_id = ANY($5::varchar[])
+     GROUP BY ar.student_id`,
+    [classId, tenantId, from, to, studentsResult.rows.map((s) => s.id)],
+  );
+
+  const statsMap = new Map(statsResult.rows.map((r) => [r.student_id, r]));
+
+  for (const student of studentsResult.rows) {
+    const stats = statsMap.get(student.id);
+    const totalPeriods = parseInt(stats?.total_periods ?? "0", 10);
+    const presentCount = parseInt(stats?.present_count ?? "0", 10);
+    const attendancePercentage =
+      totalPeriods > 0
+        ? Math.round((presentCount / totalPeriods) * 10000) / 100
+        : null;
+    ranked.push({
+      studentId: student.id,
+      studentName: student.name,
+      totalPeriods,
+      presentCount,
+      attendancePercentage,
+    });
+  }
+
+  // Sort: attendancePercentage DESC NULLS LAST, studentName ASC
+  ranked.sort((a, b) => {
+    if (a.attendancePercentage === null && b.attendancePercentage === null)
+      return a.studentName.localeCompare(b.studentName);
+    if (a.attendancePercentage === null) return 1;
+    if (b.attendancePercentage === null) return -1;
+    if (b.attendancePercentage !== a.attendancePercentage)
+      return b.attendancePercentage - a.attendancePercentage;
+    return a.studentName.localeCompare(b.studentName);
+  });
+
+  // Assign global ranks (1-based, before pagination)
+  const withRanks = ranked.map((s, i) => ({ rank: i + 1, ...s }));
+
+  // Apply pagination
+  const page = withRanks.slice(offset, offset + limit);
+
+  res.status(200).json({
+    classId,
+    from,
+    to,
+    total,
+    limit,
+    offset,
+    toppers: page,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GET /api/attendance/daily-summary  (v4.5 CR-35)
+// ═══════════════════════════════════════════════════════════════════
+// Returns per-slot attendance summary for a class on a specific date.
+// Feature guard: timetable feature (slot structure, not attendance).
+// Admin: any classId in tenant
+// Teacher: only classIds where caller has ≥1 non-deleted timeslot → 403
+// Student: full slot list, class-level counts (no PII)
+
+export async function getAttendanceDailySummary(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const tenantId = req.tenantId!;
+  const callerId = req.userId!;
+  const callerRole = req.activeRole!;
+
+  const { classId, date } = req.query as {
+    classId?: string;
+    date?: string;
+  };
+
+  if (!classId || !date) {
+    send400(res, "classId and date are required", "VALIDATION_ERROR");
+    return;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    send400(
+      res,
+      "date must be a valid date in YYYY-MM-DD format",
+      "VALIDATION_ERROR",
+    );
+    return;
+  }
+
+  // Class lookup
+  const classResult = await pool.query<{ id: string }>(
+    "SELECT id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [classId, tenantId],
+  );
+  if ((classResult.rowCount ?? 0) === 0) {
+    send404(res, "Class not found");
+    return;
+  }
+
+  // Teacher guard
+  if (callerRole === "Teacher") {
+    const assignCheck = await pool.query<{ exists: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM timeslots
+         WHERE class_id = $1 AND teacher_id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+       ) AS exists`,
+      [classId, callerId, tenantId],
+    );
+    if (!assignCheck.rows[0]?.exists) {
+      send403(res, "You are not assigned to this class", "FORBIDDEN");
+      return;
+    }
+  }
+
+  // Derive dayOfWeek server-side from the date
+  const dayNames = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
+  const dateObj = new Date(date + "T00:00:00Z");
+  const dayOfWeek = dayNames[dateObj.getUTCDay()];
+
+  // Total active students in class
+  const totalStudentsResult = await pool.query<{ count: string }>(
+    "SELECT COUNT(*) AS count FROM students WHERE class_id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [classId, tenantId],
+  );
+  const totalStudents = parseInt(totalStudentsResult.rows[0]?.count ?? "0", 10);
+
+  // Fetch timeslots for this class and day
+  const slotsResult = await pool.query<{
+    id: string;
+    period_number: number;
+    subject_id: string;
+    subject_name: string;
+    teacher_id: string;
+    teacher_name: string;
+  }>(
+    `SELECT t.id, t.period_number, t.subject_id,
+            s.name AS subject_name,
+            t.teacher_id,
+            u.name AS teacher_name
+     FROM timeslots t
+     JOIN subjects s ON s.id = t.subject_id
+     JOIN users    u ON u.id = t.teacher_id
+     WHERE t.class_id   = $1
+       AND t.tenant_id  = $2
+       AND t.day_of_week = $3
+       AND t.deleted_at IS NULL
+     ORDER BY t.period_number ASC`,
+    [classId, tenantId, dayOfWeek],
+  );
+
+  // For each slot, check if attendance has been marked on this date
+  const slots = await Promise.all(
+    slotsResult.rows.map(async (slot) => {
+      const countResult = await pool.query<{
+        record_count: string;
+        absent_count: string;
+      }>(
+        `SELECT
+           COUNT(*)                                                                  AS record_count,
+           COUNT(*) FILTER (
+             WHERE COALESCE(ar.corrected_status, ar.status) = 'Absent'
+           ) AS absent_count
+         FROM attendance_records ar
+         WHERE ar.timeslot_id = $1 AND ar.tenant_id = $2 AND ar.date = $3`,
+        [slot.id, tenantId, date],
+      );
+      const recordCount = parseInt(
+        countResult.rows[0]?.record_count ?? "0",
+        10,
+      );
+      const attendanceMarked = recordCount > 0;
+      const absentCount = attendanceMarked
+        ? parseInt(countResult.rows[0]?.absent_count ?? "0", 10)
+        : 0;
+
+      return {
+        timeSlotId: slot.id,
+        periodNumber: slot.period_number,
+        subjectId: slot.subject_id,
+        subjectName: slot.subject_name,
+        teacherId: slot.teacher_id,
+        teacherName: slot.teacher_name,
+        attendanceMarked,
+        totalStudents,
+        absentCount,
+      };
+    }),
+  );
+
+  res.status(200).json({
+    classId,
+    date,
+    dayOfWeek,
+    slots,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GET /api/attendance/monthly-sheet  (v4.5 CR-36)
+// ═══════════════════════════════════════════════════════════════════
+// Returns full student × day × period attendance grid for a class+subject
+// for a given month/year.
+// Admin: any class+subject in tenant
+// Teacher: only where ≥1 non-deleted timeslot matches both classId AND subjectId → 403
+// Student: 403 FORBIDDEN (handled by requireRole in routes)
+
+export async function getAttendanceMonthlySheet(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const tenantId = req.tenantId!;
+  const callerId = req.userId!;
+  const callerRole = req.activeRole!;
+
+  const {
+    classId,
+    subjectId,
+    year: yearStr,
+    month: monthStr,
+  } = req.query as {
+    classId?: string;
+    subjectId?: string;
+    year?: string;
+    month?: string;
+  };
+
+  if (!classId || !subjectId || !yearStr || !monthStr) {
+    send400(
+      res,
+      "classId, subjectId, year, and month are required",
+      "VALIDATION_ERROR",
+    );
+    return;
+  }
+
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+
+  if (isNaN(year) || year < 2000 || year > 2099) {
+    send400(
+      res,
+      "year must be an integer between 2000 and 2099",
+      "VALIDATION_ERROR",
+    );
+    return;
+  }
+  if (isNaN(month) || month < 1 || month > 12) {
+    send400(
+      res,
+      "month must be an integer between 1 and 12",
+      "VALIDATION_ERROR",
+    );
+    return;
+  }
+
+  // Class lookup
+  const classResult = await pool.query<{ id: string }>(
+    "SELECT id FROM classes WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [classId, tenantId],
+  );
+  if ((classResult.rowCount ?? 0) === 0) {
+    send404(res, "Class not found");
+    return;
+  }
+
+  // Subject lookup
+  const subjectResult = await pool.query<{ id: string; name: string }>(
+    "SELECT id, name FROM subjects WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+    [subjectId, tenantId],
+  );
+  if ((subjectResult.rowCount ?? 0) === 0) {
+    send404(res, "Subject not found");
+    return;
+  }
+  const subjectName = subjectResult.rows[0]!.name;
+
+  // Teacher guard: must have ≥1 non-deleted timeslot for BOTH classId AND subjectId
+  if (callerRole === "Teacher") {
+    const assignCheck = await pool.query<{ exists: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM timeslots
+         WHERE class_id   = $1
+           AND subject_id = $2
+           AND teacher_id = $3
+           AND tenant_id  = $4
+           AND deleted_at IS NULL
+       ) AS exists`,
+      [classId, subjectId, callerId, tenantId],
+    );
+    if (!assignCheck.rows[0]?.exists) {
+      send403(
+        res,
+        "You are not assigned to this subject in the specified class",
+        "FORBIDDEN",
+      );
+      return;
+    }
+  }
+
+  // Compute date range for the month
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const rangeStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  const rangeEnd = `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+
+  // Fetch active students for class ordered by name
+  const studentsResult = await pool.query<{
+    id: string;
+    name: string;
+    admission_number: string;
+  }>(
+    `SELECT id, name, admission_number FROM students
+     WHERE class_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+     ORDER BY name ASC`,
+    [classId, tenantId],
+  );
+
+  // Fetch all attendance records for these students in the date range for this subject
+  const recordsResult = await pool.query<{
+    student_id: string;
+    record_date: string;
+    timeslot_id: string;
+    effective_status: string;
+  }>(
+    `SELECT
+       ar.student_id,
+       ar.date        AS record_date,
+       ar.timeslot_id,
+       COALESCE(ar.corrected_status, ar.status) AS effective_status
+     FROM attendance_records ar
+     JOIN timeslots t ON t.id = ar.timeslot_id
+     WHERE ar.tenant_id   = $1
+       AND ar.student_id  = ANY($2::varchar[])
+       AND t.subject_id   = $3
+       AND ar.date BETWEEN $4 AND $5
+     ORDER BY ar.date ASC, t.period_number ASC`,
+    [
+      tenantId,
+      studentsResult.rows.map((s) => s.id),
+      subjectId,
+      rangeStart,
+      rangeEnd,
+    ],
+  );
+
+  // Build per-student days map
+  type DayEntry = {
+    timeSlotId: string;
+    status: string;
+  };
+
+  const studentDaysMap = new Map<string, Map<number, DayEntry[]>>();
+  for (const student of studentsResult.rows) {
+    const daysMap = new Map<number, DayEntry[]>();
+    for (let d = 1; d <= daysInMonth; d++) {
+      daysMap.set(d, []);
+    }
+    studentDaysMap.set(student.id, daysMap);
+  }
+
+  for (const r of recordsResult.rows) {
+    const dayNum = parseInt(String(r.record_date).slice(8, 10), 10);
+    const daysMap = studentDaysMap.get(r.student_id);
+    if (daysMap) {
+      const entries = daysMap.get(dayNum) ?? [];
+      entries.push({
+        timeSlotId: r.timeslot_id,
+        status: r.effective_status,
+      });
+      daysMap.set(dayNum, entries);
+    }
+  }
+
+  // Build response
+  const students = studentsResult.rows.map((student) => {
+    const daysMap = studentDaysMap.get(student.id)!;
+    const days: Record<string, DayEntry[]> = {};
+    for (let d = 1; d <= daysInMonth; d++) {
+      days[String(d)] = daysMap.get(d) ?? [];
+    }
+    return {
+      studentId: student.id,
+      studentName: student.name,
+      admissionNumber: student.admission_number,
+      days,
+    };
+  });
+
+  res.status(200).json({
+    classId,
+    subjectId,
+    subjectName,
+    year,
+    month,
+    daysInMonth,
+    students,
+  });
+}

@@ -16,6 +16,10 @@ import {
   getAttendanceSummary,
   getStudentAttendanceSummary,
   correctAttendance,
+  getAttendanceStreaks,
+  getAttendanceToppers,
+  getAttendanceDailySummary,
+  getAttendanceMonthlySheet,
 } from "./controller";
 
 // ---- Main attendance router (mounted at /api/attendance) ----
@@ -40,6 +44,41 @@ router.put(
   "/:recordId",
   requireRole("Teacher", "Admin"),
   asyncHandler(correctAttendance),
+);
+
+// ── CR-33/34/35/36 — new analytics endpoints (v4.5) ──────────────────────────
+
+// GET /api/attendance/streaks — consecutive absent streak per student × subject
+// Admin: any timeslot; Teacher: own timeslots only; Student: own entry only
+router.get(
+  "/streaks",
+  requireRole("Teacher", "Admin", "Student"),
+  asyncHandler(getAttendanceStreaks),
+);
+
+// GET /api/attendance/toppers — students ranked by attendance % for a class
+// Admin: any classId; Teacher: own classes only; Student: full ranking
+router.get(
+  "/toppers",
+  requireRole("Teacher", "Admin", "Student"),
+  asyncHandler(getAttendanceToppers),
+);
+
+// GET /api/attendance/daily-summary — per-slot counts for a class on a date
+// Feature guard: timetable (slot structure); Admin: any; Teacher: own; Student: allowed (no PII)
+router.get(
+  "/daily-summary",
+  featureGuard("timetable"),
+  requireRole("Teacher", "Admin", "Student"),
+  asyncHandler(getAttendanceDailySummary),
+);
+
+// GET /api/attendance/monthly-sheet — student × day × period grid
+// Admin: any class+subject; Teacher: own class+subject pair; Student: 403 blocked by requireRole
+router.get(
+  "/monthly-sheet",
+  requireRole("Teacher", "Admin"),
+  asyncHandler(getAttendanceMonthlySheet),
 );
 
 // ---- Student-attendance router (mounted at /api/students) ----

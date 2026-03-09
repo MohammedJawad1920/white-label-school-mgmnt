@@ -92,3 +92,12 @@ export async function checkDbConnection(): Promise<void> {
     throw new Error("Database health check returned no rows");
   }
 }
+
+/**
+ * closePool — gracefully drains all idle/active clients.
+ * Called in tests' globalTeardown so Jest exits cleanly and the
+ * OS releases connections before the next run or the dev server starts.
+ */
+export async function closePool(): Promise<void> {
+  await pool.end();
+}

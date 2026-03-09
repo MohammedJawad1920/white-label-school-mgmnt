@@ -161,8 +161,7 @@ export async function getStudent(req: Request, res: Response): Promise<void> {
        WHERE s2.id = $1
          AND ts.teacher_id = $2
          AND ts.tenant_id = $3
-         AND ts.deleted_at IS NULL
-         AND ts.effective_to IS NULL`,
+         AND ts.deleted_at IS NULL`,
       [id, userId, tenantId],
     );
     if ((classCheck.rowCount ?? 0) === 0) {
