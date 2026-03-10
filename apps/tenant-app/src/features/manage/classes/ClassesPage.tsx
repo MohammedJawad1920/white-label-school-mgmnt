@@ -338,7 +338,8 @@ export default function ClassesPage() {
                         setPromoteTargetId("");
                         setPromoteSource(cls);
                       }}
-                      label={`Promote ${cls.name}`}
+                      label="Promote"
+                      ariaLabel={`Promote ${cls.name}`}
                     />
                     <ActionBtn
                       onClick={() => {

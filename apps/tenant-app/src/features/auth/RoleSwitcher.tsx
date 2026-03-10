@@ -19,8 +19,8 @@ import { isMultiRole } from "@/utils/roles";
 import type { UserRole } from "@/types/api";
 
 interface RoleSwitcherProps {
-  /** compact = sidebar button; full = header dropdown */
-  variant?: "compact" | "full";
+  /** compact = sidebar button; full = header dropdown; inline = flat list for sheets */
+  variant?: "compact" | "full" | "inline";
 }
 
 export function RoleSwitcher({ variant = "compact" }: RoleSwitcherProps) {
@@ -165,6 +165,56 @@ export function RoleSwitcher({ variant = "compact" }: RoleSwitcherProps) {
         )}
         {error && (
           <p role="alert" className="text-xs text-destructive mt-1">
+            {error}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // inline variant — flat list for embedding in sheets (no dropdown, no absolute positioning)
+  if (variant === "inline") {
+    return (
+      <div className="flex flex-col">
+        <p className="text-xs text-muted-foreground px-1 mb-1">Switch role</p>
+        <div role="listbox" aria-label="Switch role" className="flex flex-col gap-0.5">
+          {user.roles.map((role) => {
+            const isActiveRole = role === user.activeRole;
+            return (
+              <button
+                key={role}
+                role="option"
+                aria-selected={isActiveRole}
+                disabled={isLoading}
+                onClick={() => handleSwitch(role)}
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted transition-colors disabled:opacity-50 min-h-[36px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-left"
+              >
+                {isActiveRole ? (
+                  <svg
+                    className="h-3.5 w-3.5 text-primary shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                ) : (
+                  <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                )}
+                <span className={isActiveRole ? "font-medium" : ""}>{role}</span>
+                {switching === role && spinnerSvg}
+              </button>
+            );
+          })}
+        </div>
+        {error && (
+          <p role="alert" className="text-xs text-destructive mt-1 px-1">
             {error}
           </p>
         )}

@@ -3,10 +3,10 @@
 
 ---
 
-**Version:** 2.2 (IMMUTABLE)
-**Date:** 2026-03-09
+**Version:** 2.4 (IMMUTABLE)
+**Date:** 2026-03-10
 **Status:** APPROVED FOR EXECUTION
-**Supersedes:** v2.1 (2026-03-09)
+**Supersedes:** v2.3 (2026-03-10)
 **Backend Freeze:** v4.5 (2026-03-08)
 **OpenAPI:** v4.5.0
 
@@ -14,11 +14,127 @@
 
 ## CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI)
 
-This document is the **Absolute Source of Truth**. v2.1 is **SUPERSEDED**.
+This document is the **Absolute Source of Truth**. v2.3 is **SUPERSEDED**.
 
 You have **NO authority** to modify routes, API assumptions, or constraints defined below.
 
 If any request contradicts this document, you must **REFUSE** and open a **Change Request** instead.
+
+---
+
+## CHANGE SUMMARY: v2.3 → v2.4
+
+### Change Requests Applied
+
+| CR | Title | Type | Impact |
+|----|-------|------|--------|
+| **CR-FE-021** | More Sheet: full role-filtered nav overflow — sub-items were unreachable on mobile | Logic fix — no API/state/route changes | §5 BottomTabBar, §13 |
+
+### What Changed
+
+**No scope changes. No API/backend changes. OpenAPI unchanged at v4.5.0.**
+
+#### Root cause
+
+`BOTTOM_TAB_NAV_ITEMS = NAV_ITEMS.filter(!isSubItem)` produces exactly **5 items** for Admin (Dashboard, Timetable, Record Attendance, Attendance Summary, Monthly Sheet). `visibleTabs = slice(0,5)` consumes all 5. `overflowTabs = slice(5)` is an empty array.
+
+The 7 sub-items (`Users`, `Students`, `Classes`, `Batches`, `Subjects`, `School Periods`, `Events`) are `isSubItem: true` and were never included in `BOTTOM_TAB_NAV_ITEMS`. They were **completely unreachable on mobile** — no path to `/manage/*` or `/manage/events` existed on any mobile viewport.
+
+#### Fix
+
+The More Sheet overflow source changes from `overflowTabs` (derived from `BOTTOM_TAB_NAV_ITEMS`) to a new derived list: **all role-filtered `NAV_ITEMS` entries not already displayed as a visible tab.**
+
+```ts
+// Visible tabs — unchanged
+const filteredNonSubItems = BOTTOM_TAB_NAV_ITEMS.filter(item =>
+  item.allowedRoles.includes(activeRole)
+)
+const visibleTabs = filteredNonSubItems.slice(0, 5)
+const visibleUrls = new Set(visibleTabs.map(t => t.url))
+
+// More sheet overflow — ALL role-filtered items not already a visible tab
+const moreItems = NAV_ITEMS.filter(item =>
+  item.allowedRoles.includes(activeRole) && !visibleUrls.has(item.url)
+)
+```
+
+`moreItems` includes sub-items. The "More" tab remains always rendered (CR-FE-020). The overflow nav section in the sheet renders when `moreItems.length > 0` (always true for Admin, Teacher; false for Student).
+
+**Group header rendering in More Sheet:** same pattern as Sidebar — when an item has `item.groupLabel` and it differs from the previous item's `groupLabel`, render a non-interactive section label before the item row.
+
+```tsx
+{moreItems.map((item, i) => {
+  const prevGroupLabel = i > 0 ? moreItems[i - 1].groupLabel : undefined
+  const showGroupHeader = item.groupLabel && item.groupLabel !== prevGroupLabel
+  return (
+    <Fragment key={item.url}>
+      {showGroupHeader && (
+        <p className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          {item.groupLabel}
+        </p>
+      )}
+      <button
+        onClick={() => handleNav(item.url)}
+        aria-current={isActive(item, location.pathname) ? 'page' : undefined}
+        className={cn(
+          'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors min-h-[44px]',
+          item.isSubItem ? 'pl-6' : '',
+          isActive(item, location.pathname)
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+        )}
+      >
+        <item.icon className="h-5 w-5 shrink-0" strokeWidth={isActive(item, location.pathname) ? 2.5 : 1.75} aria-hidden />
+        {item.label}
+      </button>
+    </Fragment>
+  )
+})}
+```
+
+**Result per role:**
+- **Admin:** More sheet nav section = Record Attendance (if slot 6+) + Manage group header + Users, Students, Classes, Batches, Subjects, School Periods + Events (all 7 sub-items). All `/manage/*` routes now reachable on mobile.
+- **Teacher:** More sheet nav section = (none — Teacher has 4 non-sub items, all fit in 5 tabs). Nav section renders empty, only user profile shown.
+- **Student:** More sheet nav section = (none — 2 items, both fit). Only user profile shown.
+
+---
+
+## CHANGE SUMMARY: v2.2 → v2.3
+
+### Change Requests Applied
+
+| CR | Title | Type | Impact |
+|----|-------|------|--------|
+| **CR-FE-020** | Mobile UX: Always-visible logout/role-switch + status button abbreviation | CSS/layout + additive render logic — zero API/state/route changes | §5 BottomTabBar, §2.1 Record Attendance, §6 A11y, §13 |
+
+### What Changed
+
+**No scope changes. No API/backend changes. OpenAPI unchanged at v4.5.0.**
+
+#### 020-A — "More" tab always rendered; sheet gains user profile section
+
+**Problem:** "More" tab was only rendered when `overflowTabs.length > 0`. Logout and RoleSwitcher live in the desktop sidebar (`hidden md:flex`) — completely inaccessible on mobile.
+
+**Fix:** "More" tab is now **always rendered** regardless of overflow count. The "More" Sheet bottom section always includes:
+- Horizontal divider (`border-t`)
+- User initials avatar + name + `<RoleBadge>` for `activeRole`
+- `<RoleSwitcher>` — rendered only when `user.roles.length > 1`
+- Logout button — fire-and-forget `POST /auth/logout` + `queryClient.clear()` + clear `localStorage.auth` + navigate `/login`
+
+The overflow nav items section in the sheet renders conditionally (only when `overflowTabs.length > 0`) above the divider. The divider + user section always renders.
+
+#### 020-B — Status button abbreviation on mobile
+
+**Problem:** `StudentRow` status buttons (`Present` / `Absent` / `Late`) have `min-w-[60px]` each. At 375px with 3 buttons, the button group pushes the student name row to wrap badly — screenshot shows "MUHAMME D JAWAD T.S".
+
+**Fix:** Responsive label rendering inside each status `<label>`:
+```tsx
+<span className="sm:hidden" aria-hidden="true">{status[0]}</span>
+<span className="hidden sm:inline" aria-hidden="true">{status}</span>
+```
+Button `min-w`: `min-w-[32px] sm:min-w-[60px]`.
+
+`aria-label` on the hidden `<input type="radio">` is unchanged — it already carries the full status name (`aria-label="{status} for {student.name}"`), so screen readers are unaffected.
 
 ---
 
@@ -690,6 +806,17 @@ VITE_APP_NAME=Platform Admin
 
 **Student row name (CR-FE-019):**
 - Student name `<span>` uses `break-words` instead of `truncate` — names wrap on narrow screens rather than being cut off.
+
+**Student row status buttons (CR-FE-020-B):**
+- Each status `<label>` renders a responsive label:
+  ```tsx
+  <span className="sm:hidden" aria-hidden="true">{status[0]}</span>
+  <span className="hidden sm:inline" aria-hidden="true">{status}</span>
+  ```
+- Mobile shows `P` / `A` / `L`. `sm+` shows `Present` / `Absent` / `Late`.
+- Button `min-w`: `min-w-[32px] sm:min-w-[60px]`.
+- `aria-label` on the hidden `<input type="radio">` is unchanged: `aria-label="{status} for {student.name}"` — full status name always announced by screen readers.
+- Both `<span>` elements carry `aria-hidden="true"` — the radio `aria-label` is the sole accessible name.
 
 **Single action button:** (unchanged from v1.8)
 ```tsx
@@ -1516,17 +1643,63 @@ Respects `prefers-reduced-motion` — animation disabled when user opts out (§6
   - Admin: Dashboard, Timetable, Attendance Summary, Student Attendance History, Monthly Sheet, Manage (group with 6 sub-items), Events
   - Student: Dashboard, Timetable
 
-### BottomTabBar — Mobile (LOCKED — CR-FE-017)
+### BottomTabBar — Mobile (LOCKED — CR-FE-017, CR-FE-020, CR-FE-021)
 
 Shown only on `< md` breakpoint. Sidebar is hidden on mobile.
 
 - **Container:** `fixed bottom-0 left-0 w-full h-16 bg-background border-t flex md:hidden z-20`
-- **Source:** Derived from same `nav.ts` array as sidebar via `BOTTOM_TAB_ITEMS` export — **not a separate hardcoded list**
-- **Max tabs:** 5 visible. Overflow items (Admin role) collapse into "More" `<Sheet>` — items in sheet still use `allowedRoles[]` from `nav.ts`
+- **Source:** Derived from same `nav.ts` array as sidebar — **not a separate hardcoded list**
+- **Max tabs:** 5 visible. Overflow items collapse into "More" Sheet.
 - **Active indicator:** `strokeWidth={2.5}` + `font-medium` label (active) vs `strokeWidth={1.75}` (inactive). No filled icon variants — lucide-react has none
 - **Active detection:** `useLocation().pathname` from `react-router-dom`
 - **Label:** Truncate at 10 characters, `text-[10px]` — e.g. "Monthly Sheet" → "Monthly"
 - **A11y:** `role="tablist"` on container, `aria-label` per tab, `aria-current="page"` on active tab, `min-h-[40px]` on each tab
+
+**Derived lists (CR-FE-021 — LOCKED):**
+
+```ts
+// Step 1: non-sub-items for tab slots
+const filteredNonSubItems = BOTTOM_TAB_NAV_ITEMS.filter(item =>
+  item.allowedRoles.includes(activeRole)
+)
+const visibleTabs = filteredNonSubItems.slice(0, 5)
+const visibleUrls = new Set(visibleTabs.map(t => t.url))
+
+// Step 2: ALL role-filtered items not already a visible tab (includes sub-items)
+const moreItems = NAV_ITEMS.filter(item =>
+  item.allowedRoles.includes(activeRole) && !visibleUrls.has(item.url)
+)
+```
+
+This is the **only correct derivation**. Using `BOTTOM_TAB_NAV_ITEMS.slice(5)` for overflow is a freeze violation — it silently drops all `isSubItem` routes from mobile.
+
+**"More" tab (CR-FE-020 — always rendered):**
+
+The "More" tab is **always rendered** unconditionally.
+
+"More" Sheet structure:
+1. **Header:** "More" title + close button
+2. **Nav overflow section** (rendered when `moreItems.length > 0`):
+   - Items rendered in `NAV_ITEMS` order. Group headers rendered when `item.groupLabel` changes.
+   - Group header: `<p className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{item.groupLabel}</p>`
+   - Item row: `pl-6` when `item.isSubItem`, `pl-3` otherwise. Full `item.label` always shown (no truncation in sheet).
+   - Active item: `bg-primary text-primary-foreground`. Inactive: `hover:bg-muted hover:text-foreground`.
+3. **Divider** (`<div className="border-t mx-4 my-2">`) — always rendered
+4. **User profile section** (always rendered):
+   - User initials avatar (`h-8 w-8 rounded-full bg-primary/10 text-primary text-sm font-medium`) + name + `<RoleBadge activeRole>` inline
+   - `<RoleSwitcher variant="inline">` — rendered only when `user.roles.length > 1`
+   - Logout button: `"Log out"` label, `LogOut` lucide icon, `text-destructive hover:bg-destructive/10`. On click: fire-and-forget `POST /auth/logout` → `queryClient.clear()` → clear `localStorage.auth` → navigate `/login`
+
+**Result per role:**
+- **Admin:** `moreItems` = Users, Students, Classes, Batches, Subjects, School Periods, Events (7 sub-items, all under "Manage" group header). All `/manage/*` routes reachable on mobile.
+- **Teacher:** `moreItems` = empty. Nav section hidden. Sheet shows only divider + user profile.
+- **Student:** `moreItems` = empty. Sheet shows only divider + user profile.
+
+**Logout in "More" Sheet — implementation rules:**
+- Same logout logic as sidebar: fire-and-forget, never block UI on network failure
+- `queryClient.clear()` called before navigate
+- `localStorage.auth` cleared before navigate
+- No `window.location.reload()` (banned §13)
 
 ### `nav.ts` — Single Source of Truth (LOCKED — CR-FE-017, path corrected CR-FE-019)
 
@@ -1764,6 +1937,8 @@ All custom hooks live in `src/hooks/`. No hook outside this list is authorised w
 - Events delete confirm: focus trap, Escape cancels, confirm button `aria-describedby` warning text
 - Timetable grid: `role="grid"`, empty cell: `aria-label="Add slot for {dayOfWeek} Period {n}"`
 - Timetable Delete button (CR-FE-019): `opacity-0` visually but always in DOM — keyboard users can reach it via Tab; `aria-label` unchanged
+- "More" Sheet (CR-FE-020-A): user profile section in sheet has `aria-label="User account"` on its container region. Logout button: `aria-label="Log out"`. RoleSwitcher in sheet: same aria spec as sidebar variant.
+- Record Attendance status buttons (CR-FE-020-B): abbreviated `P`/`A`/`L` spans both carry `aria-hidden="true"`. The hidden `<input type="radio">` `aria-label="{status} for {student.name}"` is the sole accessible name — full status always announced.
 
 **Motion:**
 - `prefers-reduced-motion`: disable `animate-spin`, top-loader animation, and all transitions for users who opt out
@@ -1866,6 +2041,9 @@ All v1.8 checklist items unchanged. Append:
 - **CR-FE-016f:** Monthly Sheet loads grid with all day columns (1–31). Teacher 403 on wrong subject → inline error (not full-page). `isCorrected: true` shows asterisk. Empty day cells render blank.
 - **CR-FE-016g:** Events CRUD — create with `endDate < startDate` → inline error. Delete → event removed from list. Teacher/Student sees Upcoming Events card on dashboard, cannot access `/manage/events`. Month navigation updates event list.
 - **CR-FE-019:** ActionBtn renders short label text. `aria-label` on button matches `ariaLabel` prop. Monthly Sheet student column is sticky on horizontal scroll. Timetable Delete button invisible until hover, reachable by keyboard.
+- **CR-FE-020-A:** "More" tab visible on all mobile viewports regardless of nav item count. Logout button present in "More" Sheet → clicking clears auth, redirects `/login`, cache cleared. RoleSwitcher present in sheet only when `user.roles.length > 1`. No logout button visible on desktop (sidebar handles it). No `window.location.reload()` on logout.
+- **CR-FE-020-B:** At 375px, status buttons show `P`/`A`/`L`. At 640px+, show `Present`/`Absent`/`Late`. Screen reader announces full status name from radio `aria-label`. Student name no longer wraps badly at 375px with 3 status buttons.
+- **CR-FE-021:** Admin: "More" Sheet nav section shows Users, Students, Classes, Batches, Subjects, School Periods, Events under "Manage" group header. All `/manage/*` routes navigable from mobile. Teacher: More sheet nav section empty (all Teacher items fit in 5 tabs). Student: More sheet nav section empty. `BOTTOM_TAB_NAV_ITEMS.slice(5)` is not used anywhere for More sheet overflow derivation.
 
 ---
 
@@ -1940,6 +2118,10 @@ All v1.8 checklist items unchanged. Append:
 - Use `useConfirm()` imperative hook — use SP6 `<ConfirmDialog>` everywhere (CR-FE-017)
 - Define nav items outside `src/config/nav.ts` — sidebar and BottomTabBar must derive from the same array (CR-FE-017, path corrected CR-FE-019)
 - Use verbose `label` prop on `<ActionBtn>` without `ariaLabel` — e.g. `label={\`Edit ${item.name}\`}` is banned; use `label="Edit" ariaLabel={\`Edit ${item.name}\`}` (CR-FE-019)
+- Render "More" tab conditionally on `overflowTabs.length > 0` — "More" tab must always render; logout and role switch must be accessible on mobile via the "More" Sheet (CR-FE-020-A)
+- Duplicate logout logic outside the shared pattern — mobile logout in "More" Sheet must use identical fire-and-forget + `queryClient.clear()` + `localStorage.auth` clear + navigate pattern as sidebar logout (CR-FE-020-A)
+- Render status button text without responsive abbreviation in `StudentRow` — full text `{status}` without `sm:hidden`/`hidden sm:inline` split is banned on mobile (CR-FE-020-B)
+- Derive More Sheet overflow from `BOTTOM_TAB_NAV_ITEMS.slice(5)` — this silently drops all `isSubItem` routes (Users, Students, Classes, etc.) from mobile; overflow must derive from `NAV_ITEMS` filtered by role minus `visibleUrls` (CR-FE-021)
 
 **If requested:** create Change Request → re-price → approve/reject.
 
@@ -1980,7 +2162,9 @@ All v1.8 checklist items unchanged. Append:
 - **v2.0** (2026-03-09): CR-FE-017 — Scofist Pattern Adoption. No API/backend changes. Implementation architecture locked: CSS token system, Montserrat font, top-loader, scrollbar utilities, sidebar implementation rules, BottomTabBar spec, `nav.ts` single-source rule, role badge color mapping, shared component specs (SP1–SP9 + react-error-boundary for SP10), hook inventory (HK1–HK6 with HK4/HK5 banned), QueryClient config (QC1–QC4, TanStack Query v5 `QueryCache({onError})` pattern), print rules (PR1–PR7), A11y additions (skip link, aria-live/busy, prefers-reduced-motion, aria-hidden on decorative icons, heading hierarchy, no tabindex>0, axe-core/playwright in CI), 5 new forbidden patterns. 6 Scofist patterns explicitly rejected.
 - **v2.1** (2026-03-09): CR-FE-018 — v2.0 Error Corrections. 6 bugs fixed: E1 `next/font` → `@fontsource/montserrat`, E2 invalid bare CSS in print block, E3 `VITE_API_BASE_URL` literal in static CSP `_headers`, E4 `class=` → `className=` in SP1/SP4 specs, E5 `BOTTOM_TAB_ITEMS` static pre-role-filter slice → `BOTTOM_TAB_NAV_ITEMS` with runtime filter, E6 corrupted v2.0 history entry. 1 omission fixed: O1 `next-themes` added to §1.6 stack table. No scope, API, or backend changes.
 - **v2.2** (2026-03-09): CR-FE-019 — UI Polish & Mobile Fixes. No API/backend/scope changes. CSS/props only. Changes: (A) `ActionBtn` SP11 formalised with `ariaLabel?` prop — separates visible label from accessible name; (B) all manage screen `<ActionBtn>` call sites updated to short labels + `ariaLabel`; (C) Students table `min-w-[900px]` + `whitespace-nowrap` on name `<td>`, Users table `min-w-[560px]`; (D) Monthly Sheet filter bar `grid grid-cols-2` on mobile, student column sticky with `sticky left-0 bg-background z-10 border-r`, `truncate` removed; (E) Attendance Summary `StatCard` `accentBorder?` prop with per-type left-border colors, rankings table `overflow-x-auto` + `min-w-[400px]` + name cell `min-w-[120px]`; (F) Record Attendance `StudentRow` name `break-words` instead of `truncate`; (G) Timetable `SlotCell` Delete button hover-reveal via `group`/`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100`; (H) path correction `src/app/nav.ts` → `src/config/nav.ts` in §5, §11, §13.
+- **v2.3** (2026-03-10): CR-FE-020 — Mobile UX gaps. No API/backend/scope changes. (020-A) "More" tab always rendered unconditionally; "More" Sheet gains persistent user profile section at bottom: avatar + name + `<RoleBadge>` + `<RoleSwitcher>` (conditional on `user.roles.length > 1`) + Logout button with identical fire-and-forget + `queryClient.clear()` + `localStorage.auth` clear + navigate logic as sidebar. Fixes logout and role-switch inaccessibility on mobile. (020-B) `StudentRow` status buttons responsive abbreviation: `P`/`A`/`L` on mobile (`sm:hidden`) vs `Present`/`Absent`/`Late` on `sm+` (`hidden sm:inline`), both spans `aria-hidden`; button `min-w-[32px] sm:min-w-[60px]`; radio `aria-label` unchanged. Fixes student name row crowding at 375px.
+- **v2.4** (2026-03-10): CR-FE-021 — More Sheet overflow source fix. No API/backend/scope changes. Root cause: `BOTTOM_TAB_NAV_ITEMS = NAV_ITEMS.filter(!isSubItem)` yields exactly 5 Admin items — all 5 consumed by `visibleTabs`, leaving `overflowTabs = []`. The 7 sub-items (Users, Students, Classes, Batches, Subjects, School Periods, Events) were completely unreachable on mobile. Fix: More Sheet overflow derived from `NAV_ITEMS.filter(role).filter(url not in visibleUrls)` — includes sub-items. Group headers rendered on `groupLabel` change (same pattern as Sidebar). Sub-items indented with `pl-6`. Banned: `BOTTOM_TAB_NAV_ITEMS.slice(5)` as overflow source.
 
 ---
 
-**END OF FRONTEND FREEZE v2.2**
+**END OF FRONTEND FREEZE v2.4**

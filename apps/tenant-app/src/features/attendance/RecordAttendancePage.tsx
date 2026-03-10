@@ -132,7 +132,7 @@ function StudentRow({
             <label
               key={status}
               className={cn(
-                "flex items-center justify-center rounded border px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors select-none min-h-[36px] min-w-[60px]",
+                "flex items-center justify-center rounded border px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors select-none min-h-[36px] min-w-[32px] sm:min-w-[60px]",
                 isSelected
                   ? STATUS_COLORS[status]
                   : "text-muted-foreground border-input hover:bg-muted",
@@ -154,7 +154,8 @@ function StudentRow({
                 className="sr-only"
                 aria-label={`${status} for ${student.name}`}
               />
-              {status}
+              <span className="sm:hidden" aria-hidden="true">{status[0]}</span>
+              <span className="hidden sm:inline" aria-hidden="true">{status}</span>
             </label>
           );
         })}

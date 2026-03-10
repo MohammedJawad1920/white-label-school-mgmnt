@@ -315,7 +315,13 @@ function AdminStatBar({ classIds }: { classIds: string[] }) {
 // ── Teacher Class Rankings card (CR-FE-016e) ──────────────────────────────────
 import React from "react";
 
-function ClassRankingsCard({ classIds }: { classIds: string[] }) {
+function ClassRankingsCard({
+  classIds,
+  classNameMap,
+}: {
+  classIds: string[];
+  classNameMap: Record<string, string>;
+}) {
   const [open, setOpen] = React.useState(false);
 
   const topperQueries = useQueries({
@@ -365,7 +371,7 @@ function ClassRankingsCard({ classIds }: { classIds: string[] }) {
             return (
               <div key={classId} className="mt-3">
                 <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-                  Class {classId}
+                  {classNameMap[classId] ?? classId}
                 </h3>
                 {q?.isLoading ? (
                   <div className="animate-pulse space-y-1.5">
@@ -618,6 +624,11 @@ export default function DashboardPage() {
 
   // Unique classIds for stat bar (Admin) and ranking card (Teacher)
   const uniqueClassIds = Array.from(new Set(slots.map((s) => s.classId)));
+  // Map classId → className for display in rankings card
+  const classNameMap: Record<string, string> = {};
+  for (const s of slots) {
+    if (!classNameMap[s.classId]) classNameMap[s.classId] = s.className;
+  }
 
   function handleRecordAttendance(slotId: string) {
     // Navigate to record page with slotId pre-selected via state
@@ -682,7 +693,7 @@ export default function DashboardPage() {
         !isLoading &&
         uniqueClassIds.length > 0 && (
           <div className="mt-4">
-            <ClassRankingsCard classIds={uniqueClassIds} />
+            <ClassRankingsCard classIds={uniqueClassIds} classNameMap={classNameMap} />
           </div>
         )}
 
