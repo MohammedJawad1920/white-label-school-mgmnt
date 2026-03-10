@@ -164,16 +164,7 @@ function StudentRow({
           );
         })}
 
-        {/* Reset to default button — only shown when overridden */}
-        {exception !== undefined && (
-          <button
-            onClick={() => onStatusChange(student.id, undefined)}
-            aria-label={`Reset ${student.name} to default`}
-            className="rounded border px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted transition-colors min-h-[36px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            ↺
-          </button>
-        )}
+
       </div>
     </div>
   );
