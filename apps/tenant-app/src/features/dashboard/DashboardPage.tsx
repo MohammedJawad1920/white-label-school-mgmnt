@@ -693,7 +693,10 @@ export default function DashboardPage() {
         !isLoading &&
         uniqueClassIds.length > 0 && (
           <div className="mt-4">
-            <ClassRankingsCard classIds={uniqueClassIds} classNameMap={classNameMap} />
+            <ClassRankingsCard
+              classIds={uniqueClassIds}
+              classNameMap={classNameMap}
+            />
           </div>
         )}
 

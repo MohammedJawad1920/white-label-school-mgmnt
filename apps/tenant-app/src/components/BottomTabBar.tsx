@@ -1,24 +1,26 @@
 /**
  * BottomTabBar — mobile navigation (< 768px).
  *
- * Freeze §5 (CR-FE-017, CR-FE-020):
+ * Freeze §5 (CR-FE-017, CR-FE-020, CR-FE-021):
  *   - Source: BOTTOM_TAB_NAV_ITEMS (all non-sub-items from nav.ts)
  *   - Max 5 tabs visible; overflow items collapse into "More" sheet
  *   - "More" tab ALWAYS rendered (CR-FE-020-A) — logout + role-switch must be
  *     accessible on mobile regardless of overflow count
+ *   - More sheet overflow (CR-FE-021): ALL role-filtered NAV_ITEMS not already
+ *     a visible tab — includes sub-items so /manage/* is reachable on mobile
  *   - Active: strokeWidth={2.5} + font-medium label
  *   - Inactive: strokeWidth={1.75}
  *   - Label: truncate at 10 chars, text-[10px]
  *   - A11y: role="tablist", aria-label per tab, aria-current="page" on active, min-h-[40px]
  */
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { LogOut, MoreHorizontal, X } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useAuth } from "@/hooks/useAuth";
 import { RoleBadge } from "@/components/RoleBadge";
 import { RoleSwitcher } from "@/features/auth/RoleSwitcher";
-import { BOTTOM_TAB_NAV_ITEMS } from "@/config/nav";
+import { BOTTOM_TAB_NAV_ITEMS, NAV_ITEMS } from "@/config/nav";
 import { cn } from "@/utils/cn";
 import type { NavItem, Role } from "@/config/nav";
 
@@ -35,12 +37,19 @@ export function BottomTabBar() {
 
   const activeRole = (user?.activeRole ?? "Student") as Role;
 
-  const filteredItems = BOTTOM_TAB_NAV_ITEMS.filter((item) =>
+  const filteredNonSubItems = BOTTOM_TAB_NAV_ITEMS.filter((item) =>
     item.allowedRoles.includes(activeRole),
   );
 
-  const visibleTabs = filteredItems.slice(0, 5);
-  const overflowTabs = filteredItems.slice(5);
+  const visibleTabs = filteredNonSubItems.slice(0, 5);
+  const visibleUrls = new Set(visibleTabs.map((t) => t.url));
+
+  // CR-FE-021: overflow source = ALL role-filtered items not already a visible tab.
+  // This includes sub-items, making /manage/* reachable on mobile.
+  const moreItems = NAV_ITEMS.filter(
+    (item) =>
+      item.allowedRoles.includes(activeRole) && !visibleUrls.has(item.url),
+  );
 
   function handleNav(url: string) {
     navigate(url);
@@ -96,7 +105,7 @@ export function BottomTabBar() {
             role="tab"
             aria-label="More navigation items"
             aria-current={
-              overflowTabs.some((item) => isActive(item, location.pathname))
+              moreItems.some((item) => isActive(item, location.pathname))
                 ? "page"
                 : undefined
             }
@@ -131,30 +140,41 @@ export function BottomTabBar() {
               </Dialog.Close>
             </div>
 
-            {/* Overflow nav items — conditional */}
-            {overflowTabs.length > 0 && (
+            {/* Overflow nav items — conditional (CR-FE-021: sourced from moreItems) */}
+            {moreItems.length > 0 && (
               <div className="p-4 space-y-1">
-                {overflowTabs.map((item) => {
+                {moreItems.map((item, i) => {
+                  const prevGroupLabel =
+                    i > 0 ? moreItems[i - 1]?.groupLabel : undefined;
+                  const showGroupHeader =
+                    item.groupLabel && item.groupLabel !== prevGroupLabel;
                   const active = isActive(item, location.pathname);
                   return (
-                    <button
-                      key={item.url}
-                      onClick={() => handleNav(item.url)}
-                      aria-current={active ? "page" : undefined}
-                      className={cn(
-                        "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors min-h-[44px]",
-                        active
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    <Fragment key={item.url}>
+                      {showGroupHeader && (
+                        <p className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          {item.groupLabel}
+                        </p>
                       )}
-                    >
-                      <item.icon
-                        className="h-5 w-5 shrink-0"
-                        strokeWidth={active ? 2.5 : 1.75}
-                        aria-hidden={true}
-                      />
-                      {item.label}
-                    </button>
+                      <button
+                        onClick={() => handleNav(item.url)}
+                        aria-current={active ? "page" : undefined}
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors min-h-[44px]",
+                          item.isSubItem ? "pl-6" : "",
+                          active
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        <item.icon
+                          className="h-5 w-5 shrink-0"
+                          strokeWidth={active ? 2.5 : 1.75}
+                          aria-hidden={true}
+                        />
+                        {item.label}
+                      </button>
+                    </Fragment>
                   );
                 })}
               </div>

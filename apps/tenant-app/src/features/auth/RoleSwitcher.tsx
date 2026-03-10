@@ -177,7 +177,11 @@ export function RoleSwitcher({ variant = "compact" }: RoleSwitcherProps) {
     return (
       <div className="flex flex-col">
         <p className="text-xs text-muted-foreground px-1 mb-1">Switch role</p>
-        <div role="listbox" aria-label="Switch role" className="flex flex-col gap-0.5">
+        <div
+          role="listbox"
+          aria-label="Switch role"
+          className="flex flex-col gap-0.5"
+        >
           {user.roles.map((role) => {
             const isActiveRole = role === user.activeRole;
             return (
@@ -207,7 +211,9 @@ export function RoleSwitcher({ variant = "compact" }: RoleSwitcherProps) {
                 ) : (
                   <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 )}
-                <span className={isActiveRole ? "font-medium" : ""}>{role}</span>
+                <span className={isActiveRole ? "font-medium" : ""}>
+                  {role}
+                </span>
                 {switching === role && spinnerSvg}
               </button>
             );

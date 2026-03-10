@@ -154,8 +154,12 @@ function StudentRow({
                 className="sr-only"
                 aria-label={`${status} for ${student.name}`}
               />
-              <span className="sm:hidden" aria-hidden="true">{status[0]}</span>
-              <span className="hidden sm:inline" aria-hidden="true">{status}</span>
+              <span className="sm:hidden" aria-hidden="true">
+                {status[0]}
+              </span>
+              <span className="hidden sm:inline" aria-hidden="true">
+                {status}
+              </span>
             </label>
           );
         })}
