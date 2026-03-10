@@ -601,7 +601,8 @@ export default function DashboardPage() {
   // Map classId → className for display in rankings card
   const classNameMap: Record<string, string> = {};
   for (const s of slots) {
-    if (!classNameMap[s.classId]) classNameMap[s.classId] = s.className ?? s.classId;
+    if (!classNameMap[s.classId])
+      classNameMap[s.classId] = s.className ?? s.classId;
   }
 
   return (
