@@ -163,8 +163,6 @@ function StudentRow({
             </label>
           );
         })}
-
-
       </div>
     </div>
   );
