@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: White-Label School Management System
-  version: "4.5.0"
+  version: "4.8.0"
   description: >
     Multi-tenant school management API. Supports SuperAdmin (platform-level)
     and tenant-scoped Admin/Teacher/Student roles.
@@ -15,6 +15,9 @@ info:
     v4.5.0 (CR-36): GET /attendance/monthly-sheet — student×day attendance grid.
     v4.5.0 (CR-37): POST/GET/PUT/DELETE /events — academic calendar events.
     v4.5.0 (CR-38): studentId added to TenantUser (JWT payload + login/switch-role response).
+    v4.6.0 (CR-39): GET /attendance/absentees — absent student names + streak for a timeslot+date.
+    v4.7.0 (CR-40): GET /attendance/daily-summary — Teacher ownership check removed; any classId in tenant allowed.
+    v4.8.0 (CR-41): GET /attendance/absentees — Teacher ownership check removed; any non-deleted timeslot in tenant allowed.
 
 servers:
   - url: http://localhost:3000/api
@@ -3941,6 +3944,86 @@ paths:
       responses:
         "204":
           description: Event deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # v4.6 CR-39 / v4.8 CR-41: Absentee names for a timeslot on a date
+  /attendance/absentees:
+    get:
+      summary: Get absent student names and streak for a timeslot on a date (CR-39, CR-41)
+      description: >-
+        Returns the list of absent students with inline consecutive absence streak
+        for a specific timeslot on a specific date. Powers the absentee popup on the
+        dashboard timetable grid.
+        Admin: any non-deleted timeslot in tenant.
+        Teacher: any non-deleted timeslot in tenant (CR-41: ownership check removed).
+        Student: 403 FORBIDDEN.
+        SuperAdmin: 403 FORBIDDEN.
+        Requires attendance feature enabled.
+        Empty absentees array when attendance not yet marked — not an error.
+      operationId: getAttendanceAbsentees
+      tags: [Attendance]
+      parameters:
+        - name: timeSlotId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The timeslot to query.
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+            example: "2026-03-10"
+          description: Date in YYYY-MM-DD format.
+      responses:
+        "200":
+          description: Absent students with streak
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [timeSlotId, date, classId, subjectId, absentees]
+                properties:
+                  timeSlotId:
+                    type: string
+                  date:
+                    type: string
+                    pattern: '^\d{4}-\d{2}-\d{2}$'
+                  classId:
+                    type: string
+                  subjectId:
+                    type: string
+                  absentees:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        [
+                          studentId,
+                          studentName,
+                          admissionNumber,
+                          consecutiveAbsentCount,
+                        ]
+                      properties:
+                        studentId:
+                          type: string
+                        studentName:
+                          type: string
+                        admissionNumber:
+                          type: string
+                        consecutiveAbsentCount:
+                          type: integer
+                          minimum: 1
+                          description: Consecutive absence streak including today. Always >= 1.
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":

@@ -472,6 +472,23 @@ export interface MonthlySheetResponse {
   students: MonthlySheetRow[];
 }
 
+// ─── ATTENDANCE ABSENTEES — (CR-39/CR-41) ───────────────────────────────────
+/** A single absent student entry in the absentee popup response */
+export interface AbsenteeEntry {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  /** Consecutive absence streak for this student × subject, including today. Always >= 1. */
+  consecutiveAbsentCount: number;
+}
+export interface GetAbsenteesResponse {
+  timeSlotId: string;
+  date: string;
+  classId: string;
+  subjectId: string;
+  absentees: AbsenteeEntry[];
+}
+
 // ─── EVENTS — Academic Calendar (v4.5 CR-37) ─────────────────────────────────
 export type EventType = "Holiday" | "Exam" | "Event" | "Other";
 

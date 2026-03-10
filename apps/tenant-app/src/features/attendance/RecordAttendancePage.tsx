@@ -174,6 +174,7 @@ export default function RecordAttendancePage() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const isAdmin = user?.activeRole === "Admin";
+  const isTeacher = user?.activeRole === "Teacher";
 
   // Pre-select slot from Dashboard "Record Attendance" click
   const preselectedSlotId =
@@ -496,6 +497,7 @@ export default function RecordAttendancePage() {
               id="attendanceDate"
               type="date"
               value={selectedDate}
+              min={isTeacher ? todayISO() : undefined}
               max={todayISO()}
               onChange={(e) => {
                 setSelectedDate(e.target.value);

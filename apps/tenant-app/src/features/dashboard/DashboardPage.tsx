@@ -1,21 +1,29 @@
 /**
- * DashboardPage — Freeze §Screen: Dashboard (v4.5 CR-FE-016b/c/e/g)
+ * DashboardPage — Freeze §Screen: Dashboard (v4.6 CR-FE-023)
  *
  * Role rules:
- *   Teacher → today's own slots + Class Rankings card (toppers, collapsed)
- *   Admin   → today's all slots + API-driven stat bar (daily-summary)
+ *   Teacher → TodayTimetableGrid (own slots) + Class Rankings card (toppers, collapsed)
+ *   Admin   → TodayTimetableGrid (all slots) + API-driven stat bar + Class Rankings card
  *   Student → today's timetable (read-only) + live attendance history + streak badges
  *   All     → Upcoming Events card (CR-FE-016g)
  */
-import { useQuery, useQueries } from "@tanstack/react-query";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { timetableApi } from "@/api/timetable";
 import { attendanceApi } from "@/api/attendance";
 import { eventsApi } from "@/api/events";
+import { schoolPeriodsApi } from "@/api/schoolPeriods";
 import { useAuth } from "@/hooks/useAuth";
 import { todayISO, todayDayOfWeek, formatDisplayDate } from "@/utils/dates";
 import { parseApiError } from "@/utils/errors";
 import { format, subDays } from "date-fns";
-import type { Event, AttendanceTopper } from "@/types/api";
+import type {
+  Event,
+  AttendanceTopper,
+  AttendanceDailySummaryResponse,
+} from "@/types/api";
+import TodayTimetableGrid from "./TodayTimetableGrid";
 
 const TODAY = todayISO();
 const THIRTY_DAYS_AGO = format(subDays(new Date(), 30), "yyyy-MM-dd");
@@ -237,15 +245,11 @@ function UpcomingEventsCard() {
 }
 
 // ── Admin stat bar (CR-FE-016c) ───────────────────────────────────────────────
-function AdminStatBar({ classIds }: { classIds: string[] }) {
-  const dailySummaryQueries = useQueries({
-    queries: classIds.map((classId) => ({
-      queryKey: ["daily-summary", classId, TODAY],
-      queryFn: () => attendanceApi.getDailySummary(classId, TODAY),
-      staleTime: 2 * 60 * 1000,
-    })),
-  });
-
+function AdminStatBar({
+  dailySummaryQueries,
+}: {
+  dailySummaryQueries: UseQueryResult<AttendanceDailySummaryResponse>[];
+}) {
   const isLoading = dailySummaryQueries.some((q) => q.isLoading);
   if (isLoading) {
     return (
@@ -287,9 +291,7 @@ function AdminStatBar({ classIds }: { classIds: string[] }) {
   );
 }
 
-// ── Teacher Class Rankings card (CR-FE-016e) ──────────────────────────────────
-import React from "react";
-
+// ── Teacher/Admin Class Rankings card (CR-FE-016e / CR-FE-023 §D) ──────────────
 function ClassRankingsCard({
   classIds,
   classNameMap,
@@ -297,7 +299,7 @@ function ClassRankingsCard({
   classIds: string[];
   classNameMap: Record<string, string>;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useState(false);
 
   const topperQueries = useQueries({
     queries: classIds.map((classId) => ({
@@ -552,13 +554,73 @@ function StudentDashboard() {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+
+  const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey: ["timetable", { dayOfWeek: todayDayOfWeek() }],
     queryFn: () => timetableApi.list({ dayOfWeek: todayDayOfWeek() }),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60 * 1000,
   });
+
+  const periodsQ = useQuery({
+    queryKey: ["school-periods"],
+    queryFn: () => schoolPeriodsApi.list(),
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const allSlots = data?.timetable ?? [];
+
+  // Unique classIds from ALL slots (grid + stat bar + rankings)
+  const uniqueClassIds = useMemo(
+    () => Array.from(new Set(allSlots.map((s) => s.classId))),
+    [allSlots],
+  );
+
+  // Daily summary queries lifted here: shared by AdminStatBar + TodayTimetableGrid
+  const dailySummaryQueries = useQueries({
+    queries: uniqueClassIds.map((classId) => ({
+      queryKey: ["daily-summary", classId, TODAY],
+      queryFn: () => attendanceApi.getDailySummary(classId, TODAY),
+      staleTime: 2 * 60 * 1000,
+      refetchInterval: 5 * 60 * 1000,
+    })),
+  });
+
+  // Track last updated time from timetable data
+  useEffect(() => {
+    if (data) setLastUpdatedAt(new Date());
+  }, [data]);
+
+  const onRefresh = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["timetable"] });
+    void queryClient.invalidateQueries({ queryKey: ["daily-summary"] });
+  }, [queryClient]);
+
+  // Map classId → className for rankings card
+  const classNameMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const s of allSlots) {
+      if (!m[s.classId]) m[s.classId] = s.className ?? s.classId;
+    }
+    return m;
+  }, [allSlots]);
+
+  // Teacher's own class IDs for ClassRankingsCard
+  const teacherClassIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          allSlots
+            .filter((s) => s.teacherId === user?.id)
+            .map((s) => s.classId),
+        ),
+      ),
+    [allSlots, user?.id],
+  );
 
   // 403 FEATURE_DISABLED → full-page state
   const apiError = isError ? parseApiError(error) : null;
@@ -589,24 +651,10 @@ export default function DashboardPage() {
     );
   }
 
-  // Filter slots by role — Freeze §Screen: Dashboard permissions
-  const allSlots = data?.timetable ?? [];
-  const slots =
-    user?.activeRole === "Teacher"
-      ? allSlots.filter((s) => s.teacherId === user.id)
-      : allSlots;
-
-  // Unique classIds for stat bar (Admin) and ranking card (Teacher)
-  const uniqueClassIds = Array.from(new Set(slots.map((s) => s.classId)));
-  // Map classId → className for display in rankings card
-  const classNameMap: Record<string, string> = {};
-  for (const s of slots) {
-    if (!classNameMap[s.classId])
-      classNameMap[s.classId] = s.className ?? s.classId;
-  }
+  const gridIsLoading = isLoading || periodsQ.isLoading;
 
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto">
+    <div className="p-4 md:p-6 max-w-5xl mx-auto">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-xl font-semibold">Dashboard</h1>
@@ -619,54 +667,55 @@ export default function DashboardPage() {
       {/* Admin: API-driven stat bar (CR-FE-016c) */}
       {user?.activeRole === "Admin" &&
         !isLoading &&
-        uniqueClassIds.length > 0 && <AdminStatBar classIds={uniqueClassIds} />}
+        uniqueClassIds.length > 0 && (
+          <AdminStatBar dailySummaryQueries={dailySummaryQueries} />
+        )}
 
-      {/* Teacher: slot list (CR-FE-022 — Admin no longer sees slot cards) */}
-      {user?.activeRole === "Teacher" && (
-        <>
-          {/* Loading */}
-          {isLoading && (
-            <div
-              className="space-y-3"
-              aria-label="Loading timetable"
-              aria-busy="true"
-            >
-              <SlotSkeleton />
-              <SlotSkeleton />
-              <SlotSkeleton />
-            </div>
-          )}
-
-          {/* Error */}
-          {isError && apiError?.code !== "FEATURE_DISABLED" && (
-            <ErrorState onRetry={() => void refetch()} />
-          )}
-
-          {/* Empty */}
-          {!isLoading && !isError && slots.length === 0 && <EmptyState />}
-
-          {/* Slot list — read-only (no Record Attendance CTA, CR-FE-022) */}
-          {!isLoading && !isError && slots.length > 0 && (
-            <div className="space-y-3" role="list" aria-label="Today's classes">
-              {slots
-                .sort((a, b) => a.periodNumber - b.periodNumber)
-                .map((slot) => (
-                  <div key={slot.id} role="listitem">
-                    <SlotCard slot={slot} />
-                  </div>
-                ))}
-            </div>
-          )}
-        </>
+      {/* Error */}
+      {isError && apiError?.code !== "FEATURE_DISABLED" && (
+        <ErrorState onRetry={() => void refetch()} />
       )}
 
-      {/* Teacher: Class Rankings card (CR-FE-016e) */}
-      {user?.activeRole === "Teacher" &&
+      {/* Empty state (not loading, no error, no slots) */}
+      {!isLoading && !isError && allSlots.length === 0 && <EmptyState />}
+
+      {/* Today's Timetable Grid — Admin + Teacher (CR-FE-023) */}
+      {(user?.activeRole === "Admin" || user?.activeRole === "Teacher") &&
+        (gridIsLoading || allSlots.length > 0) && (
+          <div className="mb-4">
+            <TodayTimetableGrid
+              allSlots={allSlots}
+              periodsData={periodsQ.data?.periods ?? []}
+              dailySummaryQueries={dailySummaryQueries}
+              activeRole={user.activeRole as "Admin" | "Teacher"}
+              currentUserId={user.id}
+              isLoading={gridIsLoading}
+              onRefresh={onRefresh}
+              isRefetching={isRefetching}
+              lastUpdatedAt={lastUpdatedAt}
+            />
+          </div>
+        )}
+
+      {/* Admin: Class Rankings card (CR-FE-023 §D) */}
+      {user?.activeRole === "Admin" &&
         !isLoading &&
         uniqueClassIds.length > 0 && (
           <div className="mt-4">
             <ClassRankingsCard
               classIds={uniqueClassIds}
+              classNameMap={classNameMap}
+            />
+          </div>
+        )}
+
+      {/* Teacher: Class Rankings card (CR-FE-016e) */}
+      {user?.activeRole === "Teacher" &&
+        !isLoading &&
+        teacherClassIds.length > 0 && (
+          <div className="mt-4">
+            <ClassRankingsCard
+              classIds={teacherClassIds}
               classNameMap={classNameMap}
             />
           </div>

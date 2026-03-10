@@ -70,6 +70,9 @@ export const QUERY_KEYS = {
     to: string,
     offset: number,
   ) => ["attendance-toppers", classId, from, to, offset] as const,
+  /** Absent student names for a timeslot on a date — lazy (popup only) */
+  absentees: (timeSlotId: string, date: string) =>
+    ["absentees", timeSlotId, date] as const,
 
   // ── Events ────────────────────────────────────────────────────────────────
   /** Calendar events within a date range (§3.3) */

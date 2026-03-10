@@ -1,10 +1,23 @@
 openapi: 3.1.0
 info:
   title: White-Label School Management System API
-  version: 4.5.0
+  version: 4.8.0
   description: |-
     Backend API for white-label school management system.
-    
+
+    **v4.8.0 changes (CR-41):**
+    - AUTH CHANGE: `GET /attendance/absentees` — Teacher restriction removed. Teacher now allowed
+      any non-deleted timeslot in tenant (full PII — studentName, admissionNumber,
+      consecutiveAbsentCount). 0 breaking changes.
+
+    **v4.7.0 changes (CR-40):**
+    - AUTH CHANGE: `GET /attendance/daily-summary` — Teacher restriction removed. Teacher now
+      allowed any classId in tenant (counts only, no PII). 0 breaking changes.
+
+    **v4.6.0 changes (CR-39):**
+    - NEW: `GET /attendance/absentees` — absent student names + streak for a timeslot on a date.
+    - 0 breaking changes. No schema changes. No migration.
+
     **v4.5.0 changes (CR-33–CR-38):**
     - BREAKING: `POST /auth/login` and `POST /auth/switch-role` response `user` object gains
       `studentId: string | null`. JWT payload gains same field. Old tokens without `studentId`
@@ -14,7 +27,7 @@ info:
     - NEW: `GET /attendance/daily-summary` — per-slot attendance counts for timetable cell display (CR-35)
     - NEW: `GET /attendance/monthly-sheet` — monthly student × day attendance grid (CR-36)
     - NEW: `POST/GET /events` and `PUT/DELETE /events/{eventId}` — academic calendar (CR-37)
-    
+
     **v4.4.0 changes (CR-32):**
     - BREAKING: `PUT /timetable/{timeSlotId}` removed. Use DELETE + POST to correct a slot.
   contact:
@@ -1519,8 +1532,7 @@ paths:
       summary: Get timetable
       description: |-
         Returns all non-deleted timeslots matching the provided filters.
-        **CR-31:** `date` and `status` query params removed.
-        Teacher role filters client-side to own slots.
+        CR-31: `date` and `status` query params removed. Teacher role filters client-side to own slots.
       tags: [Timetable]
       security:
         - BearerAuth: []
@@ -1600,10 +1612,10 @@ paths:
       operationId: deleteTimeslot
       summary: Soft-delete timeslot (Admin only)
       description: |-
-        Soft-deletes the timeslot. Existing attendance records are preserved (orphaned timeslot_id
+        Soft-deletes the timeslot. Existing attendance records are preserved (orphaned timeslotId
         is acceptable for historical audit). Use DELETE + POST /timetable to correct a slot.
-        **CR-32:** PUT /timetable/{timeSlotId} has been removed. This endpoint (DELETE) is the
-        only mutation available on an existing timeslot.
+        CR-32: PUT /timetable/{timeSlotId} has been removed. This endpoint (DELETE) is the only
+        mutation available on an existing timeslot.
       tags: [Timetable]
       security:
         - BearerAuth: []
@@ -1791,13 +1803,11 @@ paths:
       summary: Get consecutive absence streaks per student for a subject (CR-33)
       description: |-
         For a given timeslot, resolves the subject and class, then returns the current consecutive
-        absence streak per active student. Streak = count of consecutive `Absent` records ordered
-        by date DESC, stopping at first non-Absent. Effective status uses
-        `COALESCE(corrected_status, status)`.
-        
-        **Roles:**
+        absence streak per active student. Streak = count of consecutive Absent records ordered by
+        date DESC, stopping at first non-Absent. Effective status uses COALESCE(corrected_status, status).
+        Roles:
         - Admin: full list for any timeslot
-        - Teacher: full list, own assigned timeslots only → 403 otherwise
+        - Teacher: full list, own assigned timeslots only — 403 otherwise
         - Student: own entry only (filtered by linked studentId)
         - SuperAdmin: 403
       tags: [Attendance]
@@ -1838,15 +1848,13 @@ paths:
       operationId: getAttendanceToppers
       summary: Get students ranked by overall attendance percentage for a class (CR-34)
       description: |-
-        Ranks active students in the class by overall attendance % across all subjects
-        in the date range. `presentCount` includes Present and Late statuses.
-        Effective status uses `COALESCE(corrected_status, status)`.
-        `attendancePercentage` is null (not 0) when `totalPeriods = 0`.
-        `rank` is global (pre-pagination).
-        
-        **Roles:**
+        Ranks active students in the class by overall attendance across all subjects in the date
+        range. presentCount includes Present and Late statuses. Effective status uses
+        COALESCE(corrected_status, status). attendancePercentage is null (not 0) when totalPeriods = 0.
+        rank is global pre-pagination.
+        Roles:
         - Admin: any classId
-        - Teacher: own assigned classes only → 403 otherwise
+        - Teacher: own assigned classIds only — 403 otherwise
         - Student: full ranking (sees own position)
         - SuperAdmin: 403
       tags: [Attendance]
@@ -1870,7 +1878,7 @@ paths:
           schema:
             type: string
             format: date
-            description: Must be >= from
+          description: Must be >= from
         - name: limit
           in: query
           required: false
@@ -1927,15 +1935,13 @@ paths:
       operationId: getAttendanceDailySummary
       summary: Get per-slot attendance summary for a class on a specific date (CR-35)
       description: |-
-        Returns one entry per non-deleted timeslot for the class whose dayOfWeek matches
-        the derived day from `date`. `dayOfWeek` is resolved server-side.
-        Empty `slots` array is a valid 200 (e.g. Sunday or no timetable configured).
-        No restriction on future dates — valid 200 with `attendanceMarked: false`.
-        Feature guard: timetable feature flag (not attendance).
-        
-        **Roles:**
+        Returns one entry per non-deleted timeslot for the class whose dayOfWeek matches the
+        derived day from `date`. dayOfWeek is resolved server-side. Empty slots array is a valid
+        200 (e.g. Sunday or no timetable configured). No restriction on future dates (valid 200
+        with attendanceMarked: false). Feature guard: timetable feature flag (not attendance).
+        Roles:
         - Admin: any classId
-        - Teacher: own assigned classes only → 403 otherwise
+        - Teacher: any non-deleted classId in tenant — 200 (CR-40: auth relaxed, counts only, no PII)
         - Student: full slot list, class-level counts only (no PII)
         - SuperAdmin: 403
       tags: [Attendance]
@@ -1984,17 +1990,13 @@ paths:
   /attendance/monthly-sheet:
     get:
       operationId: getAttendanceMonthlySheet
-      summary: Get monthly attendance grid for a class and subject (CR-36)
+      summary: Get monthly student × day attendance grid for a class and subject (CR-36)
       description: |-
-        Returns a student × day grid for the specified class, subject, year, and month.
-        `days` object always contains keys "1" through "<daysInMonth>" — no sparse keys.
-        Future days have empty arrays. Each array entry is one attendance record.
-        Effective status uses `COALESCE(corrected_status, status)`.
-        Entries within each day are ordered by `periodNumber ASC`.
-        
-        **Roles:**
-        - Admin: any classId + subjectId
-        - Teacher: only where ≥1 non-deleted timeslot matches BOTH classId AND subjectId → 403
+        Returns a full month grid per student. days object always contains keys "1" through
+        "<daysInMonth>" — no sparse keys. effectiveStatus = COALESCE(corrected_status, status).
+        Roles:
+        - Admin: any classId + subjectId in tenant
+        - Teacher: only where ≥1 non-deleted timeslot matches BOTH classId AND subjectId — 403 otherwise
         - Student: 403
         - SuperAdmin: 403
       tags: [Attendance]
@@ -2027,7 +2029,7 @@ paths:
             maximum: 12
       responses:
         '200':
-          description: Monthly attendance sheet
+          description: Monthly attendance grid
           content:
             application/json:
               schema:
@@ -2046,12 +2048,70 @@ paths:
                     type: integer
                   daysInMonth:
                     type: integer
-                    minimum: 28
-                    maximum: 31
                   students:
                     type: array
                     items:
                       $ref: '#/components/schemas/MonthlySheetStudent'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrFeatureDisabled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /attendance/absentees:
+    get:
+      operationId: getAbsentees
+      summary: Get absent students with streak for a timeslot on a date (CR-39)
+      description: |-
+        Returns the list of absent students with inline consecutive absence streak for a specific
+        timeslot on a specific date. Powers the absentee popup on the dashboard timetable grid.
+        Empty array when attendance not yet marked (not an error).
+        Roles:
+        - Admin: any non-deleted timeslot in tenant
+        - Teacher: any non-deleted timeslot in tenant — 200 (CR-41: auth relaxed — full PII returned)
+        - Student: 403
+        - SuperAdmin: 403
+      tags: [Attendance]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: timeSlotId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Absentee list for this timeslot and date
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [timeSlotId, date, classId, subjectId, absentees]
+                properties:
+                  timeSlotId:
+                    type: string
+                  date:
+                    type: string
+                    format: date
+                  classId:
+                    type: string
+                  subjectId:
+                    type: string
+                  absentees:
+                    type: array
+                    description: |-
+                      Empty array when attendance not yet marked or no absences recorded.
+                      Ordered by studentName ASC.
+                    items:
+                      $ref: '#/components/schemas/AbsenteeEntry'
         '400':
           $ref: '#/components/responses/ValidationError'
         '403':
@@ -2109,39 +2169,31 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '403':
           $ref: '#/components/responses/Forbidden'
-
     get:
       operationId: listEvents
-      summary: List academic calendar events within a date range
+      summary: List academic calendar events
       description: |-
-        Returns events where `start_date <= to AND end_date >= from` — range overlap semantics,
-        correctly captures multi-day events crossing the boundary.
-        Defaults to current calendar month in tenant timezone when from/to are omitted.
-        
-        **Roles:**
-        - Admin, Teacher, Student: 200
-        - SuperAdmin: 403
+        Returns events where start_date <= :to AND end_date >= :from (range overlap — catches
+        multi-day events crossing boundary). Defaults to current month in tenant timezone.
+        Roles: Admin, Teacher, Student — all read. SuperAdmin: 403.
       tags: [Events]
       security:
         - BearerAuth: []
       parameters:
         - name: from
           in: query
-          required: false
           schema:
             type: string
             format: date
-          description: Default — current month start in tenant timezone
+          description: Defaults to current month start in tenant timezone
         - name: to
           in: query
-          required: false
           schema:
             type: string
             format: date
-          description: Default — current month end in tenant timezone
+          description: Defaults to current month end in tenant timezone
         - name: type
           in: query
-          required: false
           schema:
             type: string
             enum: [Holiday, Exam, Event, Other]
@@ -2160,7 +2212,6 @@ paths:
                       $ref: '#/components/schemas/Event'
                   total:
                     type: integer
-                    minimum: 0
         '400':
           $ref: '#/components/responses/ValidationError'
         '403':
@@ -2172,8 +2223,8 @@ paths:
       summary: Update academic calendar event (Admin only)
       description: |-
         Partial update — all fields optional. After merging patch onto existing record,
-        `endDate >= startDate` must hold → 400 VALIDATION_ERROR otherwise.
-        Setting `description: null` clears the field.
+        endDate >= startDate must hold → 400 VALIDATION_ERROR otherwise.
+        Setting description = null clears the field.
       tags: [Events]
       security:
         - BearerAuth: []
@@ -2220,11 +2271,10 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
     delete:
       operationId: deleteEvent
       summary: Soft-delete academic calendar event (Admin only)
-      description: Sets `deleted_at = NOW()`. Not reversible via API.
+      description: Sets deleted_at = NOW(). Not reversible via API.
       tags: [Events]
       security:
         - BearerAuth: []
@@ -2238,10 +2288,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-# ─── Components ───────────────────────────────────────────────────────────────
-
 components:
-
   securitySchemes:
     BearerAuth:
       type: http
@@ -2288,14 +2335,13 @@ components:
 
   schemas:
 
-    # ── Auth ──────────────────────────────────────────────────────────────────
+    # ─── Auth ──────────────────────────────────────────────────────────────────
 
     AuthUser:
       description: |-
         User object returned in auth responses (login, switch-role).
-        CR-38: gains `studentId` field. Populated only when `activeRole = Student`
-        and a linked student record exists. Null for Admin/Teacher roles and for
-        Student with no linked record.
+        CR-38 gains `studentId` field. Populated only when activeRole = Student and a linked
+        student record exists. Null for Admin/Teacher roles and for Student with no linked record.
       type: object
       required: [id, tenantId, name, email, roles, activeRole, studentId]
       properties:
@@ -2324,7 +2370,16 @@ components:
             null for Admin/Teacher roles.
             null for Student with no linked record (orphaned user account).
 
-    # ── Domain entities ───────────────────────────────────────────────────────
+    SuperAdmin:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+
+    # ─── Tenant ────────────────────────────────────────────────────────────────
 
     Tenant:
       type: object
@@ -2335,41 +2390,29 @@ components:
           type: string
         slug:
           type: string
+        timezone:
+          type: string
         status:
           type: string
           enum: [active, inactive]
-        timezone:
-          type: string
-        deactivatedAt:
-          type: string
-          format: date-time
-          nullable: true
         createdAt:
           type: string
           format: date-time
-        updatedAt:
-          type: string
-          format: date-time
 
-    SuperAdmin:
+    TenantFeature:
       type: object
       properties:
-        id:
+        featureKey:
           type: string
-        name:
-          type: string
-        email:
-          type: string
-          format: email
-        createdAt:
-          type: string
-          format: date-time
+        enabled:
+          type: boolean
         updatedAt:
           type: string
           format: date-time
 
+    # ─── Core entities ─────────────────────────────────────────────────────────
+
     User:
-      description: User object returned from user management endpoints (not auth).
       type: object
       properties:
         id:
@@ -2385,16 +2428,17 @@ components:
           type: array
           items:
             type: string
-            enum: [Teacher, Admin, Student]
-        activeRole:
-          type: string
-          enum: [Teacher, Admin, Student]
+            enum: [Teacher, Admin]
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
 
     Batch:
       type: object
@@ -2475,11 +2519,6 @@ components:
           nullable: true
         batchId:
           type: string
-        batchName:
-          type: string
-        userId:
-          type: string
-          nullable: true
         admissionNumber:
           type: string
         dob:
@@ -2488,6 +2527,9 @@ components:
         status:
           type: string
           enum: [Active, DroppedOff, Graduated]
+        userId:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -2506,18 +2548,13 @@ components:
           type: integer
         label:
           type: string
+          nullable: true
         startTime:
           type: string
           format: time
         endTime:
           type: string
           format: time
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
 
     TimeSlot:
       type: object
@@ -2528,34 +2565,16 @@ components:
           type: string
         classId:
           type: string
-        className:
-          type: string
         subjectId:
           type: string
-        subjectName:
-          type: string
         teacherId:
-          type: string
-        teacherName:
           type: string
         dayOfWeek:
           type: string
           enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
         periodNumber:
           type: integer
-        periodLabel:
-          type: string
-        startTime:
-          type: string
-          format: time
-        endTime:
-          type: string
-          format: time
-          nullable: true
         createdAt:
-          type: string
-          format: date-time
-        updatedAt:
           type: string
           format: date-time
 
@@ -2566,11 +2585,9 @@ components:
           type: string
         tenantId:
           type: string
-        studentId:
-          type: string
-        studentName:
-          type: string
         timeSlotId:
+          type: string
+        studentId:
           type: string
         date:
           type: string
@@ -2578,26 +2595,18 @@ components:
         status:
           type: string
           enum: [Present, Absent, Late]
-        recordedBy:
-          type: string
-        recordedAt:
-          type: string
-          format: date-time
         correctedStatus:
           type: string
           enum: [Present, Absent, Late]
           nullable: true
-        correctedBy:
+        recordedBy:
           type: string
-          nullable: true
-        correctedAt:
+        createdAt:
           type: string
           format: date-time
-          nullable: true
 
     AttendanceSummary:
       type: object
-      required: [studentId, year, month, totalClasses, present, absent, late, attendancePercentage]
       properties:
         studentId:
           type: string
@@ -2605,35 +2614,20 @@ components:
           type: integer
         month:
           type: integer
-        totalClasses:
+        totalPeriods:
           type: integer
-        present:
+        presentCount:
           type: integer
-        absent:
+        absentCount:
           type: integer
-        late:
+        lateCount:
           type: integer
         attendancePercentage:
           type: number
           format: float
-
-    TenantFeature:
-      type: object
-      properties:
-        id:
-          type: string
-        tenantId:
-          type: string
-        featureKey:
-          type: string
-        enabled:
-          type: boolean
-        enabledAt:
-          type: string
-          format: date-time
           nullable: true
 
-    # ── CR-33: Attendance Streaks ─────────────────────────────────────────────
+    # ─── CR-33: Streaks ────────────────────────────────────────────────────────
 
     StreakEntry:
       type: object
@@ -2645,11 +2639,10 @@ components:
           type: integer
           minimum: 0
           description: |-
-            Number of consecutive absent periods for this student in the subject,
-            ordered by date DESC. 0 means no current streak (no records, or last
-            record was Present/Late).
+            Count of consecutive Absent records (date DESC) until first non-Absent.
+            0 for students with no records or whose most recent record is non-Absent.
 
-    # ── CR-34: Attendance Toppers ─────────────────────────────────────────────
+    # ─── CR-34: Toppers ────────────────────────────────────────────────────────
 
     TopperEntry:
       type: object
@@ -2658,7 +2651,7 @@ components:
         rank:
           type: integer
           minimum: 1
-          description: Global rank (pre-pagination). Student at offset 10 has rank 11.
+          description: Global rank pre-pagination. Student at offset 10 has rank 11.
         studentId:
           type: string
         studentName:
@@ -2677,11 +2670,9 @@ components:
           minimum: 0
           maximum: 100
           nullable: true
-          description: |-
-            ROUND(presentCount / totalPeriods * 100, 2).
-            null (not 0) when totalPeriods = 0.
+          description: ROUND(presentCount / totalPeriods * 100, 2). null (not 0) when totalPeriods = 0.
 
-    # ── CR-35: Daily Slot Summary ─────────────────────────────────────────────
+    # ─── CR-35: Daily Slot Summary ─────────────────────────────────────────────
 
     DailySlotSummary:
       type: object
@@ -2691,7 +2682,6 @@ components:
           type: string
         periodNumber:
           type: integer
-          minimum: 1
         subjectId:
           type: string
         subjectName:
@@ -2702,19 +2692,15 @@ components:
           type: string
         attendanceMarked:
           type: boolean
-          description: true if any attendance_records exist for this timeSlotId + date.
         totalStudents:
           type: integer
           minimum: 0
-          description: Count of active students in the class (always populated).
         absentCount:
           type: integer
           minimum: 0
-          description: |-
-            Count of effective Absent statuses for this slot on this date.
-            0 when attendanceMarked = false (not null).
+          description: 0 (not null) when attendanceMarked = false.
 
-    # ── CR-36: Monthly Attendance Sheet ──────────────────────────────────────
+    # ─── CR-36: Monthly Sheet ──────────────────────────────────────────────────
 
     AttendanceDayEntry:
       type: object
@@ -2746,15 +2732,14 @@ components:
         days:
           type: object
           description: |-
-            Keys "1" through "<daysInMonth>" — always fully populated, no sparse keys.
-            Future days have empty arrays [].
-            Entries within each day are ordered by periodNumber ASC.
+            Keys "1" through "<daysInMonth>" always fully populated, no sparse keys.
+            Future days have empty arrays []. Entries within each day ordered by periodNumber ASC.
           additionalProperties:
             type: array
             items:
               $ref: '#/components/schemas/AttendanceDayEntry'
 
-    # ── CR-37: Academic Calendar Events ──────────────────────────────────────
+    # ─── CR-37: Academic Calendar Events ──────────────────────────────────────
 
     Event:
       type: object
@@ -2787,7 +2772,27 @@ components:
           type: string
           format: date-time
 
-    # ── Shared error envelope ─────────────────────────────────────────────────
+    # ─── CR-39: Absentee Entry ─────────────────────────────────────────────────
+
+    AbsenteeEntry:
+      type: object
+      required: [studentId, studentName, admissionNumber, consecutiveAbsentCount]
+      properties:
+        studentId:
+          type: string
+        studentName:
+          type: string
+        admissionNumber:
+          type: string
+        consecutiveAbsentCount:
+          type: integer
+          minimum: 1
+          description: |-
+            Consecutive absence streak for this student in the subject, including today.
+            Always >= 1 (current day is Absent by definition of being in this list).
+            Computed by date DESC walk stopping at first non-Absent record.
+
+    # ─── Shared error envelope ─────────────────────────────────────────────────
 
     ErrorResponse:
       type: object
@@ -2805,7 +2810,7 @@ components:
               description: Human-readable message
             details:
               type: object
-              description: Additional context (may be empty object)
+              description: Additional context (may be empty object {})
         requestId:
           type: string
           description: Correlation ID from x-request-id header
@@ -2814,21 +2819,18 @@ components:
           format: date-time
 
   responses:
-
     Unauthorized:
       description: Unauthorized — missing or invalid token
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-
     Forbidden:
       description: Forbidden — insufficient role or ownership
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-
     ForbiddenOrFeatureDisabled:
       description: |-
         Forbidden (403) — two possible error codes:
@@ -2838,21 +2840,18 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-
     NotFound:
       description: Not found
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-
     Conflict:
       description: Conflict — resource already exists or business rule violated
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-
     ValidationError:
       description: Validation error — invalid or missing request parameters
       content:

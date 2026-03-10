@@ -11,6 +11,7 @@ import type {
   GetAttendanceToppersResponse,
   AttendanceDailySummaryResponse,
   MonthlySheetResponse,
+  GetAbsenteesResponse,
 } from "@/types/api";
 
 export interface StudentAttendanceFilters {
@@ -96,5 +97,13 @@ export const attendanceApi = {
   }) =>
     apiClient
       .get<MonthlySheetResponse>("/attendance/monthly-sheet", { params })
+      .then((r) => r.data),
+
+  // CR-39/CR-41: absent student names for a timeslot on a date (absentee popup)
+  getAbsentees: (timeSlotId: string, date: string) =>
+    apiClient
+      .get<GetAbsenteesResponse>("/attendance/absentees", {
+        params: { timeSlotId, date },
+      })
       .then((r) => r.data),
 };

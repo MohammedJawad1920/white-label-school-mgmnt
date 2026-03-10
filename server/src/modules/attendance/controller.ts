@@ -884,20 +884,7 @@ export async function getAttendanceToppers(
     return;
   }
 
-  // Teacher guard
-  if (callerRole === "Teacher") {
-    const assignCheck = await pool.query<{ exists: boolean }>(
-      `SELECT EXISTS(
-         SELECT 1 FROM timeslots
-         WHERE class_id = $1 AND teacher_id = $2 AND tenant_id = $3 AND deleted_at IS NULL
-       ) AS exists`,
-      [classId, callerId, tenantId],
-    );
-    if (!assignCheck.rows[0]?.exists) {
-      send403(res, "You are not assigned to this class", "FORBIDDEN");
-      return;
-    }
-  }
+  // CR-40: Teacher ownership check removed — Teacher may call for any classId in tenant.
 
   // Fetch all active students
   const studentsResult = await pool.query<{
@@ -1035,20 +1022,7 @@ export async function getAttendanceDailySummary(
     return;
   }
 
-  // Teacher guard
-  if (callerRole === "Teacher") {
-    const assignCheck = await pool.query<{ exists: boolean }>(
-      `SELECT EXISTS(
-         SELECT 1 FROM timeslots
-         WHERE class_id = $1 AND teacher_id = $2 AND tenant_id = $3 AND deleted_at IS NULL
-       ) AS exists`,
-      [classId, callerId, tenantId],
-    );
-    if (!assignCheck.rows[0]?.exists) {
-      send403(res, "You are not assigned to this class", "FORBIDDEN");
-      return;
-    }
-  }
+  // CR-40: Teacher ownership check removed — Teacher may call for any classId in tenant.
 
   // Derive dayOfWeek server-side from the date
   const dayNames = [
@@ -1339,5 +1313,134 @@ export async function getAttendanceMonthlySheet(
     month,
     daysInMonth,
     students,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GET /api/attendance/absentees  (v4.6 CR-39, auth relaxed CR-41)
+// ═══════════════════════════════════════════════════════════════════
+// Returns absent student names + streak for a specific timeslot on a date.
+// Powers the absentee popup on the dashboard timetable grid.
+// Admin: any non-deleted timeslot in tenant
+// Teacher: any non-deleted timeslot in tenant (CR-41: ownership check removed)
+// Student: 403 FORBIDDEN
+// SuperAdmin: 403 FORBIDDEN (handled by requireRole in routes)
+
+export async function getAbsentees(req: Request, res: Response): Promise<void> {
+  const tenantId = req.tenantId!;
+  const callerRole = req.activeRole!;
+
+  const { timeSlotId, date } = req.query as {
+    timeSlotId?: string;
+    date?: string;
+  };
+
+  // ── Validation ─────────────────────────────────────────────────
+  if (!timeSlotId) {
+    send400(res, "timeSlotId is required", "VALIDATION_ERROR");
+    return;
+  }
+  if (!date) {
+    send400(res, "date is required", "VALIDATION_ERROR");
+    return;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    send400(
+      res,
+      "date must be a valid date in YYYY-MM-DD format",
+      "VALIDATION_ERROR",
+    );
+    return;
+  }
+
+  // ── Resolve timeslot ───────────────────────────────────────────
+  const tsResult = await pool.query<{
+    id: string;
+    class_id: string;
+    subject_id: string;
+  }>(
+    `SELECT id, class_id, subject_id
+     FROM timeslots
+     WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+    [timeSlotId, tenantId],
+  );
+  if ((tsResult.rowCount ?? 0) === 0) {
+    send404(res, "Timeslot not found");
+    return;
+  }
+  const timeslot = tsResult.rows[0]!;
+
+  // ── Role guard ─────────────────────────────────────────────────
+  // CR-41: Teacher may call for any non-deleted timeslot in tenant.
+  // Student + SuperAdmin are blocked (SuperAdmin blocked by requireRole; Student blocked here).
+  if (callerRole === "Student") {
+    send403(res, "Students cannot access absentee details", "FORBIDDEN");
+    return;
+  }
+
+  // ── Fetch absent records for this timeslot+date ────────────────
+  const absentResult = await pool.query<{
+    student_id: string;
+    student_name: string;
+    admission_number: string;
+  }>(
+    `SELECT ar.student_id,
+            s.name           AS student_name,
+            s.admission_number
+     FROM attendance_records ar
+     JOIN students s ON s.id = ar.student_id
+     WHERE ar.timeslot_id = $1
+       AND ar.date        = $2
+       AND ar.tenant_id   = $3
+       AND COALESCE(ar.corrected_status, ar.status) = 'Absent'
+       AND s.deleted_at IS NULL
+     ORDER BY s.name ASC`,
+    [timeSlotId, date, tenantId],
+  );
+
+  // ── Compute consecutive absent streak for each absent student ──
+  const absentees: Array<{
+    studentId: string;
+    studentName: string;
+    admissionNumber: string;
+    consecutiveAbsentCount: number;
+  }> = [];
+
+  for (const row of absentResult.rows) {
+    const recordsResult = await pool.query<{ effective_status: string }>(
+      `SELECT COALESCE(ar.corrected_status, ar.status) AS effective_status
+       FROM attendance_records ar
+       JOIN timeslots t ON t.id = ar.timeslot_id
+       WHERE ar.student_id = $1
+         AND ar.tenant_id  = $2
+         AND t.subject_id  = $3
+       ORDER BY ar.date DESC`,
+      [row.student_id, tenantId, timeslot.subject_id],
+    );
+
+    let streak = 0;
+    for (const r of recordsResult.rows) {
+      if (r.effective_status === "Absent") {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    // streak is always >= 1 because today is Absent (included in DESC walk)
+
+    absentees.push({
+      studentId: row.student_id,
+      studentName: row.student_name,
+      admissionNumber: row.admission_number,
+      consecutiveAbsentCount: streak,
+    });
+  }
+
+  res.status(200).json({
+    timeSlotId,
+    date,
+    classId: timeslot.class_id,
+    subjectId: timeslot.subject_id,
+    absentees,
   });
 }

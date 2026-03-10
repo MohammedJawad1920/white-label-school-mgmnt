@@ -20,6 +20,7 @@ import {
   getAttendanceToppers,
   getAttendanceDailySummary,
   getAttendanceMonthlySheet,
+  getAbsentees,
 } from "./controller";
 
 // ---- Main attendance router (mounted at /api/attendance) ----
@@ -79,6 +80,15 @@ router.get(
   "/monthly-sheet",
   requireRole("Teacher", "Admin"),
   asyncHandler(getAttendanceMonthlySheet),
+);
+
+// GET /api/attendance/absentees — absent student names + streak for a timeslot+date
+// Admin: any non-deleted timeslot; Teacher: any non-deleted timeslot (CR-41)
+// Student + SuperAdmin blocked by requireRole
+router.get(
+  "/absentees",
+  requireRole("Teacher", "Admin"),
+  asyncHandler(getAbsentees),
 );
 
 // ---- Student-attendance router (mounted at /api/students) ----

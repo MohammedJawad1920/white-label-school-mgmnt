@@ -206,12 +206,12 @@ export function App() {
                           </Guarded>
                         }
                       />
-                      {/* Admin only — CR-FE-022: Teacher loses Record Attendance entirely */}
+                      {/* Admin + Teacher — CR-FE-023: Teacher can record attendance */}
                       <Route
                         path="/attendance/record"
                         element={
                           <Guarded>
-                            <RoleGate roles={["Admin"]}>
+                            <RoleGate roles={["Admin", "Teacher"]}>
                               <FeatureGate featureKey="attendance">
                                 <RecordAttendancePage />
                               </FeatureGate>
