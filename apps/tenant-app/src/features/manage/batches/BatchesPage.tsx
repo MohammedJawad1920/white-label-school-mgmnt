@@ -312,14 +312,16 @@ export default function BatchesPage() {
                         setDrawerError(null);
                         setEditBatch(batch);
                       }}
-                      label={`Edit ${batch.name}`}
+                      label="Edit"
+                      ariaLabel={`Edit ${batch.name}`}
                     />
                     <ActionBtn
                       onClick={() => {
                         setDeleteError(null);
                         deleteMut.mutate(batch.id);
                       }}
-                      label={`Delete ${batch.name}`}
+                      label="Delete"
+                      ariaLabel={`Delete ${batch.name}`}
                       variant="destructive"
                       disabled={deleteMut.isPending}
                     />

@@ -159,6 +159,7 @@ export async function cleanupTenant(tenantId: string): Promise<void> {
   await testPool.query("DELETE FROM classes WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM batches WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM subjects WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM events WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM tenant_features WHERE tenant_id = $1", [
     tenantId,
   ]);

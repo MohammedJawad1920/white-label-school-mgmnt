@@ -401,12 +401,14 @@ export function Th({
 interface ActionBtnProps {
   onClick: () => void;
   label: string;
+  ariaLabel?: string;
   variant?: "default" | "destructive";
   disabled?: boolean;
 }
 export function ActionBtn({
   onClick,
   label,
+  ariaLabel,
   variant = "default",
   disabled,
 }: ActionBtnProps) {
@@ -414,7 +416,7 @@ export function ActionBtn({
     <button
       onClick={onClick}
       disabled={disabled}
-      aria-label={label}
+      aria-label={ariaLabel ?? label}
       className={cn(
         "rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
         variant === "destructive"

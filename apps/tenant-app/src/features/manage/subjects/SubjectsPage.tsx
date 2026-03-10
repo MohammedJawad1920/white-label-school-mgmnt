@@ -251,14 +251,16 @@ export default function SubjectsPage() {
                         setDrawerError(null);
                         setEditSubject(subject);
                       }}
-                      label={`Edit ${subject.name}`}
+                      label="Edit"
+                      ariaLabel={`Edit ${subject.name}`}
                     />
                     <ActionBtn
                       onClick={() => {
                         setDeleteError(null);
                         deleteMut.mutate(subject.id);
                       }}
-                      label={`Delete ${subject.name}`}
+                      label="Delete"
+                      ariaLabel={`Delete ${subject.name}`}
                       variant="destructive"
                       disabled={deleteMut.isPending}
                     />

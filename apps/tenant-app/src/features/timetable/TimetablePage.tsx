@@ -108,7 +108,7 @@ function SlotCell({ slot, isAdmin, onDelete, markingStatus }: SlotCellProps) {
         ? "bg-yellow-50"
         : "bg-primary/5";
   return (
-    <div className={`rounded border ${bg} p-2 text-xs space-y-1 h-full`}>
+    <div className={`rounded border ${bg} p-2 text-xs space-y-1 h-full group`}>
       <p className="font-medium truncate">{slot.className}</p>
       <p className="text-muted-foreground truncate">{slot.subjectName}</p>
       <p className="text-muted-foreground truncate">{slot.teacherName}</p>
@@ -117,7 +117,7 @@ function SlotCell({ slot, isAdmin, onDelete, markingStatus }: SlotCellProps) {
           <button
             onClick={() => onDelete(slot)}
             aria-label={`Delete slot: ${slot.className} ${slot.subjectName} Period ${slot.periodNumber}`}
-            className="rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive hover:bg-destructive/20 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive"
+            className="rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive hover:bg-destructive/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all"
           >
             Delete
           </button>

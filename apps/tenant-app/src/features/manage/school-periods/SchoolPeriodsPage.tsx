@@ -285,7 +285,7 @@ export default function SchoolPeriodsPage() {
   });
 
   return (
-    <div className="p-4 md:p-6 max-w-2xl">
+    <div className="p-4 md:p-6 max-w-3xl mx-auto">
       <PageHeader
         title="School Periods"
         subtitle={`${periods.length} period${periods.length !== 1 ? "s" : ""} configured`}
@@ -365,7 +365,8 @@ export default function SchoolPeriodsPage() {
                             setDrawerError(null);
                             setEditPeriod(period);
                           }}
-                          label={`Edit Period ${period.periodNumber}`}
+                          label="Edit"
+                          ariaLabel={`Edit Period ${period.periodNumber}`}
                         />
                         <ActionBtn
                           onClick={() => {
@@ -376,7 +377,8 @@ export default function SchoolPeriodsPage() {
                             });
                             deleteMut.mutate(period.id);
                           }}
-                          label={`Delete Period ${period.periodNumber}`}
+                          label="Delete"
+                          ariaLabel={`Delete Period ${period.periodNumber}`}
                           variant="destructive"
                           disabled={deleteMut.isPending}
                         />

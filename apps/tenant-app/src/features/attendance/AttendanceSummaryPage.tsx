@@ -68,13 +68,17 @@ function StatCard({
   label,
   value,
   color,
+  accentBorder,
 }: {
   label: string;
   value: number | string;
   color?: string;
+  accentBorder?: string;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4 text-center">
+    <div
+      className={`rounded-lg border bg-card p-4 text-center${accentBorder ? ` border-l-4 ${accentBorder}` : ""}`}
+    >
       <p className={`text-2xl font-bold tabular-nums ${color ?? ""}`}>
         {value}
       </p>
@@ -251,11 +255,11 @@ function RankingsTab() {
         !toppersQ.isError &&
         toppers.length > 0 && (
           <>
-            <div className="rounded-lg border overflow-hidden">
+            <div className="rounded-lg border overflow-hidden overflow-x-auto">
               <div
                 role="table"
                 aria-label="Attendance rankings"
-                className="w-full text-sm"
+                className="w-full min-w-[400px] text-sm"
               >
                 {/* Header */}
                 <div
@@ -296,7 +300,7 @@ function RankingsTab() {
                     </div>
                     <div
                       role="cell"
-                      className="flex-1 px-3 py-2.5 font-medium truncate"
+                      className="px-3 py-2.5 font-medium min-w-[120px]"
                     >
                       {t.studentName}
                     </div>
@@ -606,21 +610,25 @@ export default function AttendanceSummaryPage() {
                   <StatCard
                     label="Total Classes"
                     value={summary.totalClasses}
+                    accentBorder="border-l-blue-400"
                   />
                   <StatCard
                     label="Present"
                     value={summary.present}
                     color="text-green-600"
+                    accentBorder="border-l-green-500"
                   />
                   <StatCard
                     label="Absent"
                     value={summary.absent}
                     color="text-red-600"
+                    accentBorder="border-l-red-500"
                   />
                   <StatCard
                     label="Late"
                     value={summary.late}
                     color="text-yellow-600"
+                    accentBorder="border-l-yellow-500"
                   />
                 </div>
 

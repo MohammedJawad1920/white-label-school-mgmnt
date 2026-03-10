@@ -188,10 +188,17 @@ function SlotCard({ slot, onRecordAttendance }: SlotCardProps) {
 
 // ── Upcoming Events card (all roles, CR-FE-016g) ─────────────────────────────
 function UpcomingEventsCard() {
+  const now = new Date();
+  const today = format(now, "yyyy-MM-dd");
+  const monthEnd = format(
+    new Date(now.getFullYear(), now.getMonth() + 1, 0),
+    "yyyy-MM-dd",
+  );
+
   const { data, isLoading } = useQuery({
-    queryKey: ["events", "dashboard"],
-    queryFn: () => eventsApi.list(),
-    staleTime: 5 * 60 * 1000,
+    queryKey: ["events", "upcoming", today],
+    queryFn: () => eventsApi.list({ from: today, to: monthEnd }),
+    staleTime: 10 * 60 * 1000,
   });
 
   const events = data?.events ?? [];

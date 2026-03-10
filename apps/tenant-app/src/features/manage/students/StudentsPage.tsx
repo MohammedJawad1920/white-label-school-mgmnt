@@ -693,7 +693,7 @@ export default function StudentsPage() {
       )}
 
       <div className="rounded-lg border overflow-hidden overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[900px] text-sm">
           <caption className="sr-only">Student list</caption>
           <thead className="bg-muted/50 border-b">
             <tr>
@@ -763,7 +763,9 @@ export default function StudentsPage() {
                     onChange={(c) => toggleSelect(student.id, c)}
                   />
                 </td>
-                <td className="px-4 py-2.5 font-medium">{student.name}</td>
+                <td className="px-4 py-2.5 font-medium whitespace-nowrap">
+                  {student.name}
+                </td>
                 {/* v4.0 CR-22: status badge */}
                 <td className="px-4 py-2.5">
                   <span
@@ -808,17 +810,20 @@ export default function StudentsPage() {
                         navigate(`/students/${student.id}/attendance`)
                       }
                       label="History"
+                      ariaLabel={`View attendance history for ${student.name}`}
                     />
                     <ActionBtn
                       onClick={() => openEdit(student)}
-                      label={`Edit ${student.name}`}
+                      label="Edit"
+                      ariaLabel={`Edit ${student.name}`}
                     />
                     <ActionBtn
                       onClick={() => {
                         setDeleteError(null);
                         deleteMut.mutate(student.id);
                       }}
-                      label={`Delete ${student.name}`}
+                      label="Delete"
+                      ariaLabel={`Delete ${student.name}`}
                       variant="destructive"
                       disabled={deleteMut.isPending}
                     />

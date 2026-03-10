@@ -115,7 +115,7 @@ function StudentRow({
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 hover:bg-muted/20">
       {/* Student name */}
-      <span className="flex-1 text-sm font-medium truncate min-w-0">
+      <span className="flex-1 text-sm font-medium break-words min-w-0">
         {student.name}
       </span>
 

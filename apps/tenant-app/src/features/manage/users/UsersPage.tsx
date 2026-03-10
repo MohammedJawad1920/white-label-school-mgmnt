@@ -464,8 +464,8 @@ export default function UsersPage() {
         </div>
       )}
 
-      <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-lg border overflow-hidden overflow-x-auto">
+        <table className="w-full min-w-[560px] text-sm">
           <thead className="bg-muted/50 border-b">
             <tr>
               <Th className="w-10">
@@ -564,7 +564,8 @@ export default function UsersPage() {
                           setDrawerError(null);
                           setEditRolesUser(user);
                         }}
-                        label={`Edit roles for ${user.name}`}
+                        label="Edit roles"
+                        ariaLabel={`Edit roles for ${user.name}`}
                       />
                       {/* Delete hidden for self — Freeze §Screen */}
                       {!isSelf && (
@@ -574,7 +575,8 @@ export default function UsersPage() {
                             setBulkFailed({});
                             deleteMut.mutate(user.id);
                           }}
-                          label={`Delete ${user.name}`}
+                          label="Delete"
+                          ariaLabel={`Delete ${user.name}`}
                           variant="destructive"
                           disabled={deleteMut.isPending}
                         />

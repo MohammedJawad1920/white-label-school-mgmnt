@@ -132,7 +132,7 @@ export default function MonthlySheetPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-5">
+      <div className="grid grid-cols-2 gap-3 mb-5 sm:flex sm:flex-wrap">
         <div>
           <label htmlFor="msClassFilter" className={labelCls}>
             Class <span aria-hidden="true">*</span>
@@ -320,7 +320,7 @@ export default function MonthlySheetPage() {
                 >
                   <div
                     role="columnheader"
-                    className="w-44 shrink-0 px-3 py-2 text-xs font-semibold text-muted-foreground"
+                    className="w-44 shrink-0 px-3 py-2 text-xs font-semibold text-muted-foreground sticky left-0 bg-muted/50 z-10 border-r border-border"
                   >
                     Student
                   </div>
@@ -345,12 +345,12 @@ export default function MonthlySheetPage() {
                     {/* Student name + admission number */}
                     <div
                       role="rowheader"
-                      className="w-44 shrink-0 px-3 py-2 truncate"
+                      className="w-44 shrink-0 px-3 py-2 sticky left-0 bg-background z-10 border-r border-border"
                     >
-                      <span className="text-sm font-medium block truncate">
+                      <span className="text-sm font-medium block">
                         {student.studentName}
                       </span>
-                      <span className="text-xs text-muted-foreground block truncate">
+                      <span className="text-xs text-muted-foreground block">
                         {student.admissionNumber}
                       </span>
                     </div>

@@ -3,10 +3,10 @@
 
 ---
 
-**Version:** 2.1 (IMMUTABLE)
+**Version:** 2.2 (IMMUTABLE)
 **Date:** 2026-03-09
 **Status:** APPROVED FOR EXECUTION
-**Supersedes:** v2.0 (2026-03-09)
+**Supersedes:** v2.1 (2026-03-09)
 **Backend Freeze:** v4.5 (2026-03-08)
 **OpenAPI:** v4.5.0
 
@@ -14,11 +14,66 @@
 
 ## CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI)
 
-This document is the **Absolute Source of Truth**. v2.0 is **SUPERSEDED**.
+This document is the **Absolute Source of Truth**. v2.1 is **SUPERSEDED**.
 
 You have **NO authority** to modify routes, API assumptions, or constraints defined below.
 
 If any request contradicts this document, you must **REFUSE** and open a **Change Request** instead.
+
+---
+
+## CHANGE SUMMARY: v2.1 → v2.2
+
+### Change Requests Applied
+
+| CR | Title | Type | Impact |
+|----|-------|------|--------|
+| **CR-FE-019** | UI Polish & Mobile Fixes | CSS/props only — zero API, state, or logic changes | §2.1, §5, §5.5, §11, §13 |
+
+### What Changed
+
+**No scope changes. No API/backend changes. OpenAPI unchanged at v4.5.0.**
+
+All changes are CSS class additions, a single additive prop on `ActionBtn`, and one documentation path correction.
+
+#### A. `ActionBtn` — new `ariaLabel?` prop (§5.5)
+
+`ActionBtn` in `src/components/manage/shared.tsx` gains an optional `ariaLabel?: string` prop. When provided, `aria-label` uses `ariaLabel`; otherwise falls back to `label` (backward-compatible). Visible button text is always `label`. No breaking change.
+
+#### B. Action button labels — all manage screens (§2.1)
+
+All `<ActionBtn>` call sites in manage screens now use short visible labels (`"Edit"`, `"Delete"`, `"Edit roles"`) with the full context in `ariaLabel`. Previously `label` carried the full string (e.g. `"Edit roles for Test Admin"`), which rendered verbosely in the visible button.
+
+Affected screens: UsersPage, StudentsPage, SchoolPeriodsPage, BatchesPage, ClassesPage, SubjectsPage.
+
+#### C. Table min-width — prevent mobile column collapse (§2.1)
+
+- `StudentsPage` `<table>`: `min-w-[900px]`. Student name `<td>`: `whitespace-nowrap`.
+- `UsersPage` `<table>`: `min-w-[560px]`.
+- Attendance Summary rankings table wrapper: `overflow-x-auto`, inner div `min-w-[400px]`.
+
+#### D. Monthly Sheet — mobile filter grid + sticky student column (§2.1)
+
+- Filter bar: `grid grid-cols-2 gap-3 mb-5 sm:flex sm:flex-wrap` — 2-column grid on mobile.
+- Student column header: `sticky left-0 bg-muted/50 z-10 border-r border-border`.
+- Student name rowheader: `sticky left-0 bg-background z-10 border-r border-border`, `truncate` removed from both inner `<span>` elements.
+
+#### E. Attendance Summary — stat card left-border accents + rankings fix (§2.1)
+
+- `StatCard` gains optional `accentBorder?: string` prop (`border-l-4` variant). Total Classes → `border-l-blue-400`, Present → `border-l-green-500`, Absent → `border-l-red-500`, Late → `border-l-yellow-500`.
+- Rankings student name cell: `truncate` removed, `min-w-[120px]` added.
+
+#### F. Record Attendance — student name wrapping (§2.1)
+
+`StudentRow` name `<span>`: `truncate` → `break-words`. Fixes "MUHAMM..." truncation on 375px screens.
+
+#### G. Timetable — hover-reveal Delete button in slot cells (§2.1)
+
+`SlotCell` outer `<div>` gains `group`. Delete `<button>` gains `opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all`. Always in DOM (a11y preserved), visually hidden until hover or focus-within.
+
+#### H. Path correction: `src/app/nav.ts` → `src/config/nav.ts` (§5, §11, §13)
+
+The freeze incorrectly referenced `src/app/nav.ts`. Actual file is `src/config/nav.ts` (confirmed from source). All three reference locations corrected.
 
 ---
 
@@ -572,6 +627,12 @@ VITE_APP_NAME=Platform Admin
 - **Filled cell (Admin):** click → Popover with "Delete Slot" button + muted helper: *"To change teacher or subject, delete this slot and create it again."*
 - **Teacher/Student:** cells non-interactive, plain read-only display.
 
+**Slot cell Delete button (CR-FE-019):**
+- `SlotCell` outer `<div>` has `group` class.
+- Delete `<button>` classes: `opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all` — hover-reveal pattern.
+- Button is always present in DOM. A11y: `aria-label` preserved. Screen readers can still reach the button via keyboard.
+- Mobile note: `group-focus-within:opacity-100` exposes the button on tap-focus for touch users.
+
 **Form validation (create):**
 - `classId`: required
 - `subjectId`: required
@@ -627,6 +688,9 @@ VITE_APP_NAME=Platform Admin
 - Loading: 3 skeleton rows while streaks query is loading.
 - Error (403, 404, network): panel hidden silently — non-critical UI.
 
+**Student row name (CR-FE-019):**
+- Student name `<span>` uses `break-words` instead of `truncate` — names wrap on narrow screens rather than being cut off.
+
 **Single action button:** (unchanged from v1.8)
 ```tsx
 {alreadyRecorded ? "Update Attendance for N Student(s)" : "Save Attendance for N Student(s)"}
@@ -654,6 +718,11 @@ VITE_APP_NAME=Platform Admin
   - `403` → "Not authorized."
   - `404` → "Student not found."
 
+**Stat cards (CR-FE-019):**
+- `StatCard` component accepts optional `accentBorder?: string` prop, rendered as `border-l-4 {accentBorder}`.
+- Default (no `accentBorder`): `border-l-border` (neutral).
+- Call sites: Total Classes → `border-l-blue-400`, Present → `border-l-green-500`, Absent → `border-l-red-500`, Late → `border-l-yellow-500`.
+
 **Tab: Rankings (CR-FE-016e — NEW)**
 
 **API calls (Rankings tab):**
@@ -674,6 +743,10 @@ VITE_APP_NAME=Platform Admin
 **Server state:**
 - TQ key: `['student-attendance-summary', studentId, year, month]`. Stale: 5 min. (Summary tab)
 - TQ key: `['attendance-toppers', classId, from, to, offset]`. Stale: 5 min. (Rankings tab)
+
+**Rankings table (CR-FE-019):**
+- Table wrapper: `overflow-x-auto`. Inner div: `min-w-[400px]`.
+- Student name cell: `min-w-[120px]` — no `truncate`.
 
 **Rankings table columns:** Rank | Student Name | Total Periods | Present Count | Attendance %
 
@@ -722,6 +795,9 @@ VITE_APP_NAME=Platform Admin
 
 **Loading:** Full grid skeleton (placeholder rows × day columns). Empty (`students.length === 0`): "No students enrolled in this class."
 
+**Filter bar layout (CR-FE-019):**
+- Mobile: `grid grid-cols-2 gap-3 mb-5 sm:flex sm:flex-wrap` — Class and Subject on row 1, Year and Month on row 2.
+
 **Grid layout:**
 - Fixed left column: student name + admission number.
 - Day columns: `"1"` through `"<daysInMonth>"` (always all keys — no sparse columns).
@@ -733,6 +809,10 @@ VITE_APP_NAME=Platform Admin
   - Empty array → blank cell
 - Future days: blank cells (no records exist)
 - `overflow-x-auto` on all viewports — grid can be very wide (31 columns).
+
+**Sticky student column (CR-FE-019):**
+- Student column header: `sticky left-0 bg-muted/50 z-10 border-r border-border`.
+- Student name rowheader: `sticky left-0 bg-background z-10 border-r border-border`. No `truncate` on name or admission number spans — full text visible.
 
 **Form validation:**
 - `classId`: required
@@ -821,15 +901,25 @@ VITE_APP_NAME=Platform Admin
 
 ### Screen: Student Attendance History — Unchanged from v1.8
 
-### Screen: User Management — Unchanged from v1.8
+### Screen: User Management
 
-### Screen: Student Management — Unchanged from v1.8
+All behavior unchanged from v1.8. **ActionBtn label pattern (CR-FE-019):** `label="Edit roles"` + `ariaLabel="Edit roles for {user.name}"` and `label="Delete"` + `ariaLabel="Delete {user.name}"`. Table: `min-w-[560px]` on `<table>` element.
+
+### Screen: Student Management
+
+All behavior unchanged from v1.8. **ActionBtn label pattern (CR-FE-019):** `label="Edit"` + `ariaLabel="Edit {student.name}"`, `label="Delete"` + `ariaLabel="Delete {student.name}"`. Table: `min-w-[900px]` on `<table>` element. Student name `<td>`: `whitespace-nowrap`.
 
 ### Screen: Class Management — Unchanged from v1.8
 
+ActionBtn label pattern (CR-FE-019): `label="Edit"` + `ariaLabel="Edit {cls.name}"`, `label="Delete"` + `ariaLabel="Delete {cls.name}"`.
+
 ### Screens: Batch & Subject Management — Unchanged from v1.8
 
+ActionBtn label pattern (CR-FE-019): `label="Edit"` + `ariaLabel="Edit {item.name}"`, `label="Delete"` + `ariaLabel="Delete {item.name}"`.
+
 ### Screen: School Periods — Unchanged from v1.8
+
+ActionBtn label pattern (CR-FE-019): `label="Edit"` + `ariaLabel="Edit Period {period.periodNumber}"`, `label="Delete"` + `ariaLabel="Delete Period {period.periodNumber}"`.
 
 ### Screen: SuperAdmin Login — Unchanged from v1.8
 
@@ -1287,7 +1377,7 @@ window.addEventListener('ROLE_SWITCHED', () => {
 
 ---
 
-## 4.2 QUERYLIENT CONFIGURATION (LOCKED — CR-FE-017)
+## 4.2 QUERYCLIENT CONFIGURATION (LOCKED — CR-FE-017)
 
 ### QueryClient instantiation
 
@@ -1346,6 +1436,7 @@ Two tiers — applied via per-query `staleTime` override, not global:
 - **Timetable marking-status:** Marked today: `bg-green-100`, Unmarked today: `bg-yellow-50`, default (non-today / feature disabled): no override
 - **Attendance % null:** Display "—" (em dash), `text-muted-foreground`
 - **Contrast minimum:** 4.5:1 (WCAG 2.1 AA)
+- **Stat card accent borders (CR-FE-019):** Total Classes: `border-l-blue-400`, Present: `border-l-green-500`, Absent: `border-l-red-500`, Late: `border-l-yellow-500`
 
 ### Token System (LOCKED — CR-FE-017)
 
@@ -1437,9 +1528,9 @@ Shown only on `< md` breakpoint. Sidebar is hidden on mobile.
 - **Label:** Truncate at 10 characters, `text-[10px]` — e.g. "Monthly Sheet" → "Monthly"
 - **A11y:** `role="tablist"` on container, `aria-label` per tab, `aria-current="page"` on active tab, `min-h-[40px]` on each tab
 
-### `nav.ts` — Single Source of Truth (LOCKED — CR-FE-017)
+### `nav.ts` — Single Source of Truth (LOCKED — CR-FE-017, path corrected CR-FE-019)
 
-`src/app/nav.ts` is the **only** place nav items are defined. Both sidebar and BottomTabBar derive from it.
+`src/config/nav.ts` is the **only** place nav items are defined. Both sidebar and BottomTabBar derive from it.
 
 ```ts
 interface NavItem {
@@ -1490,7 +1581,7 @@ Error boundary: `<ErrorBoundary>` from `react-error-boundary` package (not a cus
 
 ---
 
-## 5.5 SHARED COMPONENT SPECIFICATIONS (LOCKED — CR-FE-017)
+## 5.5 SHARED COMPONENT SPECIFICATIONS (LOCKED — CR-FE-017, CR-FE-019)
 
 These components are **mandatory shared implementations**. No per-screen bespoke equivalents.
 
@@ -1556,6 +1647,24 @@ These components are **mandatory shared implementations**. No per-screen bespoke
 - **No custom class-component ErrorBoundary** — banned (§1.6)
 - Per-route: inline error card + Retry button as `fallbackRender`
 - Root: minimal fallback at `App.tsx`
+
+### SP11 — `<ActionBtn>` (CR-FE-019)
+
+Located in `src/components/manage/shared.tsx`. Used on all manage screen table rows.
+
+```ts
+interface ActionBtnProps {
+  onClick: () => void
+  label: string          // visible button text — MUST be short: "Edit", "Delete", "Edit roles"
+  ariaLabel?: string     // REQUIRED when label alone lacks context (e.g. "Edit {student.name}")
+  variant?: 'default' | 'destructive'
+  disabled?: boolean
+}
+```
+
+- `aria-label` resolves to `ariaLabel ?? label`.
+- **Rule:** When `label` is a short generic word ("Edit", "Delete"), `ariaLabel` **must** include the target name for screen reader context.
+- **Forbidden:** `label={\`Edit ${item.name}\`}` without `ariaLabel` — verbose visible text is a freeze violation (§13).
 
 ---
 
@@ -1631,6 +1740,7 @@ All custom hooks live in `src/hooks/`. No hook outside this list is authorised w
 - `min-h-[40px] min-w-[40px]` on **all** interactive elements (buttons, tabs, row actions, nav items) — WCAG minimum touch target
 - `aria-hidden="true"` on all decorative lucide icons beside text labels — prevents screen reader double-reading
 - Color is never the sole indicator — always pair with icon or text label (SB1 badges use text label + color)
+- **ActionBtn (CR-FE-019):** When `label` is short and generic ("Edit", "Delete"), `ariaLabel` prop is mandatory — screen reader must hear the target name
 
 **Async / loading:**
 - `aria-live="polite"` on all async status regions (loading → content transitions)
@@ -1653,6 +1763,7 @@ All custom hooks live in `src/hooks/`. No hook outside this list is authorised w
 - Event type badges: `aria-label="{type}"`
 - Events delete confirm: focus trap, Escape cancels, confirm button `aria-describedby` warning text
 - Timetable grid: `role="grid"`, empty cell: `aria-label="Add slot for {dayOfWeek} Period {n}"`
+- Timetable Delete button (CR-FE-019): `opacity-0` visually but always in DOM — keyboard users can reach it via Tab; `aria-label` unchanged
 
 **Motion:**
 - `prefers-reduced-motion`: disable `animate-spin`, top-loader animation, and all transitions for users who opt out
@@ -1754,6 +1865,7 @@ All v1.8 checklist items unchanged. Append:
 - **CR-FE-016e:** Teacher dashboard Class Rankings card renders top-5. Admin Attendance Summary Rankings tab renders paginated toppers. `attendancePercentage: null` displays "—".
 - **CR-FE-016f:** Monthly Sheet loads grid with all day columns (1–31). Teacher 403 on wrong subject → inline error (not full-page). `isCorrected: true` shows asterisk. Empty day cells render blank.
 - **CR-FE-016g:** Events CRUD — create with `endDate < startDate` → inline error. Delete → event removed from list. Teacher/Student sees Upcoming Events card on dashboard, cannot access `/manage/events`. Month navigation updates event list.
+- **CR-FE-019:** ActionBtn renders short label text. `aria-label` on button matches `ariaLabel` prop. Monthly Sheet student column is sticky on horizontal scroll. Timetable Delete button invisible until hover, reachable by keyboard.
 
 ---
 
@@ -1770,7 +1882,9 @@ All v1.8 checklist items unchanged. Append:
 │   ├── main.tsx
 │   ├── App.tsx
 │   ├── api/          # typed clients, endpoints map
-│   ├── components/   # shared UI components
+│   ├── components/   # shared UI components (PageHeader, ActionBtn, ConfirmDialog, etc.)
+│   ├── config/
+│   │   └── nav.ts    # SINGLE SOURCE for all nav items (sidebar + BottomTabBar)
 │   ├── features/
 │   │   ├── auth/
 │   │   ├── dashboard/
@@ -1779,8 +1893,8 @@ All v1.8 checklist items unchanged. Append:
 │   │   │   ├── record/
 │   │   │   ├── summary/
 │   │   │   ├── history/
-│   │   │   └── monthly-sheet/    # NEW CR-FE-016f
-│   │   ├── events/               # NEW CR-FE-016g
+│   │   │   └── monthly-sheet/    # CR-FE-016f
+│   │   ├── events/               # CR-FE-016g
 │   │   └── manage/
 │   ├── hooks/
 │   ├── styles/
@@ -1824,7 +1938,8 @@ All v1.8 checklist items unchanged. Append:
 - Write a custom class-component `ErrorBoundary` — use `react-error-boundary` package (CR-FE-017)
 - Use `useLocalStorage()` generic hook — only `localStorage.auth` / `localStorage.sa-auth` are authorised (CR-FE-017)
 - Use `useConfirm()` imperative hook — use SP6 `<ConfirmDialog>` everywhere (CR-FE-017)
-- Define nav items outside `src/app/nav.ts` — sidebar and BottomTabBar must derive from the same array (CR-FE-017)
+- Define nav items outside `src/config/nav.ts` — sidebar and BottomTabBar must derive from the same array (CR-FE-017, path corrected CR-FE-019)
+- Use verbose `label` prop on `<ActionBtn>` without `ariaLabel` — e.g. `label={\`Edit ${item.name}\`}` is banned; use `label="Edit" ariaLabel={\`Edit ${item.name}\`}` (CR-FE-019)
 
 **If requested:** create Change Request → re-price → approve/reject.
 
@@ -1841,7 +1956,7 @@ All v1.8 checklist items unchanged. Append:
 - **Cost impact:** {self-funded / N/A}
 - **Risk impact:** {Low/Medium/High}
 - **Decision:** Approved / Rejected
-- **New Freeze version:** {e.g., v2.1}
+- **New Freeze version:** {e.g., v2.2}
 - **Backend Freeze dependency:** unchanged / updated → backend Freeze version {value}
 - **OpenAPI dependency:** unchanged / updated → new OpenAPI version {value}
 
@@ -1864,7 +1979,8 @@ All v1.8 checklist items unchanged. Append:
 - **v1.9** (2026-03-08): Backend v4.5 sync (CR-33–38). CR-FE-016 (a/b/c/d/e/f/g) applied. Breaking: `TenantUser.studentId` field added (CR-38), CG-01 Student dashboard placeholder resolved. Additive: API-driven Admin stat bar (CR-35), Timetable marking-status color (CR-35), At-Risk streaks panel in Record Attendance (CR-33), Teacher Class Rankings card on Dashboard (CR-34), Admin Toppers Rankings tab in Attendance Summary (CR-34), Monthly Sheet screen `/attendance/monthly-sheet` Admin+Teacher (CR-36), Academic Calendar screen `/manage/events` Admin (CR-37), Upcoming Events card on Dashboard all roles (CR-37), Student self-streak badges on Dashboard (CR-33+38). 2 new routes, 6 new TQ keys, 5 new types. Timeline: 9–13 weeks + 18 days.
 - **v2.0** (2026-03-09): CR-FE-017 — Scofist Pattern Adoption. No API/backend changes. Implementation architecture locked: CSS token system, Montserrat font, top-loader, scrollbar utilities, sidebar implementation rules, BottomTabBar spec, `nav.ts` single-source rule, role badge color mapping, shared component specs (SP1–SP9 + react-error-boundary for SP10), hook inventory (HK1–HK6 with HK4/HK5 banned), QueryClient config (QC1–QC4, TanStack Query v5 `QueryCache({onError})` pattern), print rules (PR1–PR7), A11y additions (skip link, aria-live/busy, prefers-reduced-motion, aria-hidden on decorative icons, heading hierarchy, no tabindex>0, axe-core/playwright in CI), 5 new forbidden patterns. 6 Scofist patterns explicitly rejected.
 - **v2.1** (2026-03-09): CR-FE-018 — v2.0 Error Corrections. 6 bugs fixed: E1 `next/font` → `@fontsource/montserrat`, E2 invalid bare CSS in print block, E3 `VITE_API_BASE_URL` literal in static CSP `_headers`, E4 `class=` → `className=` in SP1/SP4 specs, E5 `BOTTOM_TAB_ITEMS` static pre-role-filter slice → `BOTTOM_TAB_NAV_ITEMS` with runtime filter, E6 corrupted v2.0 history entry. 1 omission fixed: O1 `next-themes` added to §1.6 stack table. No scope, API, or backend changes.
+- **v2.2** (2026-03-09): CR-FE-019 — UI Polish & Mobile Fixes. No API/backend/scope changes. CSS/props only. Changes: (A) `ActionBtn` SP11 formalised with `ariaLabel?` prop — separates visible label from accessible name; (B) all manage screen `<ActionBtn>` call sites updated to short labels + `ariaLabel`; (C) Students table `min-w-[900px]` + `whitespace-nowrap` on name `<td>`, Users table `min-w-[560px]`; (D) Monthly Sheet filter bar `grid grid-cols-2` on mobile, student column sticky with `sticky left-0 bg-background z-10 border-r`, `truncate` removed; (E) Attendance Summary `StatCard` `accentBorder?` prop with per-type left-border colors, rankings table `overflow-x-auto` + `min-w-[400px]` + name cell `min-w-[120px]`; (F) Record Attendance `StudentRow` name `break-words` instead of `truncate`; (G) Timetable `SlotCell` Delete button hover-reveal via `group`/`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100`; (H) path correction `src/app/nav.ts` → `src/config/nav.ts` in §5, §11, §13.
 
 ---
 
-**END OF FRONTEND FREEZE v2.1**
+**END OF FRONTEND FREEZE v2.2**

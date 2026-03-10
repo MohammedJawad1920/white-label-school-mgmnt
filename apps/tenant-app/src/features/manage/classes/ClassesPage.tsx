@@ -345,14 +345,16 @@ export default function ClassesPage() {
                         setDrawerError(null);
                         setEditClass(cls);
                       }}
-                      label={`Edit ${cls.name}`}
+                      label="Edit"
+                      ariaLabel={`Edit ${cls.name}`}
                     />
                     <ActionBtn
                       onClick={() => {
                         setDeleteError(null);
                         deleteMut.mutate(cls.id);
                       }}
-                      label={`Delete ${cls.name}`}
+                      label="Delete"
+                      ariaLabel={`Delete ${cls.name}`}
                       variant="destructive"
                       disabled={deleteMut.isPending}
                     />
