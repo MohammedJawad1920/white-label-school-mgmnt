@@ -3,10 +3,10 @@
 
 ---
 
-**Version:** 2.4 (IMMUTABLE)
+**Version:** 2.5 (IMMUTABLE)
 **Date:** 2026-03-10
 **Status:** APPROVED FOR EXECUTION
-**Supersedes:** v2.3 (2026-03-10)
+**Supersedes:** v2.4 (2026-03-10)
 **Backend Freeze:** v4.5 (2026-03-08)
 **OpenAPI:** v4.5.0
 
@@ -14,11 +14,65 @@
 
 ## CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI)
 
-This document is the **Absolute Source of Truth**. v2.3 is **SUPERSEDED**.
+This document is the **Absolute Source of Truth**. v2.4 is **SUPERSEDED**.
 
 You have **NO authority** to modify routes, API assumptions, or constraints defined below.
 
 If any request contradicts this document, you must **REFUSE** and open a **Change Request** instead.
+
+---
+
+## CHANGE SUMMARY: v2.4 → v2.5
+
+### Change Requests Applied
+
+| CR | Title | Type | Impact |
+|----|-------|------|--------|
+| **CR-FE-022** | Record Attendance: Admin-only access + Dashboard role separation | **Breaking scope change** — Teacher loses Record Attendance entirely | §1 Stories, §1 User Roles, §2 Route Map, §2.1 Dashboard, §2.1 Record Attendance, §5 nav.ts, §10 Tests, §13 |
+
+### What Changed
+
+**No API/backend changes. OpenAPI unchanged at v4.5.0.**
+
+This is a **breaking UX scope change**. Teacher loses the ability to record attendance.
+
+#### A. Record Attendance — Admin only
+
+`nav.ts` Record Attendance item: `allowedRoles: ["Teacher", "Admin"]` → `allowedRoles: ["Admin"]`.
+
+Consequence: route guard on `/attendance/record` for Teacher role automatically triggers inline "Not authorized for current role. Switch to Admin to access this page." — existing role guard handles this.
+
+Teacher sidebar: Record Attendance item removed.
+BottomTabBar Teacher: Record Attendance item removed. Teacher now has 3 non-sub-items (Dashboard, Timetable, Monthly Sheet) — all fit in 5 tabs, no More sheet overflow nav items.
+
+#### B. Dashboard — Admin: no slot cards
+
+Admin dashboard removes the slot list render entirely. The timetable query (`GET /timetable?dayOfWeek=today`) is still fired — it remains necessary to derive `uniqueClassIds` for `AdminStatBar`.
+
+**Admin dashboard after CR-FE-022:**
+- `AdminStatBar` (Marked / Unmarked counts) — kept
+- Slot list (`<SlotCard>` rows) — **removed**
+- `UpcomingEventsCard` — kept
+- `ClassRankingsCard` — never rendered for Admin (Teacher-only, unchanged)
+- Empty/loading/error state for slot list — removed from Admin branch
+
+`handleRecordAttendance` function and its `navigate("/attendance/record", ...)` call — removed from Admin dashboard entirely.
+
+#### C. Dashboard — Teacher: slot cards without Record Attendance CTA
+
+Teacher still sees today's own assigned slot cards (unchanged). `SlotCard` component's "Record Attendance" button is **removed** — Teacher can view periods but cannot initiate recording from dashboard or any other route.
+
+`SlotCard` component loses the `onRecordAttendance` prop and the `<button>` element entirely. The `handleRecordAttendance` callback is removed from the render tree that feeds Teacher slots.
+
+#### D. Stories and role table updated
+
+Story #2 (Teacher dashboard): CTA to record attendance removed.
+Story #6: Actor changes from "Teacher or Admin" to "Admin only".
+User Roles table: Teacher row — Record Attendance removed from sidebar items.
+
+#### E. Date picker — no change
+
+`RecordAttendancePage` date picker (`max={todayISO()}`, no `min`) is unchanged. Admin retains the ability to record for any past date. Teacher has no access to the page at all.
 
 ---
 
@@ -391,11 +445,11 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 ### The 18 Frontend User Stories (COMPLETE SCOPE)
 
 1. As a tenant user (Teacher, Admin, or Student), I can **log in with email/loginId, password, and school ID**, so that I access only my school's data.
-2. As a Teacher, I can **see today's own assigned classes on a role-specific dashboard** and navigate to record attendance.
+2. As a Teacher, I can **see today's own assigned classes on a role-specific dashboard** — read-only view of my period slots for the day.
 3. As an Admin, I can **see today's full schedule with an API-driven stat bar** (Total Periods / Marked / Unmarked) on a role-specific dashboard.
 4. As a Student, I can **see today's school-wide timetable (read-only) and my own recent attendance history** on my dashboard — using `studentId` from my JWT.
 5. As a Teacher or Admin, I can **view the full timetable grid** with marking-status color-coding on today's cells — Admin can add a slot by clicking an empty cell, and delete a slot by clicking a filled cell; to correct a slot's teacher or subject, Admin deletes and recreates the slot.
-6. As a Teacher or Admin, I can **record attendance for a class period**, and see an "At-Risk Students" panel showing students with consecutive absences ≥ 3.
+6. As an Admin, I can **record attendance for a class period** (any date up to today), and see an "At-Risk Students" panel showing students with consecutive absences ≥ 3.
 7. As an Admin, I can **view a student's full attendance history** and correct an individual record (with `originalStatus` preserved).
 8. As an Admin, I can **view a monthly attendance summary** for a student, and view a **ranked leaderboard** of students by attendance percentage for a class.
 9. As an Admin or Teacher, I can **view a monthly attendance grid** (student × day × period) for a class and subject at `/attendance/monthly-sheet`.
@@ -440,8 +494,8 @@ A web frontend for a white-label school management SaaS, enabling teachers to re
 
 | activeRole | Sidebar Items | Key Restrictions |
 |------------|---------------|------------------|
-| **Teacher** | Dashboard, Timetable, Record Attendance, Monthly Sheet | Timetable read-only; no attendance summary/history; Monthly Sheet restricted to own class+subject (403 handled inline) |
-| **Admin** | Dashboard, Timetable, Attendance Summary, Student Attendance History, Monthly Sheet, Manage (Users, Students, Classes, Batches, Subjects, School Periods), Events | Full access to all tenant app routes |
+| **Teacher** | Dashboard, Timetable, Monthly Sheet | Timetable read-only; dashboard shows own period slots (read-only, no record CTA); no Record Attendance route; Monthly Sheet restricted to own class+subject (403 handled inline) |
+| **Admin** | Dashboard, Timetable, Attendance Summary, Student Attendance History, Monthly Sheet, Record Attendance, Manage (Users, Students, Classes, Batches, Subjects, School Periods), Events | Dashboard shows stat bar only (no slot cards); full access to Record Attendance (any past date); full access to all other tenant app routes |
 | **Student** | Dashboard, Timetable | Timetable read-only; attendance self-view read-only; no record/manage/events/monthly-sheet actions |
 | **SuperAdmin** | *Isolated portal:* Tenants, Feature Flags | No tenant app access whatsoever |
 
@@ -579,7 +633,7 @@ VITE_APP_NAME=Platform Admin
 | `/login` | Tenant Login | Public | — |
 | `/` (dashboard) | Dashboard | Protected | Teacher, Admin, Student |
 | `/timetable` | Timetable | Protected | Teacher (read), Admin (r/w), Student (read) |
-| `/attendance/record` | Record Attendance | Protected | Teacher, Admin |
+| `/attendance/record` | Record Attendance | Protected | Admin only |
 | `/attendance/summary` | Attendance Summary | Protected | Admin only |
 | `/attendance/monthly-sheet` | Monthly Attendance Sheet | Protected | Admin, Teacher |
 | `/students/{studentId}/attendance` | Student Attendance History | Protected | Admin only |
@@ -645,8 +699,8 @@ VITE_APP_NAME=Platform Admin
 **Goal:** Role-specific view of today's schedule with relevant CTAs, upcoming events, and (for Teacher) class rankings.
 
 **API calls:**
-1. `GET /timetable?dayOfWeek={todayDayName}` — all roles
-   - `200` → render per-role content
+1. `GET /timetable?dayOfWeek={todayDayName}` — Teacher and Admin
+   - `200` → render per-role content (Teacher: slot cards; Admin: derive classIds for stat bar only — slot list not rendered)
    - `403 FEATURE_DISABLED` → full-page "Timetable feature not enabled"
    - `401` → session expiry flow.
 2. **Admin — stat bar (CR-FE-016c):** `GET /attendance/daily-summary?classId={classId}&date={today}` — one call per unique classId from timetable slots.
@@ -678,12 +732,13 @@ VITE_APP_NAME=Platform Admin
 **Role-specific content:**
 
 - **Teacher:**
-  - Slot cards filtered client-side: `slot.teacherId === currentUser.id`. "Record Attendance" CTA → `/attendance/record`. Empty: "No classes assigned to you today."
+  - Slot cards filtered client-side: `slot.teacherId === currentUser.id`. Slots are **read-only** — no "Record Attendance" CTA button. Empty: "No classes assigned to you today."
   - **Class Rankings card** (CR-FE-016e): Collapsed `<Accordion>` per unique classId. Header: "Class Rankings — {className}". On expand: top-5 student rows with rank badge + attendance %. If `attendancePercentage === null` → display "—". Link: "View full rankings →" (no route — same screen, no new route for Teacher).
   - **Upcoming Events card** (CR-FE-016g): see below.
 
-- **Admin:**
-  - All slots. Stat summary bar (CR-FE-016c): "Total Periods: {N} | Marked: {N} | Unmarked: {N}" — API-driven from daily-summary calls. Skeleton while loading. Error → stat bar hidden with muted "Could not load marking status."
+- **Admin (CR-FE-022):**
+  - **No slot cards rendered.** Timetable query still fires — `uniqueClassIds` derived from response feeds `AdminStatBar`.
+  - `AdminStatBar` (CR-FE-016c): "Total Periods: {N} | Marked: {N} | Unmarked: {N}" — API-driven. Skeleton while loading. Error → stat bar hidden with muted "Could not load marking status."
   - **Upcoming Events card** (CR-FE-016g): see below.
 
 - **Student:**
@@ -764,23 +819,22 @@ VITE_APP_NAME=Platform Admin
 
 ### Screen: Record Attendance
 
-**Goal:** Record attendance for all students in a selected class period. Show "At-Risk Students" streak panel (CR-FE-016d).
+**Goal:** Record attendance for a class period for any date up to today. Admin only. (CR-FE-022: Teacher access removed.)
 
 **API calls:**
-1. **Teacher:** `GET /timetable?teacherId={currentUser.id}&dayOfWeek={todayDayName}`
-   **Admin:** `GET /timetable?dayOfWeek={todayDayName}`
+1. `GET /timetable?dayOfWeek={todayDayName}` — Admin only (all slots)
 2. `GET /students?classId={selectedClassId}&limit=200`
 3. Per-student pre-fetch: `GET /students/{studentId}/attendance?from={date}&to={date}&limit=10` — auto-detect `alreadyRecorded`.
 4. **At-Risk streaks (CR-FE-016d):** `GET /attendance/streaks?timeSlotId={selectedTimeSlotId}` — fires when `selectedTimeSlotId` is set.
    - `200` → populate "At-Risk Students" panel. Filter client-side: `consecutiveAbsentCount >= AT_RISK_THRESHOLD` (constant: 3).
-   - `403 FORBIDDEN` (Teacher not assigned) → panel hidden silently.
+   - `403 FORBIDDEN` → panel hidden silently.
    - `403 FEATURE_DISABLED` → panel hidden silently.
 5. **Create mode:** `POST /attendance/record-class`
    - `201` → toast "{recorded} records saved. ({present} present, {absent} absent, {late} late)."
    - `400 FUTURE_DATE` → inline error
    - `409 CONFLICT` / `ATTENDANCE_ALREADY_RECORDED` → set `alreadyRecorded = true`
    - `403 FEATURE_DISABLED` → full-page gate
-   - `403` (not-assigned) → toast.
+   - `403` → toast.
 6. **Update mode:** Parallel `PUT /attendance/{recordId}` for each changed student.
    - `200` → invalidate `['student-attendance']`, toast "Attendance updated for {N} student(s)."
    - `400 SAME_STATUS` → inline per-student
@@ -789,34 +843,18 @@ VITE_APP_NAME=Platform Admin
 **Local state:** `selectedTimeSlotId`, `selectedDate` (default: today), `defaultStatus`, `exceptions: Map<studentId, AttendanceStatus>`, `submitError`, `successMsg`, `alreadyRecorded: boolean`
 
 **Server state:**
-- TQ key: `['timetable', { teacherId, dayOfWeek }]` (Teacher) / `['timetable', { dayOfWeek }]` (Admin). Stale: 5 min.
+- TQ key: `['timetable', { dayOfWeek }]` (Admin — all slots). Stale: 5 min.
 - TQ key: `['students', classId, id]`. Stale: 2 min.
 - TQ key: `['student-attendance', studentId, date, 'correction']` (per-student). Stale: 2 min.
 - TQ key: `['attendance-streaks', selectedTimeSlotId]`. Stale: 5 min. Enabled only when `selectedTimeSlotId !== null`.
 
-**At-Risk Students panel (CR-FE-016d):**
-- Collapsible `<Accordion>` below the slot/class selector, above the student list.
-- Header: "⚠ At-Risk Students ({N})". Collapsed by default.
-- Visible only when `selectedTimeSlotId` is set AND at least 1 student has `consecutiveAbsentCount >= 3`.
-- Rows: `{studentName}` + badge `{N} consecutive absent(s)` in `bg-red-100 text-red-800`.
-- `AT_RISK_THRESHOLD = 3` — defined as a named constant in `src/utils/attendance.ts`, not hardcoded in component.
-- Student role: panel not rendered (Teacher/Admin only — Student calls same endpoint but has different UI context per Story 18 / Dashboard).
-- Loading: 3 skeleton rows while streaks query is loading.
-- Error (403, 404, network): panel hidden silently — non-critical UI.
+**Date picker:** `max={todayISO()}`, no `min` — Admin can record for any past date. No role-based date restriction (Teacher has no access to this page).
 
-**Student row name (CR-FE-019):**
-- Student name `<span>` uses `break-words` instead of `truncate` — names wrap on narrow screens rather than being cut off.
+**At-Risk Students panel (CR-FE-016d):** — unchanged from v2.4.
 
-**Student row status buttons (CR-FE-020-B):**
-- Each status `<label>` renders a responsive label:
-  ```tsx
-  <span className="sm:hidden" aria-hidden="true">{status[0]}</span>
-  <span className="hidden sm:inline" aria-hidden="true">{status}</span>
-  ```
-- Mobile shows `P` / `A` / `L`. `sm+` shows `Present` / `Absent` / `Late`.
-- Button `min-w`: `min-w-[32px] sm:min-w-[60px]`.
-- `aria-label` on the hidden `<input type="radio">` is unchanged: `aria-label="{status} for {student.name}"` — full status name always announced by screen readers.
-- Both `<span>` elements carry `aria-hidden="true"` — the radio `aria-label` is the sole accessible name.
+**Student row name (CR-FE-019):** `break-words` on name span.
+
+**Student row status buttons (CR-FE-020-B):** Responsive abbreviation `P`/`A`/`L` on mobile.
 
 **Single action button:** (unchanged from v1.8)
 ```tsx
@@ -825,7 +863,7 @@ VITE_APP_NAME=Platform Admin
 
 **Form validation:** (unchanged from v1.8)
 
-**Permissions:** Teacher: own slots only. Admin: all slots. Student (direct URL): inline "Not authorized for current role."
+**Permissions:** Admin only. Teacher (direct URL) → inline "Not authorized for current role. Switch to Admin to access this page." Student (direct URL) → inline "Not authorized for current role."
 
 **A11y:** Each student row: `role="radiogroup"` with `aria-label="{studentName} attendance status"`. At-Risk accordion: `aria-expanded`. Streak badge: `aria-label="{N} consecutive absent day(s)"`. Panel: `role="region"` with `aria-label="At-risk students"`.
 
@@ -1638,9 +1676,9 @@ Respects `prefers-reduced-motion` — animation disabled when user opts out (§6
 - **Group divider:** Non-clickable `groupLabel` + `isSubItem` pattern for "Manage" section header
 - **Bottom of sidebar:** `RoleSwitcher` (Popover + Command, shown only when `user.roles.length > 1`) + user initials avatar + name + `activeRole` badge + logout
 - **Touch target:** `min-h-[40px]` on all nav items (WCAG 2.1 AA)
-- **v1.9 sidebar items:**
-  - Teacher: Dashboard, Timetable, Record Attendance, Monthly Sheet
-  - Admin: Dashboard, Timetable, Attendance Summary, Student Attendance History, Monthly Sheet, Manage (group with 6 sub-items), Events
+- **v1.9 sidebar items (updated CR-FE-022):**
+  - Teacher: Dashboard, Timetable, Monthly Sheet
+  - Admin: Dashboard, Timetable, Record Attendance, Attendance Summary, Student Attendance History, Monthly Sheet, Manage (group with 6 sub-items), Events
   - Student: Dashboard, Timetable
 
 ### BottomTabBar — Mobile (LOCKED — CR-FE-017, CR-FE-020, CR-FE-021)
@@ -1690,9 +1728,9 @@ The "More" tab is **always rendered** unconditionally.
    - `<RoleSwitcher variant="inline">` — rendered only when `user.roles.length > 1`
    - Logout button: `"Log out"` label, `LogOut` lucide icon, `text-destructive hover:bg-destructive/10`. On click: fire-and-forget `POST /auth/logout` → `queryClient.clear()` → clear `localStorage.auth` → navigate `/login`
 
-**Result per role:**
-- **Admin:** `moreItems` = Users, Students, Classes, Batches, Subjects, School Periods, Events (7 sub-items, all under "Manage" group header). All `/manage/*` routes reachable on mobile.
-- **Teacher:** `moreItems` = empty. Nav section hidden. Sheet shows only divider + user profile.
+**Result per role (CR-FE-022 updated):**
+- **Admin:** `moreItems` = Users, Students, Classes, Batches, Subjects, School Periods, Events (7 sub-items, all under "Manage" group header). All `/manage/*` routes reachable on mobile. Admin's 5 non-sub-items (Dashboard, Timetable, Record Attendance, Attendance Summary, Monthly Sheet) occupy all 5 tab slots.
+- **Teacher:** `moreItems` = empty. Teacher now has 3 non-sub-items (Dashboard, Timetable, Monthly Sheet) — all fit in 5 tabs. Nav section hidden. Sheet shows only divider + user profile.
 - **Student:** `moreItems` = empty. Sheet shows only divider + user profile.
 
 **Logout in "More" Sheet — implementation rules:**
@@ -2044,6 +2082,7 @@ All v1.8 checklist items unchanged. Append:
 - **CR-FE-020-A:** "More" tab visible on all mobile viewports regardless of nav item count. Logout button present in "More" Sheet → clicking clears auth, redirects `/login`, cache cleared. RoleSwitcher present in sheet only when `user.roles.length > 1`. No logout button visible on desktop (sidebar handles it). No `window.location.reload()` on logout.
 - **CR-FE-020-B:** At 375px, status buttons show `P`/`A`/`L`. At 640px+, show `Present`/`Absent`/`Late`. Screen reader announces full status name from radio `aria-label`. Student name no longer wraps badly at 375px with 3 status buttons.
 - **CR-FE-021:** Admin: "More" Sheet nav section shows Users, Students, Classes, Batches, Subjects, School Periods, Events under "Manage" group header. All `/manage/*` routes navigable from mobile. Teacher: More sheet nav section empty (all Teacher items fit in 5 tabs). Student: More sheet nav section empty. `BOTTOM_TAB_NAV_ITEMS.slice(5)` is not used anywhere for More sheet overflow derivation.
+- **CR-FE-022:** Teacher sidebar does not show "Record Attendance". Teacher navigating directly to `/attendance/record` → inline "Not authorized for current role." Admin sidebar shows "Record Attendance". Teacher dashboard `SlotCard` has no "Record Attendance" button — read-only display. Admin dashboard shows `AdminStatBar` but no slot card list. Admin `RecordAttendancePage` date picker allows past dates (`max={todayISO()}`, no `min`).
 
 ---
 
@@ -2122,6 +2161,10 @@ All v1.8 checklist items unchanged. Append:
 - Duplicate logout logic outside the shared pattern — mobile logout in "More" Sheet must use identical fire-and-forget + `queryClient.clear()` + `localStorage.auth` clear + navigate pattern as sidebar logout (CR-FE-020-A)
 - Render status button text without responsive abbreviation in `StudentRow` — full text `{status}` without `sm:hidden`/`hidden sm:inline` split is banned on mobile (CR-FE-020-B)
 - Derive More Sheet overflow from `BOTTOM_TAB_NAV_ITEMS.slice(5)` — this silently drops all `isSubItem` routes (Users, Students, Classes, etc.) from mobile; overflow must derive from `NAV_ITEMS` filtered by role minus `visibleUrls` (CR-FE-021)
+- Show "Record Attendance" nav item to Teacher — Teacher role is removed from `allowedRoles` for this route (CR-FE-022)
+- Render "Record Attendance" CTA button on `SlotCard` in the Teacher dashboard — Teacher slot cards are read-only display only (CR-FE-022)
+- Render today's slot list on Admin dashboard — Admin dashboard shows `AdminStatBar` only; slot card list is removed for Admin role (CR-FE-022)
+- Apply Teacher-role-specific date restrictions on `RecordAttendancePage` — Teacher has no access to this page; Admin date picker is `max={todayISO()}` with no `min` (CR-FE-022)
 
 **If requested:** create Change Request → re-price → approve/reject.
 
@@ -2164,7 +2207,8 @@ All v1.8 checklist items unchanged. Append:
 - **v2.2** (2026-03-09): CR-FE-019 — UI Polish & Mobile Fixes. No API/backend/scope changes. CSS/props only. Changes: (A) `ActionBtn` SP11 formalised with `ariaLabel?` prop — separates visible label from accessible name; (B) all manage screen `<ActionBtn>` call sites updated to short labels + `ariaLabel`; (C) Students table `min-w-[900px]` + `whitespace-nowrap` on name `<td>`, Users table `min-w-[560px]`; (D) Monthly Sheet filter bar `grid grid-cols-2` on mobile, student column sticky with `sticky left-0 bg-background z-10 border-r`, `truncate` removed; (E) Attendance Summary `StatCard` `accentBorder?` prop with per-type left-border colors, rankings table `overflow-x-auto` + `min-w-[400px]` + name cell `min-w-[120px]`; (F) Record Attendance `StudentRow` name `break-words` instead of `truncate`; (G) Timetable `SlotCell` Delete button hover-reveal via `group`/`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100`; (H) path correction `src/app/nav.ts` → `src/config/nav.ts` in §5, §11, §13.
 - **v2.3** (2026-03-10): CR-FE-020 — Mobile UX gaps. No API/backend/scope changes. (020-A) "More" tab always rendered unconditionally; "More" Sheet gains persistent user profile section at bottom: avatar + name + `<RoleBadge>` + `<RoleSwitcher>` (conditional on `user.roles.length > 1`) + Logout button with identical fire-and-forget + `queryClient.clear()` + `localStorage.auth` clear + navigate logic as sidebar. Fixes logout and role-switch inaccessibility on mobile. (020-B) `StudentRow` status buttons responsive abbreviation: `P`/`A`/`L` on mobile (`sm:hidden`) vs `Present`/`Absent`/`Late` on `sm+` (`hidden sm:inline`), both spans `aria-hidden`; button `min-w-[32px] sm:min-w-[60px]`; radio `aria-label` unchanged. Fixes student name row crowding at 375px.
 - **v2.4** (2026-03-10): CR-FE-021 — More Sheet overflow source fix. No API/backend/scope changes. Root cause: `BOTTOM_TAB_NAV_ITEMS = NAV_ITEMS.filter(!isSubItem)` yields exactly 5 Admin items — all 5 consumed by `visibleTabs`, leaving `overflowTabs = []`. The 7 sub-items (Users, Students, Classes, Batches, Subjects, School Periods, Events) were completely unreachable on mobile. Fix: More Sheet overflow derived from `NAV_ITEMS.filter(role).filter(url not in visibleUrls)` — includes sub-items. Group headers rendered on `groupLabel` change (same pattern as Sidebar). Sub-items indented with `pl-6`. Banned: `BOTTOM_TAB_NAV_ITEMS.slice(5)` as overflow source.
+- **v2.5** (2026-03-10): CR-FE-022 — Record Attendance: Admin-only access + Dashboard role separation. **Breaking scope change.** Teacher loses Record Attendance entirely. Changes: (A) nav.ts Record Attendance `allowedRoles` → `["Admin"]`; Teacher sidebar/BottomTabBar no longer shows Record Attendance; Teacher at `/attendance/record` → inline "Not authorized"; (B) Admin dashboard: slot card list removed, timetable query retained to feed `AdminStatBar`; (C) Teacher dashboard `SlotCard`: "Record Attendance" CTA button removed — slot cards are read-only display; (D) `RecordAttendancePage` timetable query simplified to Admin-only (no `teacherId` filter branch); (E) Story #2 updated (Teacher dashboard read-only), Story #6 updated (Admin only). User Roles table updated. Route map updated.
 
 ---
 
-**END OF FRONTEND FREEZE v2.4**
+**END OF FRONTEND FREEZE v2.5**

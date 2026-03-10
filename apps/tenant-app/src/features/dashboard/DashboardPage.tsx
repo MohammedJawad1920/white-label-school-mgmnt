@@ -7,7 +7,6 @@
  *   Student → today's timetable (read-only) + live attendance history + streak badges
  *   All     → Upcoming Events card (CR-FE-016g)
  */
-import { useNavigate } from "react-router-dom";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import { timetableApi } from "@/api/timetable";
 import { attendanceApi } from "@/api/attendance";
@@ -124,10 +123,9 @@ interface SlotCardProps {
     teacherName?: string;
     dayOfWeek: string;
   };
-  onRecordAttendance: (slotId: string) => void;
 }
 
-function SlotCard({ slot, onRecordAttendance }: SlotCardProps) {
+function SlotCard({ slot }: SlotCardProps) {
   const timeLabel =
     slot.startTime && slot.endTime
       ? `${slot.startTime} – ${slot.endTime}`
@@ -158,29 +156,6 @@ function SlotCard({ slot, onRecordAttendance }: SlotCardProps) {
             </p>
           )}
         </div>
-
-        {/* Record Attendance CTA */}
-        <button
-          onClick={() => onRecordAttendance(slot.id)}
-          aria-label={`Record attendance for ${slot.className ?? ""} ${slot.subjectName ?? ""} Period ${slot.periodNumber}`}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-h-[36px]"
-        >
-          <svg
-            className="h-3.5 w-3.5"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          Record Attendance
-        </button>
       </div>
     </article>
   );
@@ -577,7 +552,6 @@ function StudentDashboard() {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["timetable", { dayOfWeek: todayDayOfWeek() }],
@@ -627,12 +601,7 @@ export default function DashboardPage() {
   // Map classId → className for display in rankings card
   const classNameMap: Record<string, string> = {};
   for (const s of slots) {
-    if (!classNameMap[s.classId]) classNameMap[s.classId] = s.className;
-  }
-
-  function handleRecordAttendance(slotId: string) {
-    // Navigate to record page with slotId pre-selected via state
-    navigate("/attendance/record", { state: { slotId } });
+    if (!classNameMap[s.classId]) classNameMap[s.classId] = s.className ?? s.classId;
   }
 
   return (
@@ -651,41 +620,43 @@ export default function DashboardPage() {
         !isLoading &&
         uniqueClassIds.length > 0 && <AdminStatBar classIds={uniqueClassIds} />}
 
-      {/* Loading */}
-      {isLoading && (
-        <div
-          className="space-y-3"
-          aria-label="Loading timetable"
-          aria-busy="true"
-        >
-          <SlotSkeleton />
-          <SlotSkeleton />
-          <SlotSkeleton />
-        </div>
-      )}
+      {/* Teacher: slot list (CR-FE-022 — Admin no longer sees slot cards) */}
+      {user?.activeRole === "Teacher" && (
+        <>
+          {/* Loading */}
+          {isLoading && (
+            <div
+              className="space-y-3"
+              aria-label="Loading timetable"
+              aria-busy="true"
+            >
+              <SlotSkeleton />
+              <SlotSkeleton />
+              <SlotSkeleton />
+            </div>
+          )}
 
-      {/* Error */}
-      {isError && apiError?.code !== "FEATURE_DISABLED" && (
-        <ErrorState onRetry={() => void refetch()} />
-      )}
+          {/* Error */}
+          {isError && apiError?.code !== "FEATURE_DISABLED" && (
+            <ErrorState onRetry={() => void refetch()} />
+          )}
 
-      {/* Empty */}
-      {!isLoading && !isError && slots.length === 0 && <EmptyState />}
+          {/* Empty */}
+          {!isLoading && !isError && slots.length === 0 && <EmptyState />}
 
-      {/* Slot list */}
-      {!isLoading && !isError && slots.length > 0 && (
-        <div className="space-y-3" role="list" aria-label="Today's classes">
-          {slots
-            .sort((a, b) => a.periodNumber - b.periodNumber)
-            .map((slot) => (
-              <div key={slot.id} role="listitem">
-                <SlotCard
-                  slot={slot}
-                  onRecordAttendance={handleRecordAttendance}
-                />
-              </div>
-            ))}
-        </div>
+          {/* Slot list — read-only (no Record Attendance CTA, CR-FE-022) */}
+          {!isLoading && !isError && slots.length > 0 && (
+            <div className="space-y-3" role="list" aria-label="Today's classes">
+              {slots
+                .sort((a, b) => a.periodNumber - b.periodNumber)
+                .map((slot) => (
+                  <div key={slot.id} role="listitem">
+                    <SlotCard slot={slot} />
+                  </div>
+                ))}
+            </div>
+          )}
+        </>
       )}
 
       {/* Teacher: Class Rankings card (CR-FE-016e) */}

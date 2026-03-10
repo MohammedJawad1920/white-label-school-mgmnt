@@ -62,7 +62,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     label: "Record Attendance",
     url: "/attendance/record",
-    allowedRoles: ["Teacher", "Admin"],
+    allowedRoles: ["Admin"],
     icon: ClipboardCheck,
   },
   {
