@@ -107,27 +107,29 @@ interface SlotCellProps {
 }
 
 function SlotCell({ slot, isAdmin, onDelete, markingStatus }: SlotCellProps) {
-  const bg =
+  const style =
     markingStatus === "marked"
-      ? "bg-green-100"
+      ? "border-l-green-500 bg-green-100 dark:bg-green-900/40"
       : markingStatus === "unmarked"
-        ? "bg-yellow-50"
-        : "bg-primary/5";
+        ? "border-l-amber-400 bg-amber-100 border-amber-200 dark:bg-yellow-900/30 dark:border-amber-700"
+        : "border-l-primary/70 bg-slate-100 border-slate-200 dark:bg-slate-800/60 dark:border-slate-700";
   return (
-    <div className={`rounded border ${bg} p-2 text-xs space-y-1 h-full group`}>
-      <p className="font-medium truncate">{slot.className}</p>
-      <p className="text-muted-foreground truncate">{slot.subjectName}</p>
-      <p className="text-muted-foreground truncate">{slot.teacherName}</p>
+    <div
+      className={`rounded-md border border-l-2 ${style} px-2 py-1.5 text-xs group shadow-sm text-foreground`}
+    >
+      <p className="font-semibold text-foreground leading-snug">
+        {slot.className}
+      </p>
+      <p className="text-muted-foreground leading-snug">{slot.subjectName}</p>
+      <p className="text-muted-foreground leading-snug">{slot.teacherName}</p>
       {isAdmin && (
-        <div className="flex flex-col gap-1 mt-1">
-          <button
-            onClick={() => onDelete(slot)}
-            aria-label={`Delete slot: ${slot.className} ${slot.subjectName} Period ${slot.periodNumber}`}
-            className="rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive hover:bg-destructive/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all"
-          >
-            Delete
-          </button>
-        </div>
+        <button
+          onClick={() => onDelete(slot)}
+          aria-label={`Delete slot: ${slot.className} ${slot.subjectName} Period ${slot.periodNumber}`}
+          className="mt-1 rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive hover:bg-destructive/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all"
+        >
+          Delete
+        </button>
       )}
     </div>
   );
@@ -426,7 +428,7 @@ export default function TimetablePage() {
                   <div
                     key={period.id}
                     role="row"
-                    className="flex border-b last:border-b-0 min-h-[72px]"
+                    className="flex border-b last:border-b-0"
                   >
                     {/* Period header cell */}
                     <div
@@ -455,21 +457,25 @@ export default function TimetablePage() {
                           key={day}
                           role="gridcell"
                           className={[
-                            "flex-1 min-w-[120px] p-1.5 border-l space-y-1",
-                            isAdmin && cellIsEmpty
+                            "flex-1 min-w-[120px] p-1.5 border-l flex flex-col gap-2",
+                            isAdmin && cellIsEmpty && !!filterClassId
                               ? "cursor-pointer hover:bg-muted/30 border-dashed transition-colors group"
                               : "",
                           ]
                             .filter(Boolean)
                             .join(" ")}
                           aria-label={
-                            isAdmin && cellIsEmpty
+                            isAdmin && cellIsEmpty && !!filterClassId
                               ? `Add slot for ${day} Period ${period.periodNumber}`
                               : `${day} Period ${period.periodNumber}`
                           }
-                          tabIndex={isAdmin && cellIsEmpty ? 0 : undefined}
+                          tabIndex={
+                            isAdmin && cellIsEmpty && !!filterClassId
+                              ? 0
+                              : undefined
+                          }
                           onClick={
-                            isAdmin && cellIsEmpty
+                            isAdmin && cellIsEmpty && !!filterClassId
                               ? () =>
                                   setActiveCell({
                                     dayOfWeek: day,
@@ -478,7 +484,7 @@ export default function TimetablePage() {
                               : undefined
                           }
                           onKeyDown={
-                            isAdmin && cellIsEmpty
+                            isAdmin && cellIsEmpty && !!filterClassId
                               ? (e) => {
                                   if (e.key === "Enter" || e.key === " ") {
                                     e.preventDefault();
@@ -491,7 +497,7 @@ export default function TimetablePage() {
                               : undefined
                           }
                         >
-                          {cellIsEmpty && isAdmin && (
+                          {cellIsEmpty && isAdmin && !!filterClassId && (
                             <div
                               className="flex min-h-[56px] items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity pointer-events-none"
                               aria-hidden="true"

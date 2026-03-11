@@ -154,7 +154,7 @@ function TodayTimetableGridSkeleton({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[500px] border-collapse">
+      <table className="w-full min-w-[360px] border-collapse">
         <thead>
           <tr>
             <th className="w-24" />
@@ -223,10 +223,13 @@ function TimetableCell({
 
   // Cell background based on state
   const cellBg = (() => {
-    if (!summary) return "bg-yellow-50 border-yellow-200"; // no summary yet = unmarked
-    if (summary.attendanceMarked) return "bg-green-100 border-green-200";
-    if (overdue) return "bg-orange-50 border-orange-300";
-    return "bg-yellow-50 border-yellow-200";
+    if (!summary)
+      return "bg-yellow-50 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800";
+    if (summary.attendanceMarked)
+      return "bg-green-100 border-green-200 dark:bg-green-900/40 dark:border-green-800";
+    if (overdue)
+      return "bg-orange-50 border-orange-300 dark:bg-orange-900/30 dark:border-orange-700";
+    return "bg-yellow-50 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800";
   })();
 
   const cursorCls = isClickable
@@ -510,11 +513,11 @@ export default function TodayTimetableGrid({
       <div
         className={`overflow-x-auto ${mobileView === "list" ? "hidden sm:block" : ""}`}
       >
-        <table className="w-full min-w-[500px] border-collapse text-xs">
+        <table className="w-full min-w-[360px] border-collapse text-xs">
           <thead>
             <tr>
               {/* Class name column header */}
-              <th className="sticky left-0 bg-background z-10 border-b border-r border-border px-3 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap min-w-[100px]">
+              <th className="sticky left-0 bg-background z-10 border-b border-r border-border px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap w-[72px] max-w-[72px]">
                 Class
               </th>
               {periodNums.map((pn) => {
@@ -522,7 +525,7 @@ export default function TodayTimetableGrid({
                 return (
                   <th
                     key={pn}
-                    className="border-b border-border px-2 py-2 text-center font-medium text-muted-foreground whitespace-nowrap min-w-[90px]"
+                    className="border-b border-border px-1.5 py-2 text-center font-medium text-muted-foreground whitespace-nowrap min-w-[72px]"
                   >
                     <div>P{pn}</div>
                     {p && (
@@ -539,7 +542,7 @@ export default function TodayTimetableGrid({
             {classRows.map(([classId, className]) => (
               <tr key={classId}>
                 {/* Class name cell (sticky) */}
-                <td className="sticky left-0 bg-background z-10 border-r border-border px-3 py-2 text-sm font-medium whitespace-nowrap min-w-[100px]">
+                <td className="sticky left-0 bg-background z-10 border-r border-border px-2 py-2 text-xs font-medium whitespace-nowrap w-[72px] max-w-[72px] truncate">
                   {className}
                 </td>
                 {/* Period cells */}

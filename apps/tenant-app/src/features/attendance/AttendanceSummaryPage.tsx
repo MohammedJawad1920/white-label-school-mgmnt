@@ -304,7 +304,7 @@ function RankingsTab() {
                     </div>
                     <div
                       role="cell"
-                      className="px-3 py-2.5 font-medium min-w-[120px]"
+                      className="flex-1 px-3 py-2.5 font-medium min-w-0 truncate"
                     >
                       {t.studentName}
                     </div>

@@ -3,10 +3,10 @@
 
 ---
 
-**Version:** 2.7 (IMMUTABLE)
+**Version:** 2.8 (IMMUTABLE)
 **Date:** 2026-03-11
 **Status:** APPROVED FOR EXECUTION
-**Supersedes:** v2.6 (2026-03-10)
+**Supersedes:** v2.7 (2026-03-11)
 **Backend Freeze:** v4.8 (2026-03-10)
 **OpenAPI:** v4.8.0
 
@@ -14,11 +14,165 @@
 
 ## CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI)
 
-This document is the **Absolute Source of Truth**. v2.6 is **SUPERSEDED**.
+This document is the **Absolute Source of Truth**. v2.7 is **SUPERSEDED**.
 
 You have **NO authority** to modify routes, API assumptions, or constraints defined below.
 
 If any request contradicts this document, you must **REFUSE** and open a **Change Request** instead.
+
+---
+
+## CHANGE SUMMARY: v2.7 → v2.8
+
+### Backend Contract Aligned To
+- **Backend Freeze:** v4.8 (unchanged)
+- **OpenAPI:** v4.8.0 (unchanged)
+- **No backend/API changes.** All five CRs are frontend-only visual/UX bug fixes.
+
+### Change Requests Applied
+
+| CR | Title | Type | Impact |
+|----|-------|------|--------|
+| **CR-FE-028a** | Timetable: + icon gated on class filter selection | Bug fix — UX correctness | `TimetablePage.tsx` — add-slot affordance guard |
+| **CR-FE-028b** | Timetable: multi-slot cell overflow | Bug fix — layout | `TimetablePage.tsx` — `SlotCell` + gridcell row height |
+| **CR-FE-028c** | Timetable: dark-theme text invisible in grid cells | Bug fix — visual/A11y | `TimetablePage.tsx` — `SlotCell` background tokens |
+| **CR-FE-028d** | Dashboard: Today's Timetable class column oversized on mobile | Bug fix — mobile UX | `TodayTimetableGrid.tsx` — sticky column width + table min-width |
+| **CR-FE-028e** | Attendance Summary Rankings: row data misaligned with headers | Bug fix — layout | `AttendanceSummaryPage.tsx` — Student cell `flex-1` |
+
+### What Changed
+
+**No API, OpenAPI, or backend Freeze changes.** All five CRs are targeted bug fixes to visual rendering and layout — zero state management, routing, or API surface changes.
+
+---
+
+#### CR-FE-028a — Timetable: + icon gated on class filter selection
+
+**Root cause:** The add-slot affordance (+ icon on empty cells, `cursor-pointer`, click handler, `tabIndex`) was shown whenever `isAdmin && cellIsEmpty`, regardless of which filter was active. A teacher filter without a class filter would show the affordance, but `CreateSlotDrawer` requires a class pre-selection. The prompt message "Select a class or teacher to view the timetable" already implies class-required intent; the drawer behaviour confirms it.
+
+**Fix:** Add `!!filterClassId` to every `isAdmin && cellIsEmpty` compound guard in `TimetablePage.tsx`.
+
+**Contract (LOCKED):**
+- All four locations of the guard must be updated atomically: `className` cursor/hover class, `aria-label`, `tabIndex`, `onClick`/`onKeyDown` handler, and the inner `+` SVG icon div.
+- The empty-cell click path — `setActiveCell({ dayOfWeek, periodNumber })` → `CreateSlotDrawer` — is unchanged.
+- Teacher filter without class filter: cells render non-interactive (read-only) as before. No new UX state introduced.
+- `filterDefaults.classId` passed to `CreateSlotDrawer` is already populated by `filterClassId` — no change required to drawer.
+
+```diff
+- isAdmin && cellIsEmpty
++ isAdmin && cellIsEmpty && !!filterClassId
+```
+Apply to all 4 compound guard sites in the gridcell `<div>`.
+
+---
+
+#### CR-FE-028b — Timetable: multi-slot cell overflow
+
+**Root cause:** `SlotCell` used `h-full` forcing each card to fill the full row height. When multiple slots stack inside a single gridcell (`space-y-1`), only the first card was fully visible; subsequent cards were clipped. The row's `min-h-[72px]` was a floor, not a fixed height, but `h-full` on `SlotCell` referenced the gridcell's rendered height (the floor), causing overlap artefacts when multiple cards existed.
+
+**Fix:**
+
+1. Remove `min-h-[72px]` from the period row `<div role="row">` — rows auto-size to content.
+2. Remove `h-full` from `SlotCell`'s outer `<div>` — card sizes to its own content.
+
+**Contract (LOCKED):**
+```diff
+// Period row
+- className="flex border-b last:border-b-0 min-h-[72px]"
++ className="flex border-b last:border-b-0"
+
+// SlotCell outer div
+- <div className={`rounded border ${bg} p-2 text-xs space-y-1 h-full group`}>
++ <div className={`rounded border ${bg} p-2 text-xs space-y-1 group`}>
+```
+The gridcell `p-1.5 space-y-1` already provides inter-card spacing. Single-slot cells retain natural height from content.
+
+---
+
+#### CR-FE-028c — Timetable: dark-theme text invisible in grid cells
+
+**Root cause:** `SlotCell` background classes (`bg-green-100`, `bg-yellow-50`, `bg-primary/5`) are light-mode-only Tailwind utilities. In dark mode the backgrounds remain light-coloured while the foreground tokens (`text-muted-foreground`) become near-white — near-zero contrast. No `dark:` variant was specified. This is a WCAG 1.4.3 (Contrast Minimum) violation under the v2.0-locked WCAG 2.1 AA baseline.
+
+**Fix:** Add `dark:` variants to all three background states and add `text-foreground` to the card root to override any inherited muted foreground colour.
+
+**Contract (LOCKED — `TimetablePage.tsx` `SlotCell` component):**
+```diff
+- const bg =
+-   markingStatus === "marked"
+-     ? "bg-green-100"
+-     : markingStatus === "unmarked"
+-       ? "bg-yellow-50"
+-       : "bg-primary/5";
++ const bg =
++   markingStatus === "marked"
++     ? "bg-green-100 dark:bg-green-900/40"
++     : markingStatus === "unmarked"
++       ? "bg-yellow-50 dark:bg-yellow-900/30"
++       : "bg-primary/5 dark:bg-primary/10";
+
+- <div className={`rounded border ${bg} p-2 text-xs space-y-1 group`}>
++ <div className={`rounded border ${bg} p-2 text-xs space-y-1 group text-foreground`}>
+```
+`text-foreground` uses the CSS custom property token `--foreground` defined in the v2.0-locked token system — it correctly inverts between light and dark themes without any additional changes.
+
+Same dark-mode token pattern must be applied to the equivalent cell backgrounds in `TodayTimetableGrid.tsx` (`TimetableCell` component):
+
+| State | Current | Add dark variant |
+|-------|---------|-----------------|
+| Marked | `bg-green-100 border-green-200` | `dark:bg-green-900/40 dark:border-green-800` |
+| Unmarked / ongoing | `bg-yellow-50 border-yellow-200` | `dark:bg-yellow-900/30 dark:border-yellow-800` |
+| Unmarked / overdue | `bg-orange-50 border-orange-300` | `dark:bg-orange-900/30 dark:border-orange-700` |
+| No summary | `bg-yellow-50 border-yellow-200` | same as unmarked |
+
+---
+
+#### CR-FE-028d — Dashboard: Today's Timetable class column oversized on mobile
+
+**Root cause:** The sticky class column header and data cells used `min-w-[100px]` with `px-3` padding. At 320 px (minimum tested viewport) this consumed ~31% of the viewport for the label column alone, leaving insufficient width for period cells. Short class names (e.g. "pg 1st") fit in ~72 px.
+
+**Fix:** Constrain the sticky class column to a fixed `w-[72px] max-w-[72px]`, tighten horizontal padding to `px-2`, reduce text from `text-sm` to `text-xs` for data cells, and reduce overall table `min-width` from `500px` to `360px`.
+
+**Contract (LOCKED — `TodayTimetableGrid.tsx`):**
+```diff
+// Class column — header <th>
+- className="sticky left-0 bg-background z-10 border-b border-r border-border px-3 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap min-w-[100px]"
++ className="sticky left-0 bg-background z-10 border-b border-r border-border px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap w-[72px] max-w-[72px]"
+
+// Class column — data <td>
+- className="sticky left-0 bg-background z-10 border-r border-border px-3 py-2 text-sm font-medium whitespace-nowrap min-w-[100px]"
++ className="sticky left-0 bg-background z-10 border-r border-border px-2 py-2 text-xs font-medium whitespace-nowrap w-[72px] max-w-[72px] truncate"
+
+// Period header cells <th>
+- className="border-b border-border px-2 py-2 text-center font-medium text-muted-foreground whitespace-nowrap min-w-[90px]"
++ className="border-b border-border px-1.5 py-2 text-center font-medium text-muted-foreground whitespace-nowrap min-w-[72px]"
+
+// Table root
+- <table className="w-full min-w-[500px] border-collapse text-xs">
++ <table className="w-full min-w-[360px] border-collapse text-xs">
+```
+
+Also update the **skeleton** `TodayTimetableGridSkeleton`:
+```diff
+- <table className="w-full min-w-[500px] border-collapse">
++ <table className="w-full min-w-[360px] border-collapse">
+```
+
+The `§C` spec (`min-w-[100px]`) in v2.6 change summary is superseded by this fix. The authoritative value is now `w-[72px] max-w-[72px]` with `px-2` padding.
+
+---
+
+#### CR-FE-028e — Attendance Summary Rankings: row data misaligned with headers
+
+**Root cause:** The Rankings table header Student column used `flex-1` to fill remaining space between the `#` (w-12) and `Attended` / `%` (w-24 each) columns. The data row Student cell used only `px-3 py-2.5 font-medium min-w-[120px]` — no `flex-1`. In a flex row layout without explicit width, a missing `flex-1` on the data cell causes it to collapse to its content width, misaligning all subsequent cells.
+
+**Fix:** Add `flex-1 min-w-0` to the Student data cell and remove `min-w-[120px]` (redundant once `flex-1` is applied; `min-w-0` is required to allow `truncate` inside a flex child).
+
+**Contract (LOCKED — `AttendanceSummaryPage.tsx` `RankingsTab` data rows):**
+```diff
+- <div role="cell" className="px-3 py-2.5 font-medium min-w-[120px]">
++ <div role="cell" className="flex-1 px-3 py-2.5 font-medium min-w-0 truncate">
+```
+
+The header `<div role="columnheader" className="flex-1 px-3 py-2">Student</div>` is **unchanged** — it already has `flex-1`.
 
 ---
 
@@ -134,13 +288,13 @@ for (const q of dailySummaryQueries) {
 
 **Cell states:**
 
-| State | Background | Content |
-|---|---|---|
-| Marked, 0 absent | `bg-green-100 border-green-200` | Subject · Teacher |
-| Marked, N absent | `bg-green-100 border-green-200` | Subject · Teacher · 🔴 **N** badge |
-| Unmarked, period ongoing/future | `bg-yellow-50 border-yellow-200` | Subject · Teacher · ⏳ |
-| Unmarked, period overdue (Improvement B) | `bg-orange-50 border-orange-300` | Subject · Teacher · ⚠ Overdue |
-| Empty (no slot) | `bg-muted/20 border-transparent` | — |
+| State | Background (light) | Background (dark — CR-FE-028c) | Content |
+|---|---|---|---|
+| Marked, 0 absent | `bg-green-100 border-green-200` | `dark:bg-green-900/40 dark:border-green-800` | Subject · Teacher |
+| Marked, N absent | `bg-green-100 border-green-200` | `dark:bg-green-900/40 dark:border-green-800` | Subject · Teacher · 🔴 **N** badge |
+| Unmarked, period ongoing/future | `bg-yellow-50 border-yellow-200` | `dark:bg-yellow-900/30 dark:border-yellow-800` | Subject · Teacher · ⏳ |
+| Unmarked, period overdue (Improvement B) | `bg-orange-50 border-orange-300` | `dark:bg-orange-900/30 dark:border-orange-700` | Subject · Teacher · ⚠ Overdue |
+| Empty (no slot) | `bg-muted/20 border-transparent` | *(token-based — no change needed)* | — |
 
 **Overdue logic (Improvement B — client-side only):**
 ```ts
@@ -267,11 +421,12 @@ List view renders the same slot data as simple cards (subject · teacher · badg
 **Mobile — sticky first column:**
 ```tsx
 // Class name column (Y axis label)
-<td className="sticky left-0 bg-background z-10 border-r border-border px-3 py-2 text-sm font-medium whitespace-nowrap min-w-[100px]">
+// ⚠️ SUPERSEDED by CR-FE-028d (v2.8): authoritative class is now w-[72px] max-w-[72px] px-2 text-xs truncate
+<td className="sticky left-0 bg-background z-10 border-r border-border px-2 py-2 text-xs font-medium whitespace-nowrap w-[72px] max-w-[72px] truncate">
   {className}
 </td>
 ```
-Same pattern already locked for Monthly Sheet (CR-FE-019-D).
+Same sticky pattern already locked for Monthly Sheet (CR-FE-019-D).
 
 ---
 
@@ -2728,7 +2883,8 @@ All v1.8 checklist items unchanged. Append:
 - **v2.5** (2026-03-10): CR-FE-022 — Record Attendance: Admin-only access + Dashboard role separation. Breaking scope change. Teacher loses Record Attendance entirely. Changes: (A) nav.ts Record Attendance `allowedRoles` → `["Admin"]`; (B) Admin dashboard: slot card list removed, timetable query retained to feed `AdminStatBar`; (C) Teacher dashboard `SlotCard`: "Record Attendance" CTA button removed — slot cards read-only; (D) `RecordAttendancePage` simplified to Admin-only; (E) Stories + roles updated.
 - **v2.6** (2026-03-10): CR-FE-023 — Dashboard redesign + Teacher Record Attendance restore. Aligned to Backend v4.8 / OpenAPI v4.8.0 (CR-40: Teacher `daily-summary` unrestricted; CR-41: Teacher `absentees` unrestricted). Changes: (A) Record Attendance nav restored for Teacher — `allowedRoles: ["Admin","Teacher"]`; Teacher date picker `min=max=today` frontend-only; (B) `SlotCard` list removed for both Admin and Teacher; replaced by `TodayTimetableGrid` — Y-axis classes, X-axis periods, cell colour from `daily-summary`, absent count badge, absentee Popover lazy-loaded from `/absentees`; (C) `AdminStatBar` kept above grid for Admin; (D) `ClassRankingsCard` now rendered for Admin (all classIds) and Teacher (own classIds); (E) `AbsenteeEntry` + `GetAbsenteesResponse` types added to `src/types/api.ts`; `attendanceApi.getAbsentees()` added to `src/api/attendance.ts`; TQ key `['absentees', timeSlotId, date]` locked; (F) Improvements B (overdue cells), C (grid skeleton), D (mobile grid/list toggle), E (5-min auto-refresh + manual ↻ + last-updated timestamp), G (max-w-5xl on grid section) all applied.
 - **v2.7** (2026-03-11): CR-FE-024–027 — UI/UX improvement batch. No API/backend/scope changes. (024) Toast standardization: `toast.success`/`toast.error` wired into mutation handlers on all 9 manage pages — `sonner` already a dependency, `<Toaster>` already mounted. (025) ConfirmDialog wired to all destructive actions on UsersPage, StudentsPage, ClassesPage (including irreversible Graduate action), and TimetablePage — `src/components/ConfirmDialog.tsx` unchanged; EventsPage used as reference. (026) Client-side search + filter added to StudentsPage (name/admission no. + Class + Batch filters), ClassesPage (name + Batch filter), EventsPage (title + Type filter) — `useMemo` pattern from UsersPage; zero API changes. (027) Four WCAG 2.1 AA gaps closed: (A) skip link added to Layout.tsx as first child; (B) `aria-live="polite" aria-atomic="false"` on rankings container in AttendanceSummaryPage; (C) text tier badge ("High"/"Medium"/"Low") added alongside colour bar in AttendanceSummaryPage; (D) today's column `ring-2 ring-primary` highlight + "Today" label added to TimetablePage and MonthlySheetPage.
+- **v2.8** (2026-03-11): CR-FE-028a–028e — Targeted visual/UX bug fixes. No API/backend/scope changes. (028a) Timetable `+` icon add-slot affordance gated on `!!filterClassId` — all 4 guard sites updated atomically; teacher-only filter no longer shows add affordance. (028b) Timetable multi-slot cell overflow fixed — `min-h-[72px]` removed from period rows, `h-full` removed from `SlotCell` outer div; cells now auto-size to stacked content. (028c) Timetable and Dashboard grid cell dark-theme WCAG 1.4.3 fix — `dark:bg-green-900/40`, `dark:bg-yellow-900/30`, `dark:bg-orange-900/30` variants added to all three marking-status backgrounds in `TimetablePage.tsx` `SlotCell` and `TodayTimetableGrid.tsx` `TimetableCell`; `text-foreground` added to `SlotCell` root. (028d) Dashboard `TodayTimetableGrid` sticky class column narrowed from `min-w-[100px] px-3 text-sm` to `w-[72px] max-w-[72px] px-2 text-xs truncate`; period cell `min-w` reduced from 90 px to 72 px; table min-width reduced from 500 px to 360 px; skeleton min-width updated to match. (028e) Attendance Summary Rankings Student data cell gains `flex-1 min-w-0 truncate`; `min-w-[120px]` removed — aligns flex column with `flex-1` header.
 
 ---
 
-**END OF FRONTEND FREEZE v2.7**
+**END OF FRONTEND FREEZE v2.8**
