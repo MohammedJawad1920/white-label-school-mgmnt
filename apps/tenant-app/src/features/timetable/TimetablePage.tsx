@@ -20,7 +20,12 @@
  * using <table> (which is hard to make responsive).
  */
 import { useState } from "react";
-import { useQuery, useQueries } from "@tanstack/react-query";
+import {
+  useQuery,
+  useQueries,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { timetableApi } from "@/api/timetable";
 import { attendanceApi } from "@/api/attendance";
@@ -30,7 +35,8 @@ import { usersApi } from "@/api/users";
 import { todayISO, todayDayOfWeek } from "@/utils/dates";
 import { parseApiError } from "@/utils/errors";
 import { CreateSlotDrawer } from "./CreateSlotDrawer";
-import { DeleteSlotDialog } from "./EndSlotDialog";
+import { ConfirmDialog } from "@/components/manage/shared";
+import { toast } from "sonner";
 import type { TimeSlot } from "@/types/api";
 
 const DAYS = [
@@ -131,6 +137,7 @@ function SlotCell({ slot, isAdmin, onDelete, markingStatus }: SlotCellProps) {
 export default function TimetablePage() {
   const { user } = useAuth();
   const isAdmin = user?.activeRole === "Admin";
+  const queryClient = useQueryClient();
 
   // ── Filters (local UI state) ───────────────────────────────────────────────
   const [filterDay, setFilterDay] = useState<Day | "">("");
@@ -144,6 +151,23 @@ export default function TimetablePage() {
   } | null>(null);
   const [deleteSlot, setDeleteSlot] = useState<TimeSlot | null>(null);
 
+  // ── Delete slot mutation ───────────────────────────────────────────────────
+  const deleteSlotMut = useMutation({
+    mutationFn: (slotId: string) => timetableApi.deleteSlot(slotId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["timetable"] });
+      toast.success("Slot deleted successfully.");
+      setDeleteSlot(null);
+    },
+    onError: (err) => {
+      setDeleteSlot(null);
+      const { code } = parseApiError(err);
+      if (code === "NOT_FOUND") toast.error("Slot not found.");
+      else if (code === "FORBIDDEN") toast.error("Not authorized.");
+      else toast.error("Something went wrong. Please try again.");
+    },
+  });
+
   // ── Queries ────────────────────────────────────────────────────────────────
   const filters = {
     dayOfWeek: filterDay || undefined,
@@ -151,10 +175,13 @@ export default function TimetablePage() {
     teacherId: filterTeacher || undefined,
   };
 
+  const canFetch = !!(filterClassId || filterTeacher);
+
   const timetableQ = useQuery({
     queryKey: ["timetable", filters],
     queryFn: () => timetableApi.list(filters),
     staleTime: 5 * 60 * 1000,
+    enabled: canFetch,
   });
 
   const periodsQ = useQuery({
@@ -261,7 +288,7 @@ export default function TimetablePage() {
           aria-label="Filter by day"
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <option value="">All Days</option>
+          <option value="">Select a day</option>
           {DAYS.map((d) => (
             <option key={d} value={d}>
               {d}
@@ -275,7 +302,7 @@ export default function TimetablePage() {
           aria-label="Filter by class"
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <option value="">All Classes</option>
+          <option value="">Select class</option>
           {classesQ.data?.classes.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -289,7 +316,7 @@ export default function TimetablePage() {
           aria-label="Filter by teacher"
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <option value="">All Teachers</option>
+          <option value="">Select teacher</option>
           {teachersQ.data?.users.map((u) => (
             <option key={u.id} value={u.id}>
               {u.name}
@@ -311,24 +338,35 @@ export default function TimetablePage() {
         )}
       </div>
 
-      {/* Loading */}
-      {timetableQ.isLoading && <GridSkeleton />}
-
-      {/* Error (non-feature) */}
-      {timetableQ.isError && apiError?.code !== "FEATURE_DISABLED" && (
-        <div
-          className="rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive"
-          role="alert"
-        >
-          Failed to load timetable.{" "}
-          <button
-            onClick={() => void timetableQ.refetch()}
-            className="underline"
-          >
-            Retry
-          </button>
+      {/* Prompt — no class or teacher selected yet */}
+      {!canFetch && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <p className="text-sm text-muted-foreground">
+            Select a class or teacher to view the timetable.
+          </p>
         </div>
       )}
+
+      {/* Loading */}
+      {canFetch && timetableQ.isLoading && <GridSkeleton />}
+
+      {/* Error (non-feature) */}
+      {canFetch &&
+        timetableQ.isError &&
+        apiError?.code !== "FEATURE_DISABLED" && (
+          <div
+            className="rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive"
+            role="alert"
+          >
+            Failed to load timetable.{" "}
+            <button
+              onClick={() => void timetableQ.refetch()}
+              className="underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
       {/* School periods warning */}
       {periodsQ.isError && (
@@ -341,7 +379,7 @@ export default function TimetablePage() {
       )}
 
       {/* Empty state */}
-      {isEmpty && (
+      {canFetch && isEmpty && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <p className="text-sm text-muted-foreground">
             No timetable entries found.
@@ -353,179 +391,185 @@ export default function TimetablePage() {
       )}
 
       {/* Grid — scrollable horizontally on mobile */}
-      {!timetableQ.isLoading && !timetableQ.isError && periods.length > 0 && (
-        <div className="overflow-x-auto -mx-4 md:mx-0 rounded-lg border">
-          <div
-            role="grid"
-            aria-label="Timetable grid"
-            style={{ minWidth: `${activeDays.length * 140 + 80}px` }}
-          >
-            {/* Column headers */}
-            <div role="row" className="flex bg-muted/50 border-b">
-              <div
-                role="columnheader"
-                className="w-20 shrink-0 px-2 py-2.5 text-xs font-semibold text-muted-foreground"
-              >
-                Period
-              </div>
-              {activeDays.map((day) => (
+      {canFetch &&
+        !timetableQ.isLoading &&
+        !timetableQ.isError &&
+        periods.length > 0 && (
+          <div className="overflow-x-auto -mx-4 md:mx-0 rounded-lg border">
+            <div
+              role="grid"
+              aria-label="Timetable grid"
+              style={{ minWidth: `${activeDays.length * 140 + 80}px` }}
+            >
+              {/* Column headers */}
+              <div role="row" className="flex bg-muted/50 border-b">
                 <div
-                  key={day}
                   role="columnheader"
-                  className="flex-1 min-w-[120px] px-2 py-2.5 text-xs font-semibold text-center border-l"
+                  className="w-20 shrink-0 px-2 py-2.5 text-xs font-semibold text-muted-foreground"
                 >
-                  {day.slice(0, 3)}
+                  Period
                 </div>
-              ))}
-            </div>
-
-            {/* Period rows */}
-            {periods.length > 0 ? (
-              periods.map((period) => (
-                <div
-                  key={period.id}
-                  role="row"
-                  className="flex border-b last:border-b-0 min-h-[72px]"
-                >
-                  {/* Period header cell */}
+                {activeDays.map((day) => (
                   <div
-                    role="rowheader"
-                    className="w-20 shrink-0 flex flex-col justify-center px-2 py-2 bg-muted/20 border-r"
+                    key={day}
+                    role="columnheader"
+                    className={`flex-1 min-w-[120px] px-2 py-2.5 text-xs font-semibold text-center border-l${day === todayDay ? " ring-2 ring-inset ring-primary" : ""}`}
                   >
-                    <span className="text-xs font-semibold">
-                      P{period.periodNumber}
-                    </span>
-                    {period.label && (
-                      <span className="text-xs text-muted-foreground truncate">
-                        {period.label}
-                      </span>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      {period.startTime}–{period.endTime}
-                    </span>
+                    {day.slice(0, 3)}
                   </div>
+                ))}
+              </div>
 
-                  {/* Day cells */}
-                  {activeDays.map((day) => {
-                    const cellSlots = grid[period.periodNumber]?.[day] ?? [];
-                    const cellIsEmpty = cellSlots.length === 0;
-                    return (
-                      <div
-                        key={day}
-                        role="gridcell"
-                        className={[
-                          "flex-1 min-w-[120px] p-1.5 border-l space-y-1",
-                          isAdmin && cellIsEmpty
-                            ? "cursor-pointer hover:bg-muted/30 border-dashed transition-colors group"
-                            : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                        aria-label={
-                          isAdmin && cellIsEmpty
-                            ? `Add slot for ${day} Period ${period.periodNumber}`
-                            : `${day} Period ${period.periodNumber}`
-                        }
-                        tabIndex={isAdmin && cellIsEmpty ? 0 : undefined}
-                        onClick={
-                          isAdmin && cellIsEmpty
-                            ? () =>
-                                setActiveCell({
-                                  dayOfWeek: day,
-                                  periodNumber: period.periodNumber,
-                                })
-                            : undefined
-                        }
-                        onKeyDown={
-                          isAdmin && cellIsEmpty
-                            ? (e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
+              {/* Period rows */}
+              {periods.length > 0 ? (
+                periods.map((period) => (
+                  <div
+                    key={period.id}
+                    role="row"
+                    className="flex border-b last:border-b-0 min-h-[72px]"
+                  >
+                    {/* Period header cell */}
+                    <div
+                      role="rowheader"
+                      className="w-20 shrink-0 flex flex-col justify-center px-2 py-2 bg-muted/20 border-r"
+                    >
+                      <span className="text-xs font-semibold">
+                        P{period.periodNumber}
+                      </span>
+                      {period.label && (
+                        <span className="text-xs text-muted-foreground truncate">
+                          {period.label}
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {period.startTime}–{period.endTime}
+                      </span>
+                    </div>
+
+                    {/* Day cells */}
+                    {activeDays.map((day) => {
+                      const cellSlots = grid[period.periodNumber]?.[day] ?? [];
+                      const cellIsEmpty = cellSlots.length === 0;
+                      return (
+                        <div
+                          key={day}
+                          role="gridcell"
+                          className={[
+                            "flex-1 min-w-[120px] p-1.5 border-l space-y-1",
+                            isAdmin && cellIsEmpty
+                              ? "cursor-pointer hover:bg-muted/30 border-dashed transition-colors group"
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          aria-label={
+                            isAdmin && cellIsEmpty
+                              ? `Add slot for ${day} Period ${period.periodNumber}`
+                              : `${day} Period ${period.periodNumber}`
+                          }
+                          tabIndex={isAdmin && cellIsEmpty ? 0 : undefined}
+                          onClick={
+                            isAdmin && cellIsEmpty
+                              ? () =>
                                   setActiveCell({
                                     dayOfWeek: day,
                                     periodNumber: period.periodNumber,
-                                  });
+                                  })
+                              : undefined
+                          }
+                          onKeyDown={
+                            isAdmin && cellIsEmpty
+                              ? (e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    setActiveCell({
+                                      dayOfWeek: day,
+                                      periodNumber: period.periodNumber,
+                                    });
+                                  }
                                 }
+                              : undefined
+                          }
+                        >
+                          {cellIsEmpty && isAdmin && (
+                            <div
+                              className="flex min-h-[56px] items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity pointer-events-none"
+                              aria-hidden="true"
+                            >
+                              <svg
+                                className="h-5 w-5 text-muted-foreground"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={1.5}
+                                  d="M12 4v16m8-8H4"
+                                />
+                              </svg>
+                            </div>
+                          )}
+                          {cellSlots.map((slot) => (
+                            <SlotCell
+                              key={slot.id}
+                              slot={slot}
+                              isAdmin={isAdmin}
+                              onDelete={setDeleteSlot}
+                              markingStatus={
+                                day === todayDay
+                                  ? (markingMap.get(
+                                      `${slot.classId}:${period.periodNumber}`,
+                                    ) ?? null)
+                                  : null
                               }
-                            : undefined
-                        }
-                      >
-                        {cellIsEmpty && isAdmin && (
-                          <div
-                            className="flex min-h-[56px] items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity pointer-events-none"
-                            aria-hidden="true"
-                          >
-                            <svg
-                              className="h-5 w-5 text-muted-foreground"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={1.5}
-                                d="M12 4v16m8-8H4"
-                              />
-                            </svg>
-                          </div>
-                        )}
-                        {cellSlots.map((slot) => (
-                          <SlotCell
-                            key={slot.id}
-                            slot={slot}
-                            isAdmin={isAdmin}
-                            onDelete={setDeleteSlot}
-                            markingStatus={
-                              day === todayDay
-                                ? (markingMap.get(
-                                    `${slot.classId}:${period.periodNumber}`,
-                                  ) ?? null)
-                                : null
-                            }
-                          />
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))
-            ) : (
-              // No periods configured — show flat list grouped by day
-              <div role="row" className="flex border-b p-3">
-                <div role="gridcell" className="text-xs text-muted-foreground">
-                  School periods not configured — showing all {slots.length}{" "}
-                  slot(s) without period rows.
-                  <div className="mt-2 space-y-1">
-                    {slots.map((slot) => (
-                      <div
-                        key={slot.id}
-                        className="flex items-center justify-between rounded border px-2 py-1.5"
-                      >
-                        <span>
-                          {slot.dayOfWeek} P{slot.periodNumber} ·{" "}
-                          {slot.className} · {slot.subjectName}
-                        </span>
-                        {isAdmin && (
-                          <div className="flex gap-1 ml-2">
-                            <button
-                              onClick={() => setDeleteSlot(slot)}
-                              className="text-xs text-destructive underline"
-                              aria-label={`Delete: ${slot.className} P${slot.periodNumber}`}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                            />
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))
+              ) : (
+                // No periods configured — show flat list grouped by day
+                <div role="row" className="flex border-b p-3">
+                  <div
+                    role="gridcell"
+                    className="text-xs text-muted-foreground"
+                  >
+                    School periods not configured — showing all {slots.length}{" "}
+                    slot(s) without period rows.
+                    <div className="mt-2 space-y-1">
+                      {slots.map((slot) => (
+                        <div
+                          key={slot.id}
+                          className="flex items-center justify-between rounded border px-2 py-1.5"
+                        >
+                          <span>
+                            {slot.dayOfWeek} P{slot.periodNumber} ·{" "}
+                            {slot.className} · {slot.subjectName}
+                          </span>
+                          {isAdmin && (
+                            <div className="flex gap-1 ml-2">
+                              <button
+                                onClick={() => setDeleteSlot(slot)}
+                                className="text-xs text-destructive underline"
+                                aria-label={`Delete: ${slot.className} P${slot.periodNumber}`}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Create slot drawer — Admin only, triggered by empty cell click (CR-11) */}
       {isAdmin && (
@@ -543,9 +587,17 @@ export default function TimetablePage() {
 
       {/* Delete slot dialog — Admin only */}
       {isAdmin && (
-        <DeleteSlotDialog
-          slot={deleteSlot}
-          onClose={() => setDeleteSlot(null)}
+        <ConfirmDialog
+          open={deleteSlot !== null}
+          title="Delete Slot"
+          message={
+            deleteSlot
+              ? `Delete ${deleteSlot.className} · ${deleteSlot.subjectName} (${deleteSlot.dayOfWeek} Period ${deleteSlot.periodNumber})?`
+              : ""
+          }
+          onConfirm={() => deleteSlot && deleteSlotMut.mutate(deleteSlot.id)}
+          onCancel={() => setDeleteSlot(null)}
+          loading={deleteSlotMut.isPending}
         />
       )}
     </div>

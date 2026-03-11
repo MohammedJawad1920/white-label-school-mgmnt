@@ -37,6 +37,7 @@ import { studentsApi } from "@/api/students";
 import { attendanceApi } from "@/api/attendance";
 import { todayISO, todayDayOfWeek } from "@/utils/dates";
 import { parseApiError } from "@/utils/errors";
+import { toast } from "sonner";
 import { cn } from "@/utils/cn";
 import { AT_RISK_THRESHOLD } from "@/utils/attendance";
 import type { TimeSlot, Student, AttendanceStreak } from "@/types/api";
@@ -371,12 +372,14 @@ export default function RecordAttendancePage() {
               updated !== 1 ? "s" : ""
             }.`,
       );
+      if (updated > 0) toast.success("Attendance updated successfully.");
       setAlreadyRecorded(false);
       await queryClient.invalidateQueries({ queryKey: ["student-attendance"] });
       await queryClient.invalidateQueries({ queryKey: ["attendance-summary"] });
     },
     onError: (err) => {
       setSubmitError(parseApiError(err).message);
+      toast.error("Something went wrong. Please try again.");
     },
   });
 
@@ -399,6 +402,7 @@ export default function RecordAttendancePage() {
       setSuccessMsg(
         `${data.recorded} records saved. ${data.present} present, ${data.absent} absent, ${data.late} late.`,
       );
+      toast.success("Attendance recorded successfully.");
       setExceptions(new Map());
       await queryClient.invalidateQueries({ queryKey: ["student-attendance"] });
       await queryClient.invalidateQueries({ queryKey: ["attendance-summary"] });
@@ -417,6 +421,7 @@ export default function RecordAttendancePage() {
         setSubmitError("You are not assigned to this class.");
       } else {
         setSubmitError(message);
+        toast.error("Something went wrong. Please try again.");
       }
     },
   });

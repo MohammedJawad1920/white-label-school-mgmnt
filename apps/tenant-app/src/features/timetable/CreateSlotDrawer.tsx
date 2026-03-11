@@ -27,6 +27,7 @@ import { classesApi } from "@/api/classes";
 import { subjectsApi } from "@/api/subjects";
 import { parseApiError } from "@/utils/errors";
 import { cn } from "@/utils/cn";
+import { toast } from "sonner";
 
 const DAYS = [
   "Monday",
@@ -146,6 +147,7 @@ export function CreateSlotDrawer({
       // Freeze §3: POST /timetable invalidates both timetable AND school-periods
       await queryClient.invalidateQueries({ queryKey: ["timetable"] });
       await queryClient.invalidateQueries({ queryKey: ["school-periods"] });
+      toast.success("Slot created successfully.");
       reset();
       onClose();
     },
@@ -162,6 +164,7 @@ export function CreateSlotDrawer({
         });
       } else {
         setError("root", { message });
+        toast.error("Something went wrong. Please try again.");
       }
     },
   });

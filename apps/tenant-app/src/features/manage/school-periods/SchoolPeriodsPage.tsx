@@ -16,6 +16,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import { schoolPeriodsApi } from "@/api/schoolPeriods";
 import { parseApiError } from "@/utils/errors";
 import {
@@ -238,6 +239,7 @@ export default function SchoolPeriodsPage() {
     mutationFn: (v: FormValues) => schoolPeriodsApi.create(v),
     onSuccess: async () => {
       await invalidateBoth();
+      toast.success("School period created successfully.");
       setCreateOpen(false);
       setDrawerError(null);
     },
@@ -249,6 +251,7 @@ export default function SchoolPeriodsPage() {
         setDrawerError("Start time must be before end time.");
       } else {
         setDrawerError(message);
+        toast.error("Something went wrong. Please try again.");
       }
     },
   });
@@ -257,6 +260,7 @@ export default function SchoolPeriodsPage() {
     mutationFn: (v: FormValues) => schoolPeriodsApi.update(editPeriod!.id, v),
     onSuccess: async () => {
       await invalidateBoth();
+      toast.success("School period updated successfully.");
       setEditPeriod(null);
       setDrawerError(null);
     },
@@ -265,22 +269,29 @@ export default function SchoolPeriodsPage() {
       if (code === "PERIOD_TIME_INVALID")
         setDrawerError("Start time must be before end time.");
       else if (code === "NOT_FOUND") setDrawerError("Period not found.");
-      else setDrawerError(message);
+      else {
+        setDrawerError(message);
+        toast.error("Something went wrong. Please try again.");
+      }
     },
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => schoolPeriodsApi.delete(id),
-    onSuccess: invalidateBoth,
+    onSuccess: async () => {
+      await invalidateBoth();
+      toast.success("School period deleted successfully.");
+    },
     onError: (e, id) => {
-      const { code, message } = parseApiError(e);
-      setDeleteErrors((prev) => ({
-        ...prev,
-        [id]:
-          code === "HAS_REFERENCES" || code === "CONFLICT"
-            ? "Cannot delete — active timetable slots use this period."
-            : message,
-      }));
+      const { code } = parseApiError(e);
+      if (code === "HAS_REFERENCES" || code === "CONFLICT") {
+        setDeleteErrors((prev) => ({
+          ...prev,
+          [id]: "Cannot delete — active timetable slots use this period.",
+        }));
+      } else {
+        toast.error("Something went wrong. Please try again.");
+      }
     },
   });
 

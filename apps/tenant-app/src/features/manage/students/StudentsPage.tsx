@@ -19,7 +19,7 @@
  *
  * Cross-field validation: batchId must match selectedClass.batchId.
  */
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -29,6 +29,7 @@ import { studentsApi } from "@/api/students";
 import { classesApi } from "@/api/classes";
 import { batchesApi } from "@/api/batches";
 import { parseApiError } from "@/utils/errors";
+import { toast } from "sonner";
 import {
   TableSkeleton,
   BulkActionBar,
@@ -40,6 +41,7 @@ import {
   Th,
   ActionBtn,
   RootError,
+  ConfirmDialog,
   inputCls,
 } from "@/components/manage/shared";
 import type { Student, Class, Batch, StudentStatus } from "@/types/api";
@@ -516,6 +518,11 @@ export default function StudentsPage() {
     string | null
   >(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [classFilter, setClassFilter] = useState("");
+  const [batchFilter, setBatchFilter] = useState("");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingBulkDelete, setPendingBulkDelete] = useState(false);
   // v4.0 CR-22: status filter
   const [statusFilter, setStatusFilter] = useState<StudentStatus | "">("");
 
@@ -549,6 +556,7 @@ export default function StudentsPage() {
       setDrawerError(null);
       setDrawerAdmissionError(null);
       setSuccessMessage(`Student created. Login ID: ${data.student.loginId}`);
+      toast.success("Student created successfully.");
     },
     onError: (e) => {
       const { code, message } = parseApiError(e);
@@ -563,6 +571,7 @@ export default function StudentsPage() {
         );
       } else {
         setDrawerError(message);
+        toast.error("Something went wrong. Please try again.");
       }
     },
   });
@@ -581,6 +590,7 @@ export default function StudentsPage() {
       }),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Student updated successfully.");
       setEditStudent(null);
       setDrawerError(null);
       setDrawerAdmissionError(null);
@@ -598,20 +608,26 @@ export default function StudentsPage() {
         );
       } else {
         setDrawerError(message);
+        toast.error("Something went wrong. Please try again.");
       }
     },
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => studentsApi.delete(id),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Student deleted successfully.");
+      setPendingDeleteId(null);
+    },
     onError: (e) => {
       const { code } = parseApiError(e);
-      setDeleteError(
-        code === "HAS_REFERENCES" || code === "CONFLICT"
-          ? "Cannot delete: student has attendance records."
-          : parseApiError(e).message,
-      );
+      setPendingDeleteId(null);
+      if (code === "HAS_REFERENCES" || code === "CONFLICT") {
+        setDeleteError("Cannot delete: student has attendance records.");
+      } else {
+        toast.error("Something went wrong. Please try again.");
+      }
     },
   });
 
@@ -619,9 +635,14 @@ export default function StudentsPage() {
     mutationFn: () => studentsApi.bulkDelete(Array.from(selectedIds)),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Students deleted successfully.");
       setSelectedIds(new Set());
+      setPendingBulkDelete(false);
     },
-    onError: (e) => setDeleteError(parseApiError(e).message),
+    onError: () => {
+      setPendingBulkDelete(false);
+      toast.error("Something went wrong. Please try again.");
+    },
   });
 
   function toggleSelect(id: string, checked: boolean) {
@@ -645,6 +666,21 @@ export default function StudentsPage() {
     setEditStudent(student);
   }
 
+  const filteredStudents = useMemo(
+    () =>
+      students.filter((s) => {
+        const q = searchQuery.toLowerCase();
+        const matchesSearch =
+          !q ||
+          s.name.toLowerCase().includes(q) ||
+          s.loginId.toLowerCase().includes(q);
+        const matchesClass = !classFilter || s.classId === classFilter;
+        const matchesBatch = !batchFilter || s.batchId === batchFilter;
+        return matchesSearch && matchesClass && matchesBatch;
+      }),
+    [students, searchQuery, classFilter, batchFilter],
+  );
+
   return (
     <div className="p-4 md:p-6">
       <PageHeader
@@ -654,23 +690,55 @@ export default function StudentsPage() {
         addLabel="Add Student"
       />
 
-      {/* v4.0 CR-22: Status filter */}
-      <div className="mb-4 flex items-center gap-2">
-        <label htmlFor="stu-status-filter" className="text-sm font-medium">
-          Status
-        </label>
+      {/* Filters */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by name or login ID…"
+          aria-label="Search students"
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring w-52"
+        />
         <select
           id="stu-status-filter"
           value={statusFilter}
           onChange={(e) =>
             setStatusFilter(e.target.value as StudentStatus | "")
           }
+          aria-label="Filter by status"
           className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <option value="">All</option>
+          <option value="">All Statuses</option>
           <option value="Active">Active</option>
           <option value="DroppedOff">Dropped Off</option>
           <option value="Graduated">Graduated</option>
+        </select>
+        <select
+          value={classFilter}
+          onChange={(e) => setClassFilter(e.target.value)}
+          aria-label="Filter by class"
+          className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="">All Classes</option>
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={batchFilter}
+          onChange={(e) => setBatchFilter(e.target.value)}
+          aria-label="Filter by batch"
+          className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="">All Batches</option>
+          {batches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -740,17 +808,19 @@ export default function StudentsPage() {
                 </td>
               </tr>
             )}
-            {!isLoading && students.length === 0 && (
+            {!isLoading && filteredStudents.length === 0 && (
               <tr>
                 <td
                   colSpan={9}
                   className="px-4 py-12 text-center text-sm text-muted-foreground"
                 >
-                  No students found. Add the first student.
+                  {students.length === 0
+                    ? "No students found. Add the first student."
+                    : "No students match your filters."}
                 </td>
               </tr>
             )}
-            {students.map((student) => (
+            {filteredStudents.map((student) => (
               <tr
                 key={student.id}
                 className="border-b last:border-b-0 hover:bg-muted/20"
@@ -820,7 +890,7 @@ export default function StudentsPage() {
                     <ActionBtn
                       onClick={() => {
                         setDeleteError(null);
-                        deleteMut.mutate(student.id);
+                        setPendingDeleteId(student.id);
                       }}
                       label="Delete"
                       ariaLabel={`Delete ${student.name}`}
@@ -839,7 +909,7 @@ export default function StudentsPage() {
         selectedCount={selectedIds.size}
         onDelete={() => {
           setDeleteError(null);
-          bulkMut.mutate();
+          setPendingBulkDelete(true);
         }}
         onClear={() => setSelectedIds(new Set())}
         isDeleting={bulkMut.isPending}
@@ -891,6 +961,28 @@ export default function StudentsPage() {
           />
         )}
       </Drawer>
+
+      {/* Delete confirm dialog */}
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        title="Delete Student"
+        message="Are you sure you want to delete this student? This cannot be undone."
+        onConfirm={() => pendingDeleteId && deleteMut.mutate(pendingDeleteId)}
+        onCancel={() => setPendingDeleteId(null)}
+        loading={deleteMut.isPending}
+      />
+
+      {/* Bulk delete confirm dialog */}
+      <ConfirmDialog
+        open={pendingBulkDelete}
+        title="Delete Selected Students"
+        message={`Delete ${selectedIds.size} selected student${
+          selectedIds.size !== 1 ? "s" : ""
+        }? This cannot be undone.`}
+        onConfirm={() => bulkMut.mutate()}
+        onCancel={() => setPendingBulkDelete(false)}
+        loading={bulkMut.isPending}
+      />
     </div>
   );
 }

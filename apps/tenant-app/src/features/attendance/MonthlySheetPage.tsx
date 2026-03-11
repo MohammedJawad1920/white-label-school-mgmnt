@@ -112,6 +112,7 @@ export default function MonthlySheetPage() {
 
   const daysInMonth = new Date(year, month, 0).getDate();
   const dayNumbers = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const todayDate = new Date().getDate();
 
   const students = sheetQ.data?.students ?? [];
 
@@ -324,15 +325,22 @@ export default function MonthlySheetPage() {
                   >
                     Student
                   </div>
-                  {dayNumbers.map((d) => (
-                    <div
-                      key={d}
-                      role="columnheader"
-                      className="w-9 shrink-0 text-center px-1 py-2 text-xs font-medium text-muted-foreground"
-                    >
-                      {d}
-                    </div>
-                  ))}
+                  {dayNumbers.map((d) => {
+                    const isToday =
+                      year === THIS_YEAR &&
+                      month === THIS_MONTH &&
+                      d === todayDate;
+                    return (
+                      <div
+                        key={d}
+                        role="columnheader"
+                        className={`w-9 shrink-0 text-center px-1 py-2 text-xs font-medium text-muted-foreground${isToday ? " ring-2 ring-inset ring-primary" : ""}`}
+                        aria-label={isToday ? "Today" : undefined}
+                      >
+                        {d}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Data rows */}

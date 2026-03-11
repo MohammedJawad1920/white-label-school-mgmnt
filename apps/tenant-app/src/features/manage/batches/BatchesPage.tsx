@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import { batchesApi } from "@/api/batches";
 import { parseApiError } from "@/utils/errors";
 import {
@@ -166,6 +167,7 @@ export default function BatchesPage() {
     mutationFn: (v: FormValues) => batchesApi.create(v),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Batch created successfully.");
       setCreateOpen(false);
       setDrawerError(null);
     },
@@ -176,6 +178,7 @@ export default function BatchesPage() {
     mutationFn: (v: FormValues) => batchesApi.update(editBatch!.id, v),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Batch updated successfully.");
       setEditBatch(null);
       setDrawerError(null);
     },
@@ -186,14 +189,15 @@ export default function BatchesPage() {
     mutationFn: (id: string) => batchesApi.delete(id),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Batch deleted successfully.");
     },
     onError: (e) => {
       const { code } = parseApiError(e);
-      setDeleteError(
-        code === "CONFLICT" || code === "HAS_REFERENCES"
-          ? "Cannot delete: classes reference this batch."
-          : parseApiError(e).message,
-      );
+      if (code === "CONFLICT" || code === "HAS_REFERENCES") {
+        setDeleteError("Cannot delete: classes reference this batch.");
+      } else {
+        toast.error("Something went wrong. Please try again.");
+      }
     },
   });
 
@@ -201,9 +205,10 @@ export default function BatchesPage() {
     mutationFn: () => batchesApi.bulkDelete(Array.from(selectedIds)),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Batches deleted successfully.");
       setSelectedIds(new Set());
     },
-    onError: (e) => setDeleteError(parseApiError(e).message),
+    onError: () => toast.error("Something went wrong. Please try again."),
   });
 
   function toggleSelect(id: string, checked: boolean) {

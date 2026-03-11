@@ -17,13 +17,14 @@
  *   endDate:     required, YYYY-MM-DD, must be >= startDate
  *   description: optional, max 2000
  */
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { eventsApi } from "@/api/events";
 import { parseApiError } from "@/utils/errors";
+import { toast } from "sonner";
 import { formatDisplayDate } from "@/utils/dates";
 import {
   TableSkeleton,
@@ -220,6 +221,8 @@ export default function EventsPage() {
   const [editEvent, setEditEvent] = useState<Event | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Event | null>(null);
   const [rootError, setRootError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<EventType | "">("");
 
   // ── Queries ─────────────────────────────────────────────────────────────────
   const eventsQ = useQuery({
@@ -229,6 +232,20 @@ export default function EventsPage() {
   });
 
   const events = eventsQ.data?.events ?? [];
+
+  const filteredEvents = useMemo(
+    () =>
+      events.filter((ev) => {
+        const q = searchQuery.toLowerCase();
+        const matchesSearch =
+          !q ||
+          ev.title.toLowerCase().includes(q) ||
+          (ev.description ?? "").toLowerCase().includes(q);
+        const matchesType = !typeFilter || ev.type === typeFilter;
+        return matchesSearch && matchesType;
+      }),
+    [events, searchQuery, typeFilter],
+  );
 
   // ── Mutations ────────────────────────────────────────────────────────────────
   const createMut = useMutation({
@@ -243,6 +260,7 @@ export default function EventsPage() {
     onSuccess: async () => {
       setDrawerOpen(false);
       setRootError(null);
+      toast.success("Event created successfully.");
       await queryClient.invalidateQueries({ queryKey: ["events"] });
     },
     onError: (err) => {
@@ -263,6 +281,7 @@ export default function EventsPage() {
       setDrawerOpen(false);
       setEditEvent(null);
       setRootError(null);
+      toast.success("Event updated successfully.");
       await queryClient.invalidateQueries({ queryKey: ["events"] });
     },
     onError: (err) => {
@@ -274,12 +293,12 @@ export default function EventsPage() {
     mutationFn: (eventId: string) => eventsApi.remove(eventId),
     onSuccess: async () => {
       setDeleteTarget(null);
+      toast.success("Event deleted successfully.");
       await queryClient.invalidateQueries({ queryKey: ["events"] });
     },
     onError: (err) => {
       setDeleteTarget(null);
-      // Show error inline on list
-      console.error("Delete event error:", parseApiError(err).message);
+      toast.error("Something went wrong. Please try again.");
     },
   });
 
@@ -320,6 +339,31 @@ export default function EventsPage() {
         onAdd={openCreate}
         addLabel="+ New Event"
       />
+
+      {/* Filters */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search events…"
+          aria-label="Search events"
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring w-52"
+        />
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value as EventType | "")}
+          aria-label="Filter by type"
+          className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="">All Types</option>
+          {EVENT_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {/* Loading */}
       {eventsQ.isLoading && <TableSkeleton rows={5} cols={4} />}
@@ -383,67 +427,76 @@ export default function EventsPage() {
             </div>
 
             {/* Rows */}
-            {events.map((ev) => (
+            {filteredEvents.length === 0 ? (
               <div
-                key={ev.id}
                 role="row"
-                className="flex items-center border-b last:border-b-0 hover:bg-muted/20"
+                className="px-4 py-8 text-center text-sm text-muted-foreground"
               >
-                <div role="cell" className="flex-1 px-4 py-3 min-w-0">
-                  <p className="font-medium truncate">{ev.title}</p>
-                  {ev.description && (
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {ev.description}
-                    </p>
-                  )}
-                </div>
-
-                <div role="cell" className="w-24 px-3 py-3 shrink-0">
-                  <span
-                    className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${typeBadgeCls(ev.type)}`}
-                  >
-                    {ev.type}
-                  </span>
-                </div>
-
-                <div
-                  role="cell"
-                  className="w-36 px-3 py-3 shrink-0 text-xs text-muted-foreground"
-                >
-                  {ev.startDate === ev.endDate ? (
-                    <span>{formatDisplayDate(ev.startDate)}</span>
-                  ) : (
-                    <span>
-                      {formatDisplayDate(ev.startDate)}
-                      <br />
-                      {formatDisplayDate(ev.endDate)}
-                    </span>
-                  )}
-                </div>
-
-                <div
-                  role="cell"
-                  className="w-24 px-3 py-3 shrink-0 flex justify-end gap-1.5"
-                >
-                  {/* Edit */}
-                  <button
-                    onClick={() => openEdit(ev)}
-                    aria-label={`Edit event: ${ev.title}`}
-                    className="rounded border px-2 py-1 text-xs hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    Edit
-                  </button>
-                  {/* Delete */}
-                  <button
-                    onClick={() => setDeleteTarget(ev)}
-                    aria-label={`Delete event: ${ev.title}`}
-                    className="rounded border border-destructive/30 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
-                  >
-                    Delete
-                  </button>{" "}
-                </div>
+                No events match your filters.
               </div>
-            ))}
+            ) : (
+              filteredEvents.map((ev) => (
+                <div
+                  key={ev.id}
+                  role="row"
+                  className="flex items-center border-b last:border-b-0 hover:bg-muted/20"
+                >
+                  <div role="cell" className="flex-1 px-4 py-3 min-w-0">
+                    <p className="font-medium truncate">{ev.title}</p>
+                    {ev.description && (
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {ev.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <div role="cell" className="w-24 px-3 py-3 shrink-0">
+                    <span
+                      className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${typeBadgeCls(ev.type)}`}
+                    >
+                      {ev.type}
+                    </span>
+                  </div>
+
+                  <div
+                    role="cell"
+                    className="w-36 px-3 py-3 shrink-0 text-xs text-muted-foreground"
+                  >
+                    {ev.startDate === ev.endDate ? (
+                      <span>{formatDisplayDate(ev.startDate)}</span>
+                    ) : (
+                      <span>
+                        {formatDisplayDate(ev.startDate)}
+                        <br />
+                        {formatDisplayDate(ev.endDate)}
+                      </span>
+                    )}
+                  </div>
+
+                  <div
+                    role="cell"
+                    className="w-24 px-3 py-3 shrink-0 flex justify-end gap-1.5"
+                  >
+                    {/* Edit */}
+                    <button
+                      onClick={() => openEdit(ev)}
+                      aria-label={`Edit event: ${ev.title}`}
+                      className="rounded border px-2 py-1 text-xs hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      Edit
+                    </button>
+                    {/* Delete */}
+                    <button
+                      onClick={() => setDeleteTarget(ev)}
+                      aria-label={`Delete event: ${ev.title}`}
+                      className="rounded border border-destructive/30 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+                    >
+                      Delete
+                    </button>{" "}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}

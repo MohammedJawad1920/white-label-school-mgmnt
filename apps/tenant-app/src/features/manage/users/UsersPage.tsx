@@ -30,9 +30,11 @@ import {
   Th,
   ActionBtn,
   RootError,
+  ConfirmDialog,
   inputCls,
 } from "@/components/manage/shared";
 import { cn } from "@/utils/cn";
+import { toast } from "sonner";
 import type { User } from "@/types/api";
 
 // v3.5 CR-12+13: Student role is no longer manageable via Users page.
@@ -322,6 +324,8 @@ export default function UsersPage() {
   const [roleFilter, setRoleFilter] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [drawerError, setDrawerError] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingBulkDelete, setPendingBulkDelete] = useState(false);
   // v4.0 CR-20: holds auto-generated password for one-time display
   const [tempPasswordModal, setTempPasswordModal] = useState<string | null>(
     null,
@@ -353,6 +357,7 @@ export default function UsersPage() {
       }),
     onSuccess: async (data) => {
       await invalidate();
+      toast.success("User created successfully.");
       setCreateOpen(false);
       setDrawerError(null);
       // CR-20: show one-time modal if server returned a temporary password
@@ -362,9 +367,12 @@ export default function UsersPage() {
     },
     onError: (e) => {
       const { code, message } = parseApiError(e);
-      setDrawerError(
-        code === "CONFLICT" ? "Email already exists for this school." : message,
-      );
+      if (code === "CONFLICT") {
+        setDrawerError("Email already exists for this school.");
+      } else {
+        setDrawerError(message);
+        toast.error("Something went wrong. Please try again.");
+      }
     },
   });
 
@@ -373,6 +381,7 @@ export default function UsersPage() {
       usersApi.updateRoles(editRolesUser!.id, { roles }),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Roles updated successfully.");
       setEditRolesUser(null);
       setDrawerError(null);
     },
@@ -386,20 +395,28 @@ export default function UsersPage() {
         );
       } else {
         setDrawerError(message);
+        toast.error("Something went wrong. Please try again.");
       }
     },
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => usersApi.delete(id),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("User deleted successfully.");
+      setPendingDeleteId(null);
+    },
     onError: (e) => {
       const { code } = parseApiError(e);
-      setDeleteError(
-        code === "CONFLICT"
-          ? "Cannot delete: user has active timetable assignments or attendance records."
-          : parseApiError(e).message,
-      );
+      setPendingDeleteId(null);
+      if (code === "CONFLICT") {
+        setDeleteError(
+          "Cannot delete: user has active timetable assignments or attendance records.",
+        );
+      } else {
+        toast.error("Something went wrong. Please try again.");
+      }
     },
   });
 
@@ -407,10 +424,15 @@ export default function UsersPage() {
     mutationFn: () => usersApi.bulkDelete(Array.from(selectedIds)),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Users deleted successfully.");
       setSelectedIds(new Set());
       setBulkFailed({});
+      setPendingBulkDelete(false);
     },
-    onError: (e) => setDeleteError(parseApiError(e).message),
+    onError: () => {
+      setPendingBulkDelete(false);
+      toast.error("Something went wrong. Please try again.");
+    },
   });
 
   function toggleSelect(id: string, checked: boolean) {
@@ -573,7 +595,7 @@ export default function UsersPage() {
                           onClick={() => {
                             setDeleteError(null);
                             setBulkFailed({});
-                            deleteMut.mutate(user.id);
+                            setPendingDeleteId(user.id);
                           }}
                           label="Delete"
                           ariaLabel={`Delete ${user.name}`}
@@ -595,7 +617,7 @@ export default function UsersPage() {
         onDelete={() => {
           setDeleteError(null);
           setBulkFailed({});
-          bulkMut.mutate();
+          setPendingBulkDelete(true);
         }}
         onClear={() => setSelectedIds(new Set())}
         isDeleting={bulkMut.isPending}
@@ -641,6 +663,28 @@ export default function UsersPage() {
           />
         )}
       </Drawer>
+
+      {/* Delete confirm dialog */}
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        title="Delete User"
+        message="Are you sure you want to delete this user? This cannot be undone."
+        onConfirm={() => pendingDeleteId && deleteMut.mutate(pendingDeleteId)}
+        onCancel={() => setPendingDeleteId(null)}
+        loading={deleteMut.isPending}
+      />
+
+      {/* Bulk delete confirm dialog */}
+      <ConfirmDialog
+        open={pendingBulkDelete}
+        title="Delete Selected Users"
+        message={`Delete ${selectedIds.size} selected user${
+          selectedIds.size !== 1 ? "s" : ""
+        }? This cannot be undone.`}
+        onConfirm={() => bulkMut.mutate()}
+        onCancel={() => setPendingBulkDelete(false)}
+        loading={bulkMut.isPending}
+      />
     </div>
   );
 }

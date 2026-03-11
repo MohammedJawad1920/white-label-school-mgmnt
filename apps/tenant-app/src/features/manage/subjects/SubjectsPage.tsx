@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import { subjectsApi } from "@/api/subjects";
 import { parseApiError } from "@/utils/errors";
 import {
@@ -116,6 +117,7 @@ export default function SubjectsPage() {
     mutationFn: (v: FormValues) => subjectsApi.create(v),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Subject created successfully.");
       setCreateOpen(false);
       setDrawerError(null);
     },
@@ -126,6 +128,7 @@ export default function SubjectsPage() {
     mutationFn: (v: FormValues) => subjectsApi.update(editSubject!.id, v),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Subject updated successfully.");
       setEditSubject(null);
       setDrawerError(null);
     },
@@ -134,14 +137,19 @@ export default function SubjectsPage() {
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => subjectsApi.delete(id),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Subject deleted successfully.");
+    },
     onError: (e) => {
       const { code } = parseApiError(e);
-      setDeleteError(
-        code === "CONFLICT"
-          ? "Cannot delete: timetable slots reference this subject."
-          : parseApiError(e).message,
-      );
+      if (code === "CONFLICT") {
+        setDeleteError(
+          "Cannot delete: timetable slots reference this subject.",
+        );
+      } else {
+        toast.error("Something went wrong. Please try again.");
+      }
     },
   });
 
@@ -149,9 +157,10 @@ export default function SubjectsPage() {
     mutationFn: () => subjectsApi.bulkDelete(Array.from(selectedIds)),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Subjects deleted successfully.");
       setSelectedIds(new Set());
     },
-    onError: (e) => setDeleteError(parseApiError(e).message),
+    onError: () => toast.error("Something went wrong. Please try again."),
   });
 
   function toggleSelect(id: string, checked: boolean) {

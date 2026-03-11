@@ -5,7 +5,7 @@
  * v3.6 CR-18: Promote button opens dialog to pick target class
  * v4.0 CR-21: Promote dialog gains "Graduate all students" option
  */
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -13,6 +13,7 @@ import { z } from "zod";
 import { classesApi } from "@/api/classes";
 import { batchesApi } from "@/api/batches";
 import { parseApiError } from "@/utils/errors";
+import { toast } from "sonner";
 import {
   TableSkeleton,
   BulkActionBar,
@@ -24,6 +25,7 @@ import {
   Th,
   ActionBtn,
   RootError,
+  ConfirmDialog,
   inputCls,
 } from "@/components/manage/shared";
 import type { Class, PromoteRequest } from "@/types/api";
@@ -118,6 +120,10 @@ export default function ClassesPage() {
   const [editClass, setEditClass] = useState<Class | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [drawerError, setDrawerError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [batchFilter, setBatchFilter] = useState("");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingBulkDelete, setPendingBulkDelete] = useState(false);
 
   // CR-18 / CR-21: promote dialog state
   const [promoteSource, setPromoteSource] = useState<Class | null>(null);
@@ -126,9 +132,6 @@ export default function ClassesPage() {
   // v4.0 CR-21: promote action — promote to class or graduate all
   const [promoteAction, setPromoteAction] = useState<"promote" | "graduate">(
     "promote",
-  );
-  const [promoteSuccessMsg, setPromoteSuccessMsg] = useState<string | null>(
-    null,
   );
 
   const { data: classesData, isLoading } = useQuery({
@@ -152,6 +155,7 @@ export default function ClassesPage() {
     mutationFn: (v: FormValues) => classesApi.create(v),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Class created successfully.");
       setCreateOpen(false);
       setDrawerError(null);
     },
@@ -162,6 +166,7 @@ export default function ClassesPage() {
     mutationFn: (v: FormValues) => classesApi.update(editClass!.id, v),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Class updated successfully.");
       setEditClass(null);
       setDrawerError(null);
     },
@@ -170,14 +175,19 @@ export default function ClassesPage() {
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => classesApi.delete(id),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Class deleted successfully.");
+      setPendingDeleteId(null);
+    },
     onError: (e) => {
       const { code } = parseApiError(e);
-      setDeleteError(
-        code === "CONFLICT"
-          ? "Cannot delete: students are enrolled in this class."
-          : parseApiError(e).message,
-      );
+      setPendingDeleteId(null);
+      if (code === "CONFLICT") {
+        setDeleteError("Cannot delete: students are enrolled in this class.");
+      } else {
+        toast.error("Something went wrong. Please try again.");
+      }
     },
   });
 
@@ -185,9 +195,14 @@ export default function ClassesPage() {
     mutationFn: () => classesApi.bulkDelete(Array.from(selectedIds)),
     onSuccess: async () => {
       await invalidate();
+      toast.success("Classes deleted successfully.");
       setSelectedIds(new Set());
+      setPendingBulkDelete(false);
     },
-    onError: (e) => setDeleteError(parseApiError(e).message),
+    onError: () => {
+      setPendingBulkDelete(false);
+      toast.error("Something went wrong. Please try again.");
+    },
   });
 
   // CR-18 / CR-21: year-end class promotion mutation
@@ -207,9 +222,9 @@ export default function ClassesPage() {
       setPromoteError(null);
       setPromoteAction("promote");
       if ("graduated" in data) {
-        setPromoteSuccessMsg(`${data.graduated} student(s) graduated.`);
+        toast.success(`${data.graduated} student(s) graduated.`);
       } else {
-        setPromoteSuccessMsg(`${data.updated} student(s) moved.`);
+        toast.success(`${data.updated} student(s) moved to new class.`);
       }
     },
     onError: (e) => {
@@ -220,6 +235,7 @@ export default function ClassesPage() {
         setPromoteError("Invalid promotion action.");
       } else {
         setPromoteError(parsed.message);
+        toast.error("Something went wrong. Please try again.");
       }
     },
   });
@@ -231,6 +247,17 @@ export default function ClassesPage() {
       return s;
     });
   }
+
+  const filteredClasses = useMemo(
+    () =>
+      classes.filter((cls) => {
+        const q = searchQuery.toLowerCase();
+        const matchesSearch = !q || cls.name.toLowerCase().includes(q);
+        const matchesBatch = !batchFilter || cls.batchId === batchFilter;
+        return matchesSearch && matchesBatch;
+      }),
+    [classes, searchQuery, batchFilter],
+  );
 
   return (
     <div className="p-4 md:p-6">
@@ -244,21 +271,30 @@ export default function ClassesPage() {
         addLabel="New Class"
       />
 
-      {promoteSuccessMsg && (
-        <div
-          role="status"
-          className="mb-4 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800"
+      {/* Filters */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by name…"
+          aria-label="Search classes"
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring w-52"
+        />
+        <select
+          value={batchFilter}
+          onChange={(e) => setBatchFilter(e.target.value)}
+          aria-label="Filter by batch"
+          className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {promoteSuccessMsg}
-          <button
-            type="button"
-            onClick={() => setPromoteSuccessMsg(null)}
-            className="ml-2 text-green-700 underline text-xs"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+          <option value="">All Batches</option>
+          {(batchesData?.batches ?? []).map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {deleteError && (
         <div
@@ -303,17 +339,19 @@ export default function ClassesPage() {
                 </td>
               </tr>
             )}
-            {!isLoading && classes.length === 0 && (
+            {!isLoading && filteredClasses.length === 0 && (
               <tr>
                 <td
                   colSpan={4}
                   className="px-4 py-12 text-center text-sm text-muted-foreground"
                 >
-                  No classes found.
+                  {classes.length === 0
+                    ? "No classes found."
+                    : "No classes match your filters."}
                 </td>
               </tr>
             )}
-            {classes.map((cls) => (
+            {filteredClasses.map((cls) => (
               <tr
                 key={cls.id}
                 className="border-b last:border-b-0 hover:bg-muted/20"
@@ -352,7 +390,7 @@ export default function ClassesPage() {
                     <ActionBtn
                       onClick={() => {
                         setDeleteError(null);
-                        deleteMut.mutate(cls.id);
+                        setPendingDeleteId(cls.id);
                       }}
                       label="Delete"
                       ariaLabel={`Delete ${cls.name}`}
@@ -371,7 +409,7 @@ export default function ClassesPage() {
         selectedCount={selectedIds.size}
         onDelete={() => {
           setDeleteError(null);
-          bulkMut.mutate();
+          setPendingBulkDelete(true);
         }}
         onClear={() => setSelectedIds(new Set())}
         isDeleting={bulkMut.isPending}
@@ -559,6 +597,28 @@ export default function ClassesPage() {
           </div>
         </div>
       )}
+
+      {/* Delete confirm dialog */}
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        title="Delete Class"
+        message="Are you sure you want to delete this class? This cannot be undone."
+        onConfirm={() => pendingDeleteId && deleteMut.mutate(pendingDeleteId)}
+        onCancel={() => setPendingDeleteId(null)}
+        loading={deleteMut.isPending}
+      />
+
+      {/* Bulk delete confirm dialog */}
+      <ConfirmDialog
+        open={pendingBulkDelete}
+        title="Delete Selected Classes"
+        message={`Delete ${selectedIds.size} selected class${
+          selectedIds.size !== 1 ? "es" : ""
+        }? This cannot be undone.`}
+        onConfirm={() => bulkMut.mutate()}
+        onCancel={() => setPendingBulkDelete(false)}
+        loading={bulkMut.isPending}
+      />
     </div>
   );
 }

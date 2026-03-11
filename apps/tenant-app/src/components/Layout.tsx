@@ -69,6 +69,12 @@ function TopBar() {
 export default function Layout() {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:px-4 focus:py-2 focus:bg-background focus:text-foreground"
+      >
+        Skip to main content
+      </a>
       {/* Desktop sidebar */}
       <Sidebar />
 

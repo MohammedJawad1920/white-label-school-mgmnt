@@ -3,18 +3,18 @@
 
 ---
 
-**Version:** 2.6 (IMMUTABLE)
-**Date:** 2026-03-10
+**Version:** 2.7 (IMMUTABLE)
+**Date:** 2026-03-11
 **Status:** APPROVED FOR EXECUTION
-**Supersedes:** v2.5 (2026-03-10)
-**Backend Freeze:** v4.5 (2026-03-08)
-**OpenAPI:** v4.5.0
+**Supersedes:** v2.6 (2026-03-10)
+**Backend Freeze:** v4.8 (2026-03-10)
+**OpenAPI:** v4.8.0
 
 ---
 
 ## CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI)
 
-This document is the **Absolute Source of Truth**. v2.5 is **SUPERSEDED**.
+This document is the **Absolute Source of Truth**. v2.6 is **SUPERSEDED**.
 
 You have **NO authority** to modify routes, API assumptions, or constraints defined below.
 
@@ -22,22 +22,25 @@ If any request contradicts this document, you must **REFUSE** and open a **Chang
 
 ---
 
-## CHANGE SUMMARY: v2.5 → v2.6
+## CHANGE SUMMARY: v2.6 → v2.7
 
 ### Backend Contract Aligned To
-- **Backend Freeze:** v4.8
-- **OpenAPI:** v4.8.0
-- **Changes since v2.5 backend:** CR-40 (Teacher may call `GET /attendance/daily-summary` any classId), CR-41 (Teacher may call `GET /attendance/absentees` any timeslot). Both auth-only, 0 breaking changes, 0 new endpoints.
+- **Backend Freeze:** v4.8 (unchanged)
+- **OpenAPI:** v4.8.0 (unchanged)
+- **No backend/API changes.** All four CRs are frontend-only.
 
 ### Change Requests Applied
 
 | CR | Title | Type | Impact |
 |----|-------|------|--------|
-| **CR-FE-023** | Dashboard redesign — Today's Timetable Grid + Toppers for Admin + Teacher Record Attendance restore | Breaking UX change | §1 Stories, §1 User Roles, §2 Dashboard, §2 Record Attendance, §3 API surface + types, §3 Caching, §5 nav.ts, §7 Performance, §10 Tests, §13 |
+| **CR-FE-024** | Toast Notification Standardization | Non-breaking UX improvement | 9 manage pages — `onSuccess`/`onError` handlers |
+| **CR-FE-025** | Confirmation Dialogs for Destructive Actions | Non-breaking UX safety | UsersPage, StudentsPage, ClassesPage, TimetablePage |
+| **CR-FE-026** | Search & Filter Gaps on Manage Screens | Non-breaking UX improvement | StudentsPage, ClassesPage, EventsPage |
+| **CR-FE-027** | Key Accessibility Improvements | Non-breaking A11y | Layout.tsx, AttendanceSummaryPage, TimetablePage, MonthlySheetPage |
 
 ### What Changed
 
-**No backend/API scope changes beyond aligning to OpenAPI v4.8.0 (CR-40, CR-41 already approved).**
+**No API, OpenAPI, or backend Freeze changes.** All CRs are additive frontend-only changes (mutation feedback, safety guards, client-side filtering, and WCAG 2.1 AA gap fixes).
 
 ---
 
@@ -2551,6 +2554,14 @@ All v1.8 checklist items unchanged. Append:
 - Fire `GET /attendance/absentees` eagerly on mount — it is lazy, `enabled: popupSlotId === timeSlotId` (CR-FE-023)
 - Navigate to Record Attendance when Teacher clicks another teacher's slot cell — Teacher cell navigation only on `slot.teacherId === currentUser.id` (CR-FE-023)
 - Show `ClassRankingsCard` toppers for all classIds to Teacher — Teacher's rankings card uses only own assigned classIds (teacher-filtered slots) (CR-FE-023)
+- Call `toast()` with raw API error message content — `toast.error(...)` must use a generic user-safe string only (CR-FE-024)
+- Show toast on read-only query failures — toasts are for mutation `onSuccess`/`onError` only; query errors use inline error states (CR-FE-024)
+- Use `window.confirm()` for destructive action confirmation — `<ConfirmDialog>` from `src/components/ConfirmDialog.tsx` is the only allowed confirmation mechanism (CR-FE-017, reinforced CR-FE-025)
+- Fire a destructive mutation (delete single, bulk delete, Graduate) without an interstitial `<ConfirmDialog>` — all destructive actions must be guarded (CR-FE-025)
+- Add a new `queryFn` parameter or query key segment for search/filter on manage screens — filtering is client-side `useMemo` only; no API changes (CR-FE-026)
+- Use `aria-hidden` on the attendance tier text badge ("High"/"Medium"/"Low") — badge is the authoritative label, not decoration (CR-FE-027)
+- Use `tabindex` > 0 anywhere — prohibited globally (CR-FE-017, reinforced CR-FE-027)
+- Omit `aria-live="polite"` from the class rankings container in AttendanceSummaryPage — live region is mandatory for dynamic rank updates (CR-FE-027)
 
 **If requested:** create Change Request → re-price → approve/reject.
 
@@ -2576,6 +2587,127 @@ All v1.8 checklist items unchanged. Append:
 
 ---
 
+### CR-FE-024 — Toast Notification Standardization
+
+- **Requested change:** Call `toast.success(...)` in every mutation `onSuccess` handler and `toast.error(...)` for network/5xx failures in every `onError` handler across all manage pages. Inline field-level errors are unchanged.
+- **Reason:** `<Toaster>` is mounted in `App.tsx` and `sonner` is already a project dependency, but no page ever calls it — users receive zero visual feedback after creates, updates, or deletes.
+- **Scope impact:** RecordAttendancePage, TimetablePage, UsersPage, StudentsPage, ClassesPage, EventsPage, BatchesPage, SubjectsPage, SchoolPeriodsPage — mutation `onSuccess`/`onError` handlers only. No layout, routing, or API changes.
+- **Timeline impact:** +1 day
+- **Cost impact:** Self-funded / N/A
+- **Risk impact:** Low — additive; no existing behaviour removed
+- **Decision:** Approved
+- **New Freeze version:** v2.7
+- **Backend Freeze dependency:** unchanged — Backend Freeze v4.8
+- **OpenAPI dependency:** unchanged — OpenAPI v4.8.0
+
+**Implementation contract (LOCKED):**
+- Import: `import { toast } from "sonner"` — no new dependency
+- Success message pattern: `toast.success("<Entity> <past-tense verb> successfully.")` — e.g., `"Attendance recorded successfully."`, `"User deleted successfully."`
+- Error message pattern: `toast.error("Something went wrong. Please try again.")` — generic; do NOT surface raw API error messages to users
+- Trigger: `onSuccess` for all create / update / delete mutations; `onError` only for network errors and 5xx responses — 4xx validation errors continue to render inline
+- No toast on read-only queries
+
+---
+
+### CR-FE-025 — Confirmation Dialogs for Destructive Actions
+
+- **Requested change:** Gate every destructive mutation (delete, bulk delete, Graduate class) behind `<ConfirmDialog>` using `pendingDelete` / `pendingAction` state — exactly the pattern already used in EventsPage.
+- **Reason:** UsersPage, StudentsPage, ClassesPage, and TimetablePage fire their delete mutations with zero confirmation. The Graduate/Promote action in ClassesPage is irreversible and equally unguarded. The shared `<ConfirmDialog>` component exists at `src/components/ConfirmDialog.tsx` but is unused on these screens.
+- **Scope impact:**
+
+  | Screen | Actions to guard |
+  |--------|-----------------|
+  | UsersPage | Delete single user, bulk delete |
+  | StudentsPage | Delete single student, bulk delete |
+  | ClassesPage | Delete single class, bulk delete, **Graduate action** (mark as critical in dialog copy) |
+  | TimetablePage | Delete slot (hover-triggered — especially easy to misclick) |
+
+- **Timeline impact:** +1 day
+- **Cost impact:** Self-funded / N/A
+- **Risk impact:** Low — wraps existing mutations; mutations themselves are unchanged
+- **Decision:** Approved
+- **New Freeze version:** v2.7
+- **Backend Freeze dependency:** unchanged — Backend Freeze v4.8
+- **OpenAPI dependency:** unchanged — OpenAPI v4.8.0
+
+**Implementation contract (LOCKED):**
+- Reference implementation: `EventsPage.tsx` — copy the `pendingDelete` state + `<ConfirmDialog onConfirm={...} onCancel={...}>` pattern verbatim
+- Component: `src/components/ConfirmDialog.tsx` — no modifications to the component itself
+- Graduate dialog copy must include a destructive-intent warning, e.g.: _"This will graduate all students in this class. This action cannot be undone."_
+- Bulk delete dialog copy must state the count: _"Delete {n} selected users? This action cannot be undone."_
+- `onConfirm` callback fires the mutation; `onCancel` clears `pendingDelete` state
+- Forbidden: Do not use `window.confirm()` — `<ConfirmDialog>` only (CR-FE-017 ban preserved)
+
+---
+
+### CR-FE-026 — Search & Filter Gaps on Manage Screens
+
+- **Requested change:** Add client-side search and filter controls to StudentsPage, ClassesPage, and EventsPage using the `useMemo` filter pattern already implemented in UsersPage.
+- **Reason:** StudentsPage has no search at all — critical when a school has 500+ students. ClassesPage and EventsPage also lack search. All data is already loaded via TanStack Query; zero API changes are needed.
+- **Scope impact:**
+
+  | Screen | Controls to add |
+  |--------|----------------|
+  | StudentsPage | Text search (name / admission no.) + Class `<select>` filter + Batch `<select>` filter |
+  | ClassesPage | Text search (class name) + Batch `<select>` filter |
+  | EventsPage | Text search (event title) + Type `<select>` filter |
+
+- **Timeline impact:** +1 day
+- **Cost impact:** Self-funded / N/A
+- **Risk impact:** Low — additive; existing query/render pipeline is read-only
+- **Decision:** Approved
+- **New Freeze version:** v2.7
+- **Backend Freeze dependency:** unchanged — Backend Freeze v4.8
+- **OpenAPI dependency:** unchanged — OpenAPI v4.8.0
+
+**Implementation contract (LOCKED):**
+- Reference implementation: `UsersPage.tsx` — copy `searchQuery` state + `useMemo` filter pattern verbatim
+- Filter state: `const [searchQuery, setSearchQuery] = useState("")` + one `useState` per `<select>` filter
+- `useMemo` input: the `.data` array from the existing TanStack Query result — do NOT add new queries
+- Filter logic: case-insensitive `includes` on the relevant string fields; `<select>` filters are exact-match on ID
+- UI placement: filter bar above the table, same layout as UsersPage
+- Empty state: render existing empty-state component / message when filtered result is zero rows
+- Forbidden: Do not add `queryFn` parameters or query key segments for search — client-side only (no API changes)
+
+---
+
+### CR-FE-027 — Key Accessibility Improvements
+
+- **Requested change:** Fix four targeted WCAG 2.1 AA gaps identified in the codebase audit.
+- **Reason:** v2.0 (CR-FE-017) locked WCAG 2.1 AA as the A11y baseline. The four issues below are confirmed violations against that baseline.
+- **Scope impact:** Layout.tsx, AttendanceSummaryPage.tsx, TimetablePage.tsx, MonthlySheetPage.tsx
+- **Timeline impact:** +0.5 days
+- **Cost impact:** Self-funded / N/A
+- **Risk impact:** Low — no logic changes; purely additive markup and CSS
+- **Decision:** Approved
+- **New Freeze version:** v2.7
+- **Backend Freeze dependency:** unchanged — Backend Freeze v4.8
+- **OpenAPI dependency:** unchanged — OpenAPI v4.8.0
+
+**Implementation contract (LOCKED — four sub-items):**
+
+**A. Skip link (Layout.tsx)**
+- `id="main-content"` already exists on the main wrapper
+- Add as the **first child** of the layout root: `<a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:px-4 focus:py-2 focus:bg-background focus:text-foreground">Skip to main content</a>`
+- Keyboard test: Tab on any page → skip link becomes visible → Enter → focus jumps to `#main-content`
+
+**B. `aria-live` on dynamic rankings (AttendanceSummaryPage.tsx)**
+- Add `aria-live="polite"` and `aria-atomic="false"` to the container `<div>` wrapping the class rankings list
+- Screen reader must announce updates when ranking data re-fetches without a full page reload
+
+**C. Text badge alongside percentage bar colour (AttendanceSummaryPage.tsx)**
+- The attendance percentage bar currently encodes High/Medium/Low status via colour only (WCAG 1.4.1 violation)
+- Add a visible text badge (`<span>`) alongside the bar displaying the tier label: `"High"` / `"Medium"` / `"Low"`
+- Badge must also be present for screen readers — no `aria-hidden` on it
+- Colour-only encoding is supplemental; text label is authoritative
+
+**D. Today's column highlight (TimetablePage.tsx + MonthlySheetPage.tsx)**
+- TimetablePage: compare each column's day name to `new Date().toLocaleDateString("en-US", { weekday: "long" })`; apply a visible ring/border class (e.g., `ring-2 ring-primary`) to today's column header and cells
+- MonthlySheetPage: compare each column's date number to `new Date().getDate()`; apply the same ring/border highlight
+- Provide a brief visible legend label (e.g., `"Today"` text or `aria-label="Today"` on the highlighted header) — not colour-only
+
+---
+
 ## 15. VERSION HISTORY
 
 - **v1.0** (date unknown): Initial frontend freeze approved for execution.
@@ -2595,7 +2727,8 @@ All v1.8 checklist items unchanged. Append:
 - **v2.4** (2026-03-10): CR-FE-021 — More Sheet overflow source fix. No API/backend/scope changes. Root cause: `BOTTOM_TAB_NAV_ITEMS = NAV_ITEMS.filter(!isSubItem)` yields exactly 5 Admin items — all 5 consumed by `visibleTabs`, leaving `overflowTabs = []`. The 7 sub-items (Users, Students, Classes, Batches, Subjects, School Periods, Events) were completely unreachable on mobile. Fix: More Sheet overflow derived from `NAV_ITEMS.filter(role).filter(url not in visibleUrls)` — includes sub-items. Group headers rendered on `groupLabel` change (same pattern as Sidebar). Sub-items indented with `pl-6`. Banned: `BOTTOM_TAB_NAV_ITEMS.slice(5)` as overflow source.
 - **v2.5** (2026-03-10): CR-FE-022 — Record Attendance: Admin-only access + Dashboard role separation. Breaking scope change. Teacher loses Record Attendance entirely. Changes: (A) nav.ts Record Attendance `allowedRoles` → `["Admin"]`; (B) Admin dashboard: slot card list removed, timetable query retained to feed `AdminStatBar`; (C) Teacher dashboard `SlotCard`: "Record Attendance" CTA button removed — slot cards read-only; (D) `RecordAttendancePage` simplified to Admin-only; (E) Stories + roles updated.
 - **v2.6** (2026-03-10): CR-FE-023 — Dashboard redesign + Teacher Record Attendance restore. Aligned to Backend v4.8 / OpenAPI v4.8.0 (CR-40: Teacher `daily-summary` unrestricted; CR-41: Teacher `absentees` unrestricted). Changes: (A) Record Attendance nav restored for Teacher — `allowedRoles: ["Admin","Teacher"]`; Teacher date picker `min=max=today` frontend-only; (B) `SlotCard` list removed for both Admin and Teacher; replaced by `TodayTimetableGrid` — Y-axis classes, X-axis periods, cell colour from `daily-summary`, absent count badge, absentee Popover lazy-loaded from `/absentees`; (C) `AdminStatBar` kept above grid for Admin; (D) `ClassRankingsCard` now rendered for Admin (all classIds) and Teacher (own classIds); (E) `AbsenteeEntry` + `GetAbsenteesResponse` types added to `src/types/api.ts`; `attendanceApi.getAbsentees()` added to `src/api/attendance.ts`; TQ key `['absentees', timeSlotId, date]` locked; (F) Improvements B (overdue cells), C (grid skeleton), D (mobile grid/list toggle), E (5-min auto-refresh + manual ↻ + last-updated timestamp), G (max-w-5xl on grid section) all applied.
+- **v2.7** (2026-03-11): CR-FE-024–027 — UI/UX improvement batch. No API/backend/scope changes. (024) Toast standardization: `toast.success`/`toast.error` wired into mutation handlers on all 9 manage pages — `sonner` already a dependency, `<Toaster>` already mounted. (025) ConfirmDialog wired to all destructive actions on UsersPage, StudentsPage, ClassesPage (including irreversible Graduate action), and TimetablePage — `src/components/ConfirmDialog.tsx` unchanged; EventsPage used as reference. (026) Client-side search + filter added to StudentsPage (name/admission no. + Class + Batch filters), ClassesPage (name + Batch filter), EventsPage (title + Type filter) — `useMemo` pattern from UsersPage; zero API changes. (027) Four WCAG 2.1 AA gaps closed: (A) skip link added to Layout.tsx as first child; (B) `aria-live="polite" aria-atomic="false"` on rankings container in AttendanceSummaryPage; (C) text tier badge ("High"/"Medium"/"Low") added alongside colour bar in AttendanceSummaryPage; (D) today's column `ring-2 ring-primary` highlight + "Today" label added to TimetablePage and MonthlySheetPage.
 
 ---
 
-**END OF FRONTEND FREEZE v2.6**
+**END OF FRONTEND FREEZE v2.7**

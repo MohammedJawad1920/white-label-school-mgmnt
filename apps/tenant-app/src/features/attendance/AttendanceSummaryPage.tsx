@@ -255,7 +255,11 @@ function RankingsTab() {
         !toppersQ.isError &&
         toppers.length > 0 && (
           <>
-            <div className="rounded-lg border overflow-hidden overflow-x-auto">
+            <div
+              className="rounded-lg border overflow-hidden overflow-x-auto"
+              aria-live="polite"
+              aria-atomic="false"
+            >
               <div
                 role="table"
                 aria-label="Attendance rankings"
@@ -317,6 +321,17 @@ function RankingsTab() {
                           ? "text-green-700"
                           : "text-amber-700"
                       }`}
+                      aria-label={
+                        t.attendancePercentage !== null
+                          ? `${t.attendancePercentage.toFixed(1)}% — ${
+                              t.attendancePercentage >= 75
+                                ? "High"
+                                : t.attendancePercentage >= 50
+                                  ? "Medium"
+                                  : "Low"
+                            }`
+                          : "No data"
+                      }
                     >
                       {t.attendancePercentage !== null
                         ? `${t.attendancePercentage.toFixed(1)}%`
