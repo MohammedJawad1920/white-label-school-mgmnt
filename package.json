@@ -1,8 +1,9 @@
 {
   "scripts": {
-    "server": "npm start --prefix server",
-    "client": "npm run dev --prefix client",
-    "dev": "concurrently \"npm run server\" \"npm run client\""
+    "server": "npm run dev --prefix server",
+    "tenant": "npm run dev --prefix apps/tenant-app",
+    "superadmin": "npm run dev --prefix apps/superadmin-app",
+    "dev": "concurrently --names \"server,tenant,superadmin\" --prefix-colors \"blue,green,magenta\" \"npm run server\" \"npm run tenant\" \"npm run superadmin\""
   },
   "devDependencies": {
     "@lavamoat/allow-scripts": "^3.4.2",
