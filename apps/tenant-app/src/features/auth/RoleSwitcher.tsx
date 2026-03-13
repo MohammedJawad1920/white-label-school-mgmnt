@@ -4,7 +4,7 @@
  * Freeze rules (FE-005):
  * - Only shown when user.roles.length > 1
  * - Calls POST /auth/switch-role → receives new JWT
- * - AuthContext.switchRole() atomically replaces token + user in state + localStorage
+ * - AuthContext.switchRole() atomically replaces token + user in state + sessionStorage
  * - NO page reload — role-gated components re-render immediately
  * - Renders available roles as dropdown items; active role shows checkmark
  * - Loading state: dropdown items disabled, spinner on trigger button

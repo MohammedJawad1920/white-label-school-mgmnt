@@ -4,6 +4,8 @@ import type {
   TenantLoginResponse,
   SwitchRoleRequest,
   SwitchRoleResponse,
+  ChangePasswordRequest,
+  ChangePasswordResponse,
 } from "@/types/api";
 
 export const authApi = {
@@ -17,5 +19,11 @@ export const authApi = {
   switchRole: (data: SwitchRoleRequest) =>
     apiClient
       .post<SwitchRoleResponse>("/auth/switch-role", data)
+      .then((r) => r.data),
+
+  /** v5.0 M-011: change password; returns fresh JWT (mustChangePassword=false) */
+  changePassword: (data: ChangePasswordRequest) =>
+    apiClient
+      .post<ChangePasswordResponse>("/auth/change-password", data)
       .then((r) => r.data),
 };

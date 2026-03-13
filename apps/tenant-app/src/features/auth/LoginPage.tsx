@@ -30,10 +30,7 @@ const loginSchema = z.object({
   // (e.g. 530@greenvalley.local) are pseudo-emails exempt from RFC 5322
   email: z.string().min(1, "Email is required"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  tenantSlug: z
-    .string()
-    .min(1, "School ID is required")
-    .max(100, "School ID is too long"),
+  // C-01fe: tenantId comes from VITE_TENANT_ID env var — not user input
 });
 type LoginFormValues = z.infer<typeof loginSchema>;
 
@@ -78,7 +75,14 @@ export default function LoginPage() {
   async function onSubmit(values: LoginFormValues) {
     setGlobalError(null);
     try {
-      const res = await authApi.login(values);
+      const res = await authApi.login({
+        email: values.email,
+        password: values.password,
+        // C-01fe: tenantId is the UUID from VITE_TENANT_ID — never from user input
+        tenantId: import.meta.env.VITE_TENANT_ID as string,
+      });
+      // TODO: H-07fe — add role-specific routing once role-specific routes are defined
+      //   Admin → /admin/dashboard, Teacher/Student/Guardian → /dashboard
       login(res.token, res.user);
       navigate(from, { replace: true });
     } catch (err) {
@@ -89,7 +93,6 @@ export default function LoginPage() {
         const fieldMap = {
           email: "email",
           password: "password",
-          tenantSlug: "tenantSlug",
         } as const;
         let hadField = false;
         for (const [serverKey, formKey] of Object.entries(fieldMap)) {
@@ -131,7 +134,7 @@ export default function LoginPage() {
             Sign in to your school
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Enter your credentials and school ID below
+            Enter your credentials below
           </p>
         </div>
 
@@ -203,44 +206,6 @@ export default function LoginPage() {
                 className="mt-1.5 text-xs text-destructive"
               >
                 {errors.password.message}
-              </p>
-            )}
-          </div>
-
-          {/* School ID (tenantSlug) */}
-          <div>
-            <label
-              htmlFor="tenantSlug"
-              className="block text-sm font-medium mb-1.5"
-            >
-              School ID
-            </label>
-            <input
-              id="tenantSlug"
-              type="text"
-              autoComplete="organization"
-              aria-describedby={
-                errors.tenantSlug ? "tenantSlug-error" : "tenantSlug-hint"
-              }
-              aria-invalid={errors.tenantSlug ? true : undefined}
-              placeholder="e.g. springfield-high"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive disabled:opacity-50"
-              {...register("tenantSlug")}
-            />
-            {errors.tenantSlug ? (
-              <p
-                id="tenantSlug-error"
-                role="alert"
-                className="mt-1.5 text-xs text-destructive"
-              >
-                {errors.tenantSlug.message}
-              </p>
-            ) : (
-              <p
-                id="tenantSlug-hint"
-                className="mt-1.5 text-xs text-muted-foreground"
-              >
-                Your school's unique identifier
               </p>
             )}
           </div>

@@ -1,26 +1,23 @@
 /**
  * Attendance Controller
  *
- * POST /api/attendance/record-class        — bulk-record for entire class
- * GET  /api/students/:studentId/attendance — paginated student history
- * GET  /api/attendance/summary             — aggregate by class + date range
+ * POST /api/v1/attendance/record-class              — bulk-record for a timeslot (UPSERT per student)
+ * GET  /api/v1/students/:studentId/attendance       — paginated student history
+ * GET  /api/v1/attendance/summary                   — aggregate by class + date range
  *
- * RECORD-CLASS PATTERN (defaultStatus + exceptions):
- * The teacher picks a defaultStatus (e.g. "Present") then overrides individuals.
- * This is far faster than setting each student individually for a full class.
- * The exceptions Map wins over defaultStatus for any student it contains.
+ * RECORD-CLASS PATTERN (students array):
+ * Caller passes an explicit list of { studentId, status } pairs.
+ * The endpoint uses UPSERT — safe to re-submit with corrected statuses.
  *
  * IDEMPOTENCY:
- * The DB has UNIQUE(student_id, timeslot_id, date). Re-submitting the same
- * class attendance on the same date is blocked with 409. This prevents accidental
- * double-recording but means the teacher must delete records to re-record
- * (out of scope per Freeze).
+ * The DB has UNIQUE(student_id, timeslot_id, date).
+ * Re-submitting updates the existing record via ON CONFLICT DO UPDATE.
  */
 
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { pool, withTransaction } from "../../db/pool";
-import { send400, send403, send404, send409 } from "../../utils/errors";
+import { send400, send403, send404, send409, send422 } from "../../utils/errors";
 import {
   AttendanceRecordRow,
   AttendanceStatus,
@@ -38,46 +35,53 @@ export async function recordClassAttendance(
 ): Promise<void> {
   const tenantId = req.tenantId!;
   const recordedBy = req.userId!;
+  const callerRoles = req.userRoles ?? [];
 
-  const { timeSlotId, date, defaultStatus, exceptions } = req.body as {
-    timeSlotId?: string;
+  const { timeslotId, date, students } = req.body as {
+    timeslotId?: string;
     date?: string;
-    defaultStatus?: string;
-    exceptions?: Array<{ studentId: string; status: string }>;
+    students?: Array<{ studentId: string; status: string }>;
   };
 
   // ── Validation ────────────────────────────────────────────────────
-  if (!timeSlotId || !date || !defaultStatus) {
-    send400(res, "timeSlotId, date, and defaultStatus are required");
+  if (!timeslotId || typeof timeslotId !== "string" || timeslotId.trim().length === 0) {
+    send422(res, "timeslotId is required");
     return;
   }
-
-  const validStatuses: AttendanceStatus[] = ["Present", "Absent", "Late"];
-  if (!validStatuses.includes(defaultStatus as AttendanceStatus)) {
-    send400(res, `defaultStatus must be one of: ${validStatuses.join(", ")}`);
+  if (!date || typeof date !== "string") {
+    send422(res, "date is required");
     return;
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    send400(res, "date must be a valid date in YYYY-MM-DD format");
+    send422(res, "date must be a valid date in YYYY-MM-DD format");
+    return;
+  }
+  if (!Array.isArray(students) || students.length === 0) {
+    send422(res, "students must be a non-empty array");
+    return;
+  }
+  if (students.length > 200) {
+    send422(res, "students array must not exceed 200 entries");
     return;
   }
 
-  // Validate exceptions array
-  const exceptionMap = new Map<string, AttendanceStatus>();
-  if (Array.isArray(exceptions)) {
-    for (const ex of exceptions) {
-      if (!ex.studentId || !ex.status) {
-        send400(res, "Each exception must have studentId and status");
-        return;
-      }
-      if (!validStatuses.includes(ex.status as AttendanceStatus)) {
-        send400(
-          res,
-          `Exception status must be one of: ${validStatuses.join(", ")}`,
-        );
-        return;
-      }
-      exceptionMap.set(ex.studentId, ex.status as AttendanceStatus);
+  // Teachers cannot set Excused — only Admins can
+  const isAdmin = callerRoles.includes("Admin");
+  const teacherStatuses: AttendanceStatus[] = ["Present", "Absent", "Late"];
+  const adminStatuses: AttendanceStatus[] = [...teacherStatuses, "Excused"];
+  const validStatuses = isAdmin ? adminStatuses : teacherStatuses;
+
+  for (const entry of students) {
+    if (!entry.studentId || typeof entry.studentId !== "string") {
+      send422(res, "Each student entry must have a studentId");
+      return;
+    }
+    if (!entry.status || !validStatuses.includes(entry.status as AttendanceStatus)) {
+      send422(
+        res,
+        `Each student status must be one of: ${validStatuses.join(", ")}`,
+      );
+      return;
     }
   }
 
@@ -93,7 +97,7 @@ export async function recordClassAttendance(
      JOIN classes  c ON c.id = t.class_id
      JOIN subjects s ON s.id = t.subject_id
      WHERE t.id = $1 AND t.tenant_id = $2 AND t.deleted_at IS NULL`,
-    [timeSlotId, tenantId],
+    [timeslotId, tenantId],
   );
 
   if ((tsResult.rowCount ?? 0) === 0) {
@@ -103,95 +107,51 @@ export async function recordClassAttendance(
 
   const timeslot = tsResult.rows[0]!;
 
-  // ── Teacher auth guard (v4.3, CR-31) ─────────────────────────────
+  // ── Teacher auth guard ─────────────────────────────────────────────
   // A Teacher may only record attendance for their own assigned slot.
-  const callerRoles = req.userRoles ?? [];
-  if (callerRoles.includes("Teacher") && !callerRoles.includes("Admin")) {
+  if (callerRoles.includes("Teacher") && !isAdmin) {
     if (timeslot.teacher_id !== recordedBy) {
-      res.status(403).json({
-        error: {
-          code: "FORBIDDEN",
-          message: "You are not assigned to this timeslot",
-          timestamp: new Date().toISOString(),
-        },
-      });
+      send403(res, "You are not assigned to this timeslot", "FORBIDDEN");
       return;
     }
   }
 
-  // ── Fetch students in this class ──────────────────────────────────
-  const studentsResult = await pool.query<Pick<StudentRow, "id">>(
-    `SELECT id FROM students
-     WHERE class_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-     ORDER BY id`,
-    [timeslot.class_id, tenantId],
-  );
-
-  if (studentsResult.rows.length === 0) {
-    res.status(400).json({
-      error: {
-        code: "NO_STUDENTS",
-        message: "No students found in this class",
-        details: { classId: timeslot.class_id },
-        timestamp: new Date().toISOString(),
-      },
-    });
-    return;
-  }
-
-  // ── Insert attendance records in a transaction ────────────────────
-  // WHY transaction: partial inserts (some succeed, some fail due to UNIQUE)
-  // leave the data in an inconsistent state. All-or-nothing is correct here.
-  const counters = { present: 0, absent: 0, late: 0 };
-
-  try {
-    await withTransaction(async (client) => {
-      for (const student of studentsResult.rows) {
-        const status =
-          exceptionMap.get(student.id) ?? (defaultStatus as AttendanceStatus);
-        const id = `AR-${uuidv4()}`;
-
-        await client.query(
-          `INSERT INTO attendance_records
-             (id, tenant_id, student_id, timeslot_id, date, status, recorded_by, recorded_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-          [id, tenantId, student.id, timeSlotId, date, status, recordedBy],
-        );
-
-        counters[status.toLowerCase() as "present" | "absent" | "late"]++;
-      }
-    });
-  } catch (err: unknown) {
-    if (
-      err instanceof Error &&
-      "code" in err &&
-      (err as NodeJS.ErrnoException).code === "23505"
-    ) {
-      res.status(409).json({
-        error: {
-          code: "ATTENDANCE_ALREADY_RECORDED",
-          message:
-            "Attendance has already been recorded for this class on this date",
-          details: { timeSlotId, date },
-          timestamp: new Date().toISOString(),
-        },
-      });
+  // ── Backdating guard (Teacher only) ──────────────────────────────
+  // Per OpenAPI: Teachers cannot backdate attendance.
+  if (callerRoles.includes("Teacher") && !isAdmin) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const recordDate = new Date(date + "T00:00:00Z");
+    recordDate.setUTCHours(0, 0, 0, 0);
+    // Compare using ISO date strings for reliable comparison
+    const todayStr = today.toISOString().slice(0, 10);
+    if (date < todayStr) {
+      send400(res, "Teachers cannot backdate attendance", "BACKDATING_NOT_ALLOWED");
       return;
     }
-    throw err;
   }
 
-  res.status(201).json({
-    recorded: studentsResult.rows.length,
-    present: counters.present,
-    absent: counters.absent,
-    late: counters.late,
-    date,
-    timeSlot: {
-      id: timeSlotId,
-      className: timeslot.class_name,
-      subjectName: timeslot.subject_name,
-      periodNumber: timeslot.period_number,
+  // ── Upsert attendance records in a transaction ────────────────────
+  await withTransaction(async (client) => {
+    for (const entry of students) {
+      const id = `AR-${uuidv4()}`;
+      await client.query(
+        `INSERT INTO attendance_records
+           (id, tenant_id, student_id, timeslot_id, date, status, recorded_by, recorded_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+         ON CONFLICT (student_id, timeslot_id, date)
+         DO UPDATE SET
+           status     = EXCLUDED.status,
+           updated_by = $7,
+           updated_at = NOW()`,
+        [id, tenantId, entry.studentId, timeslotId, date, entry.status, recordedBy],
+      );
+    }
+  });
+
+  res.status(200).json({
+    data: {
+      recorded: students.length,
     },
   });
 }
@@ -279,9 +239,8 @@ export async function getStudentAttendance(
     id: string;
     date: string;
     status: AttendanceStatus;
-    corrected_status: AttendanceStatus | null;
-    corrected_by: string | null;
-    corrected_at: Date | null;
+    updated_by: string | null;
+    updated_at: Date | null;
     recorded_by: string;
     recorded_at: Date;
     ts_id: string;
@@ -291,7 +250,7 @@ export async function getStudentAttendance(
   }>(
     `SELECT
        ar.id, ar.date, ar.status,
-       ar.corrected_status, ar.corrected_by, ar.corrected_at,
+       ar.updated_by, ar.updated_at,
        ar.recorded_by, ar.recorded_at,
        t.id  AS ts_id,
        s.name AS subject_name,
@@ -312,12 +271,14 @@ export async function getStudentAttendance(
     present: string;
     absent: string;
     late: string;
+    excused: string;
   }>(
     `SELECT
        COUNT(*) AS total,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Present') AS present,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Absent')  AS absent,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Late')    AS late
+       COUNT(*) FILTER (WHERE ar.status = 'Present') AS present,
+       COUNT(*) FILTER (WHERE ar.status = 'Absent')  AS absent,
+       COUNT(*) FILTER (WHERE ar.status = 'Late')    AS late,
+       COUNT(*) FILTER (WHERE ar.status = 'Excused') AS excused
      FROM attendance_records ar
      WHERE ${conditions.join(" AND ")}`,
     params,
@@ -340,11 +301,9 @@ export async function getStudentAttendance(
     records: recordsResult.rows.map((r) => ({
       id: r.id,
       date: String(r.date).slice(0, 10),
-      // v3.4 CR-09: effective status = corrected_status ?? original status
-      status: r.corrected_status ?? r.status,
-      originalStatus: r.status,
-      correctedBy: r.corrected_by ?? null,
-      correctedAt: r.corrected_at?.toISOString() ?? null,
+      status: r.status,
+      updatedBy: r.updated_by ?? null,
+      updatedAt: r.updated_at?.toISOString() ?? null,
       timeSlot: {
         id: r.ts_id,
         subjectName: r.subject_name,
@@ -359,6 +318,7 @@ export async function getStudentAttendance(
       present: presentCnt,
       absent: parseInt(agg.absent, 10),
       late: parseInt(agg.late, 10),
+      excused: parseInt(agg.excused, 10),
       attendanceRate,
     },
     pagination: {
@@ -449,7 +409,7 @@ export async function getAttendanceSummary(
     `SELECT
        COUNT(*) AS total,
        COUNT(*) FILTER (
-         WHERE COALESCE(ar.corrected_status, ar.status) IN ('Present', 'Late')
+         WHERE ar.status IN ('Present', 'Late')
        ) AS present_late
      FROM attendance_records ar
      JOIN students s ON s.id = ar.student_id
@@ -481,11 +441,12 @@ export async function getAttendanceSummary(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// PUT /api/attendance/:recordId   (v3.4 CR-09)
+// PUT /api/v1/attendance/:recordId   (v3.4 CR-09, updated v5.0 M-012)
 // ═══════════════════════════════════════════════════════════════════
 // Teacher (own class) or Admin can correct an attendance status.
-// Writes to corrected_status/corrected_by/corrected_at; original status
-// (status column) is immutable after insert (Freeze §3.4 invariant).
+// v5.0: status column is now directly updated; updated_by / updated_at
+// replace the old corrected_* audit columns.
+// 'Excused' is Admin-only (Teachers may only set Present/Absent/Late).
 
 export async function correctAttendance(
   req: Request,
@@ -496,7 +457,14 @@ export async function correctAttendance(
   const { recordId } = req.params as { recordId: string };
   const { status } = req.body as { status?: string };
 
-  const validStatuses: AttendanceStatus[] = ["Present", "Absent", "Late"];
+  const callerRoles = req.userRoles ?? [];
+  const isAdmin = callerRoles.includes("Admin");
+
+  // Teachers cannot set Excused — only Admins can
+  const teacherStatuses: AttendanceStatus[] = ["Present", "Absent", "Late"];
+  const adminStatuses: AttendanceStatus[] = [...teacherStatuses, "Excused"];
+  const validStatuses = isAdmin ? adminStatuses : teacherStatuses;
+
   if (!status || !validStatuses.includes(status as AttendanceStatus)) {
     send400(res, `status must be one of: ${validStatuses.join(", ")}`);
     return;
@@ -508,7 +476,8 @@ export async function correctAttendance(
   >(
     `SELECT ar.id, ar.tenant_id, ar.student_id, ar.timeslot_id,
             ar.date AS record_date,
-            ar.status, ar.corrected_status, ar.corrected_by, ar.corrected_at,
+            ar.status,
+            ar.updated_by, ar.updated_at,
             ar.recorded_by, ar.recorded_at,
             t.teacher_id
      FROM attendance_records ar
@@ -525,7 +494,6 @@ export async function correctAttendance(
   const record = recordResult.rows[0]!;
 
   // ── FUTURE_DATE guard ─────────────────────────────────────────────
-  // Cannot correct an attendance record for a future date.
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const recordDate = new Date(record.record_date);
@@ -536,17 +504,13 @@ export async function correctAttendance(
   }
 
   // ── SAME_STATUS guard ─────────────────────────────────────────────
-  const effectiveStatus = record.corrected_status ?? record.status;
-  if (status === effectiveStatus) {
+  if (status === record.status) {
     send409(res, "Status is already set to that value", "SAME_STATUS");
     return;
   }
 
   // ── Teacher own-class access check ───────────────────────────────
-  // Teachers may only correct attendance for timeslots they own.
-  // Admins have no such restriction.
-  const callerRoles = req.userRoles ?? [];
-  if (callerRoles.includes("Teacher") && !callerRoles.includes("Admin")) {
+  if (!isAdmin && callerRoles.includes("Teacher")) {
     if (record.teacher_id !== callerId) {
       send403(
         res,
@@ -562,11 +526,12 @@ export async function correctAttendance(
     AttendanceRecordRow & { record_date: string }
   >(
     `UPDATE attendance_records
-     SET corrected_status = $1, corrected_by = $2, corrected_at = NOW()
+     SET status = $1, updated_by = $2, updated_at = NOW()
      WHERE id = $3 AND tenant_id = $4
      RETURNING id, tenant_id, student_id, timeslot_id,
                date AS record_date,
-               status, corrected_status, corrected_by, corrected_at,
+               status,
+               updated_by, updated_at,
                recorded_by, recorded_at`,
     [status, callerId, recordId, tenantId],
   );
@@ -578,15 +543,14 @@ export async function correctAttendance(
       studentId: r.student_id,
       timeslotId: r.timeslot_id,
       date: String(r.record_date).slice(0, 10),
-      status: r.corrected_status ?? r.status, // effective
-      originalStatus: r.status,
-      correctedBy: r.corrected_by ?? null,
-      correctedAt: r.corrected_at?.toISOString() ?? null,
+      status: r.status,
       recordedBy: r.recorded_by,
       recordedAt:
         r.recorded_at instanceof Date
           ? r.recorded_at.toISOString()
           : String(r.recorded_at),
+      updatedBy: r.updated_by ?? null,
+      updatedAt: r.updated_at?.toISOString() ?? null,
     },
   });
 }
@@ -670,12 +634,14 @@ export async function getStudentAttendanceSummary(
     present: string;
     absent: string;
     late: string;
+    excused: string;
   }>(
     `SELECT
-       COUNT(*)                                                                       AS total,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Present') AS present,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Absent')  AS absent,
-       COUNT(*) FILTER (WHERE COALESCE(ar.corrected_status, ar.status) = 'Late')    AS late
+       COUNT(*)                                       AS total,
+       COUNT(*) FILTER (WHERE ar.status = 'Present') AS present,
+       COUNT(*) FILTER (WHERE ar.status = 'Absent')  AS absent,
+       COUNT(*) FILTER (WHERE ar.status = 'Late')    AS late,
+       COUNT(*) FILTER (WHERE ar.status = 'Excused') AS excused
      FROM attendance_records ar
      WHERE ar.student_id = $1
        AND ar.tenant_id  = $2
@@ -688,6 +654,7 @@ export async function getStudentAttendanceSummary(
   const present = parseInt(agg.present, 10);
   const absent = parseInt(agg.absent, 10);
   const late = parseInt(agg.late, 10);
+  const excused = parseInt(agg.excused, 10);
 
   const attendancePercentage =
     totalClasses > 0
@@ -703,6 +670,7 @@ export async function getStudentAttendanceSummary(
       present,
       absent,
       late,
+      excused,
       attendancePercentage,
     },
   });
@@ -789,7 +757,7 @@ export async function getAttendanceStreaks(
     const recordsResult = await pool.query<{
       effective_status: string;
     }>(
-      `SELECT COALESCE(ar.corrected_status, ar.status) AS effective_status
+      `SELECT ar.status AS effective_status
        FROM attendance_records ar
        JOIN timeslots t ON t.id = ar.timeslot_id
        WHERE ar.student_id = $1
@@ -918,7 +886,7 @@ export async function getAttendanceToppers(
        ar.student_id,
        COUNT(*) AS total_periods,
        COUNT(*) FILTER (
-         WHERE COALESCE(ar.corrected_status, ar.status) IN ('Present', 'Late')
+         WHERE ar.status IN ('Present', 'Late')
        ) AS present_count
      FROM attendance_records ar
      JOIN students s ON s.id = ar.student_id
@@ -1076,9 +1044,9 @@ export async function getAttendanceDailySummary(
         absent_count: string;
       }>(
         `SELECT
-           COUNT(*)                                                                  AS record_count,
+           COUNT(*)                                    AS record_count,
            COUNT(*) FILTER (
-             WHERE COALESCE(ar.corrected_status, ar.status) = 'Absent'
+             WHERE ar.status = 'Absent'
            ) AS absent_count
          FROM attendance_records ar
          WHERE ar.timeslot_id = $1 AND ar.tenant_id = $2 AND ar.date = $3`,
@@ -1245,7 +1213,7 @@ export async function getAttendanceMonthlySheet(
        ar.student_id,
        ar.date        AS record_date,
        ar.timeslot_id,
-       COALESCE(ar.corrected_status, ar.status) AS effective_status
+       ar.status AS effective_status
      FROM attendance_records ar
      JOIN timeslots t ON t.id = ar.timeslot_id
      WHERE ar.tenant_id   = $1
@@ -1330,14 +1298,13 @@ export async function getAbsentees(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;
   const callerRole = req.activeRole!;
 
-  const { timeSlotId, date } = req.query as {
-    timeSlotId?: string;
-    date?: string;
-  };
+  // H-03: timeslotId is a path parameter; date remains a query parameter
+  const { timeslotId } = req.params as { timeslotId: string };
+  const { date } = req.query as { date?: string };
 
   // ── Validation ─────────────────────────────────────────────────
-  if (!timeSlotId) {
-    send400(res, "timeSlotId is required", "VALIDATION_ERROR");
+  if (!timeslotId) {
+    send400(res, "timeslotId is required", "VALIDATION_ERROR");
     return;
   }
   if (!date) {
@@ -1362,7 +1329,7 @@ export async function getAbsentees(req: Request, res: Response): Promise<void> {
     `SELECT id, class_id, subject_id
      FROM timeslots
      WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
-    [timeSlotId, tenantId],
+    [timeslotId, tenantId],
   );
   if ((tsResult.rowCount ?? 0) === 0) {
     send404(res, "Timeslot not found");
@@ -1392,10 +1359,10 @@ export async function getAbsentees(req: Request, res: Response): Promise<void> {
      WHERE ar.timeslot_id = $1
        AND ar.date        = $2
        AND ar.tenant_id   = $3
-       AND COALESCE(ar.corrected_status, ar.status) = 'Absent'
+       AND ar.status = 'Absent'
        AND s.deleted_at IS NULL
      ORDER BY s.name ASC`,
-    [timeSlotId, date, tenantId],
+    [timeslotId, date, tenantId],
   );
 
   // ── Compute consecutive absent streak for each absent student ──
@@ -1408,7 +1375,7 @@ export async function getAbsentees(req: Request, res: Response): Promise<void> {
 
   for (const row of absentResult.rows) {
     const recordsResult = await pool.query<{ effective_status: string }>(
-      `SELECT COALESCE(ar.corrected_status, ar.status) AS effective_status
+      `SELECT ar.status AS effective_status
        FROM attendance_records ar
        JOIN timeslots t ON t.id = ar.timeslot_id
        WHERE ar.student_id = $1
@@ -1437,7 +1404,7 @@ export async function getAbsentees(req: Request, res: Response): Promise<void> {
   }
 
   res.status(200).json({
-    timeSlotId,
+    timeslotId,
     date,
     classId: timeslot.class_id,
     subjectId: timeslot.subject_id,

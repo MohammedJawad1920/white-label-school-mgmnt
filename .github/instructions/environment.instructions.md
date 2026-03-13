@@ -29,20 +29,39 @@ ALLOWED_ORIGINS=        # comma-separated: http://localhost:5173,http://localhos
 LOG_LEVEL=              # info | debug | error
 ```
 
+### `server/.env` (v5.0 additions)
+
+```
+R2_BUCKET=              # Cloudflare R2 bucket name (school profile uploads)
+R2_ENDPOINT=            # Cloudflare R2 endpoint URL
+R2_ACCESS_KEY_ID=       # R2 access key ID
+R2_SECRET_ACCESS_KEY=   # R2 secret access key
+
+VAPID_PUBLIC_KEY=       # Web Push VAPID public key  (P2 — push notifications)
+VAPID_PRIVATE_KEY=      # Web Push VAPID private key (P2 — push notifications)
+
+SENTRY_DSN=             # Sentry error tracking DSN (optional)
+```
+
 ### `apps/tenant-app/.env`
 
 ```
 VITE_APP_ENV=           # development | production
-VITE_API_BASE_URL=      # http://localhost:3000/api
+VITE_API_BASE_URL=      # http://localhost:3000/api/v1   ← /v1 prefix required (v5.0)
 VITE_APP_BASE_URL=      # http://localhost:5173
 VITE_APP_NAME=          # display name shown in UI
+VITE_TENANT_ID=         # UUID of the tenant (required; boot fails if absent)
+VITE_VAPID_PUBLIC_KEY=  # Web Push VAPID public key (P2 — leave blank for now)
+VITE_SENTRY_DSN=        # Sentry DSN (optional)
+VITE_BUILD_SHA=         # Git SHA of the build (set in CI; use 'local' for dev)
+VITE_THEME_COLOR=       # Hex color for PWA theme-color meta tag (e.g. #1A5276)
 ```
 
 ### `apps/superadmin-app/.env`
 
 ```
 VITE_APP_ENV=           # development | production
-VITE_API_BASE_URL=      # http://localhost:3000/api
+VITE_API_BASE_URL=      # http://localhost:3000/api/v1   ← /v1 prefix required (v5.0)
 VITE_APP_BASE_URL=      # http://localhost:5174
 VITE_APP_NAME=          # display name shown in UI
 ```
@@ -86,6 +105,14 @@ psql -U postgres -d school_management -f src/db/migrations/006_student_status_cl
 psql -U postgres -d school_management -f src/db/migrations/007_batch_status_graduated.sql
 psql -U postgres -d school_management -f src/db/migrations/008_timeslot_remove_effective_dates.sql
 psql -U postgres -d school_management -f src/db/migrations/009_academic_calendar_events.sql
+psql -U postgres -d school_management -f src/db/migrations/010_users_token_version.sql
+psql -U postgres -d school_management -f src/db/migrations/011_users_must_change_password.sql
+psql -U postgres -d school_management -f src/db/migrations/012_attendance_records_update.sql
+psql -U postgres -d school_management -f src/db/migrations/013_academic_sessions.sql
+psql -U postgres -d school_management -f src/db/migrations/014_batches_entry_level.sql
+psql -U postgres -d school_management -f src/db/migrations/015_classes_session_level_section.sql
+psql -U postgres -d school_management -f src/db/migrations/016_students_enrollment_dates.sql
+psql -U postgres -d school_management -f src/db/migrations/017_tenants_school_profile.sql
 
 # 5. Seed in this order (superadmin must exist before tenants)
 npx ts-node src/db/seeds/superadmin.ts

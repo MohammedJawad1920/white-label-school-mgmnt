@@ -103,6 +103,33 @@ function buildConfig() {
     .filter(Boolean);
   const LOG_LEVEL = process.env["LOG_LEVEL"] ?? "info";
 
+  // Rate limiting (Freeze §1.5)
+  const RATE_LIMIT_ENABLED = process.env["RATE_LIMIT_ENABLED"] !== "false";
+  const RATE_LIMIT_WINDOW_MS = parseInt(
+    process.env["RATE_LIMIT_WINDOW_MS"] ?? "60000",
+    10,
+  );
+  const RATE_LIMIT_MAX_REQUESTS = parseInt(
+    process.env["RATE_LIMIT_MAX_REQUESTS"] ?? "120",
+    10,
+  );
+
+  // v5.0: Cloudflare R2 (school profile uploads) — optional; empty string disables upload feature
+  const R2_ENDPOINT = process.env["R2_ENDPOINT"] ?? "";
+  const R2_BUCKET = process.env["R2_BUCKET"] ?? "";
+  const R2_ACCESS_KEY_ID = process.env["R2_ACCESS_KEY_ID"] ?? "";
+  const R2_SECRET_ACCESS_KEY = process.env["R2_SECRET_ACCESS_KEY"] ?? "";
+  // M-07: Public CDN base URL for R2 objects (e.g. https://pub-xxx.r2.dev).
+  // When set, returned URLs use the CDN domain instead of the API endpoint.
+  const R2_PUBLIC_URL = process.env["R2_PUBLIC_URL"] ?? "";
+
+  // v5.0: Web Push VAPID keys — optional until P2 (push notifications feature)
+  const VAPID_PUBLIC_KEY = process.env["VAPID_PUBLIC_KEY"] ?? "";
+  const VAPID_PRIVATE_KEY = process.env["VAPID_PRIVATE_KEY"] ?? "";
+
+  // v5.0: Sentry DSN — optional error tracking
+  const SENTRY_DSN = process.env["SENTRY_DSN"] ?? "";
+
   return {
     NODE_ENV,
     PORT,
@@ -114,6 +141,17 @@ function buildConfig() {
     BCRYPT_ROUNDS,
     ALLOWED_ORIGINS,
     LOG_LEVEL,
+    RATE_LIMIT_ENABLED,
+    RATE_LIMIT_WINDOW_MS,
+    RATE_LIMIT_MAX_REQUESTS,
+    R2_ENDPOINT,
+    R2_BUCKET,
+    R2_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY,
+    R2_PUBLIC_URL,
+    VAPID_PUBLIC_KEY,
+    VAPID_PRIVATE_KEY,
+    SENTRY_DSN,
   } as const;
 }
 

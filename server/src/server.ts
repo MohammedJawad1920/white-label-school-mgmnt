@@ -12,18 +12,14 @@
 
 import { createApp } from "./app";
 import { config } from "./config/env";
+import { logger } from "./utils/logger";
 
 const app = createApp();
 
 const server = app.listen(config.PORT, () => {
-  console.log(
-    JSON.stringify({
-      event: "server_started",
-      port: config.PORT,
-      nodeEnv: config.NODE_ENV,
-      version: "3.5.0",
-      timestamp: new Date().toISOString(),
-    }),
+  logger.info(
+    { event: "server_started", port: config.PORT, nodeEnv: config.NODE_ENV, version: "3.5.0" },
+    "Server started",
   );
 });
 
@@ -31,15 +27,15 @@ const server = app.listen(config.PORT, () => {
 // WHY: A hard kill during an open DB transaction can corrupt data or leave
 // locks. SIGTERM from Docker/K8s gives the process time to drain.
 function shutdown(signal: string) {
-  console.log(JSON.stringify({ event: "shutdown_signal", signal }));
+  logger.info({ event: "shutdown_signal", signal }, "Shutdown signal received");
   server.close(() => {
-    console.log(JSON.stringify({ event: "server_closed" }));
+    logger.info({ event: "server_closed" }, "Server closed");
     process.exit(0);
   });
 
   // Force-kill after 10 seconds if connections don't drain
   setTimeout(() => {
-    console.error(JSON.stringify({ event: "shutdown_timeout_force_exit" }));
+    logger.error({ event: "shutdown_timeout_force_exit" }, "Shutdown timeout — force exit");
     process.exit(1);
   }, 10_000);
 }
@@ -50,8 +46,6 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 // Catch unhandled rejections — log and exit so the process doesn't silently
 // continue in a broken state under a process manager that will restart it.
 process.on("unhandledRejection", (reason) => {
-  console.error(
-    JSON.stringify({ event: "unhandled_rejection", reason: String(reason) }),
-  );
+  logger.error({ event: "unhandled_rejection", reason: String(reason) }, "Unhandled rejection");
   process.exit(1);
 });

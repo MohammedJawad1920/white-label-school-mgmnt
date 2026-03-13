@@ -2,25 +2,29 @@
  * AuthContext.tsx — Tenant Session State
  *
  * WHY Context (not TanStack Query) for auth:
- * Auth is not "server state" — it's a local session derived from localStorage.
+ * Auth is not "server state" — it's a local session derived from sessionStorage.
  * TanStack Query is for data that lives on the server and needs caching/refetch.
  * The JWT + user object are session-local; React Context is the correct tool.
  *
  * BOOT INITIALIZATION:
- * We read localStorage synchronously during useState initializer so the user
+ * We read sessionStorage synchronously during useState initializer so the user
  * object is available on the very first render. This prevents a flash of the
  * login page on page refresh for already-authenticated users.
  *
+ * v5.0: localStorage replaced with sessionStorage (Frontend Freeze §1.3 S4).
+ * v5.0: mustChangePassword surfaced from JWT; App.tsx redirects to /change-password.
+ * v5.0: AUTH_KEY renamed 'auth' → 'auth_token' (M-03, Freeze §4 TOKEN_KEY constant).
+ *
  * AUTH_EXPIRED event flow:
  * 1. axios interceptor receives 401
- * 2. Interceptor fires window CustomEvent('AUTH_EXPIRED') and clears localStorage
+ * 2. Interceptor fires window CustomEvent('AUTH_EXPIRED') and clears sessionStorage
  * 3. This listener sets isExpired = true
  * 4. SessionExpiredModal renders as a blocking overlay
  * 5. User clicks "Log in" → dismissExpired() + navigate('/login')
  *
  * SWITCH ROLE:
  * Calls POST /auth/switch-role, gets a NEW JWT with the new activeRole.
- * Replaces token + user in state AND localStorage atomically.
+ * Replaces token + user in state AND sessionStorage atomically.
  * No page reload — all role-gated components re-render immediately.
  */
 import React, {
@@ -33,7 +37,7 @@ import React, {
 import type { TenantUser, SwitchRoleRequest, UserRole } from "@/types/api";
 import { authApi } from "@/api/auth";
 
-const AUTH_KEY = "auth";
+const AUTH_KEY = "auth_token";
 
 interface AuthStorage {
   token: string;
@@ -47,6 +51,8 @@ interface AuthContextValue {
   isExpired: boolean;
   /** Computed from user.activeRole — null when logged out */
   activeRole: UserRole | null;
+  /** v5.0: true when admin has forced a password reset */
+  mustChangePassword: boolean;
   login: (token: string, user: TenantUser) => void;
   logout: () => Promise<void>;
   switchRole: (req: SwitchRoleRequest) => Promise<void>;
@@ -59,7 +65,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 function readStorage(): AuthStorage | null {
   try {
-    const raw = localStorage.getItem(AUTH_KEY);
+    const raw = sessionStorage.getItem(AUTH_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as AuthStorage;
     // Validate required TenantUser fields — reject corrupted data
@@ -69,7 +75,7 @@ function readStorage(): AuthStorage | null {
       !parsed.user?.name ||
       !parsed.user?.email
     ) {
-      localStorage.removeItem(AUTH_KEY);
+      sessionStorage.removeItem(AUTH_KEY);
       return null;
     }
     return parsed;
@@ -79,7 +85,7 @@ function readStorage(): AuthStorage | null {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // Initialize synchronously from localStorage — no async, no flash
+  // Initialize synchronously from sessionStorage — no async, no flash
   const [user, setUser] = useState<TenantUser | null>(
     () => readStorage()?.user ?? null,
   );
@@ -89,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isExpired, setIsExpired] = useState(false);
 
   const login = useCallback((newToken: string, newUser: TenantUser) => {
-    localStorage.setItem(
+    sessionStorage.setItem(
       AUTH_KEY,
       JSON.stringify({ token: newToken, user: newUser }),
     );
@@ -101,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     // Fire-and-forget per Freeze §4: don't block UI if backend call fails
     authApi.logout().catch(() => {});
-    localStorage.removeItem(AUTH_KEY);
+    sessionStorage.removeItem(AUTH_KEY);
     setToken(null);
     setUser(null);
   }, []);
@@ -142,6 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!token && !!user,
         isExpired,
         activeRole: user?.activeRole ?? null,
+        mustChangePassword: user?.mustChangePassword ?? false,
         login,
         logout,
         switchRole,

@@ -10,6 +10,8 @@ const teacher: TenantUser = {
   roles: ["Teacher"],
   activeRole: "Teacher",
   studentId: null,
+  mustChangePassword: false,
+  classTeacherOf: null,
 };
 
 const admin: TenantUser = {
@@ -20,6 +22,8 @@ const admin: TenantUser = {
   roles: ["Admin"],
   activeRole: "Admin",
   studentId: null,
+  mustChangePassword: false,
+  classTeacherOf: null,
 };
 
 const multiRole: TenantUser = {
@@ -30,6 +34,8 @@ const multiRole: TenantUser = {
   roles: ["Teacher", "Admin"],
   activeRole: "Teacher",
   studentId: null,
+  mustChangePassword: false,
+  classTeacherOf: null,
 };
 
 describe("hasRole", () => {

@@ -9,6 +9,7 @@ const roleStyle: Record<UserRole | "SuperAdmin", string> = {
   Teacher: "bg-blue-100 text-blue-800",
   Admin: "bg-purple-100 text-purple-800",
   Student: "bg-green-100 text-green-800",
+  Guardian: "bg-teal-100 text-teal-800", // v5.0
   SuperAdmin: "bg-red-100 text-red-800",
 };
 

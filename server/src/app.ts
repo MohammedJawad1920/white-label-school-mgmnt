@@ -1,5 +1,6 @@
 import express, { Application } from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { config } from "./config/env";
 import { requestLogger } from "./utils/logger";
 import { globalErrorHandler } from "./utils/errors";
@@ -20,6 +21,12 @@ import attendanceRouter, {
   studentAttendanceRouter,
 } from "./modules/attendance/routes";
 import eventsRouter from "./modules/events/routes";
+// Phase 4 (v5.0)
+import academicSessionsRouter, {
+  promotionsRouter,
+} from "./modules/academic-sessions/routes";
+import schoolProfileRouter from "./modules/school-profile/routes";
+import settingsRouter from "./modules/settings/routes";
 
 export function createApp(): Application {
   const app = express();
@@ -30,38 +37,62 @@ export function createApp(): Application {
       credentials: true,
     }),
   );
-  app.use(express.json({ limit: "1mb" }));
+  app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: false }));
+
+  // Global rate limiting (Freeze §1.5)
+  const globalLimiter = rateLimit({
+    windowMs: config.RATE_LIMIT_WINDOW_MS,
+    max: config.RATE_LIMIT_MAX_REQUESTS,
+    skip: () => !config.RATE_LIMIT_ENABLED,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  app.use(globalLimiter);
+
+  // Stricter limit on login — 10 req/min per IP
+  const authLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 10,
+    skip: () => !config.RATE_LIMIT_ENABLED,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  app.use("/api/v1/auth/login", authLimiter);
+
   app.use(requestLogger);
 
   app.get("/health", (_req, res) => {
     res.json({
       status: "ok",
-      version: "4.5.0",
+      version: "5.0.0",
       timestamp: new Date().toISOString(),
     });
   });
 
-  // Phase 2 — SuperAdmin (no tenantContextMiddleware inside)
-  app.use("/api/super-admin", superAdminRouter);
+  // SuperAdmin (no tenantContextMiddleware inside)
+  app.use("/api/v1/super-admin", superAdminRouter);
 
-  // Phase 3 — Tenant auth + CRUD resources
+  // Tenant auth + CRUD resources
   // tenantContextMiddleware is applied inside each router individually
-  // so /api/auth/login stays public
-  app.use("/api/auth", authRouter);
-  app.use("/api/users", usersRouter);
-  app.use("/api/batches", batchesRouter);
-  app.use("/api/subjects", subjectsRouter);
-  app.use("/api/classes", classesRouter);
-  app.use("/api/students", studentsRouter);
-  app.use("/api/students", studentAttendanceRouter);
-  app.use("/api/features", featuresRouter);
-  app.use("/api/school-periods", schoolPeriodsRouter);
-  app.use("/api/timetable", timetableRouter);
-  app.use("/api/attendance", attendanceRouter);
-  app.use("/api/events", eventsRouter);
-  // app.use('/api/timetable',  featureGuard('timetable'),  timetableRouter);
-  // app.use('/api/attendance', featureGuard('attendance'), attendanceRouter);
+  // so /api/v1/auth/login stays public
+  app.use("/api/v1/auth", authRouter);
+  app.use("/api/v1/users", usersRouter);
+  app.use("/api/v1/batches", batchesRouter);
+  app.use("/api/v1/subjects", subjectsRouter);
+  app.use("/api/v1/classes", classesRouter);
+  app.use("/api/v1/students", studentsRouter);
+  app.use("/api/v1/students", studentAttendanceRouter);
+  app.use("/api/v1/features", featuresRouter);
+  app.use("/api/v1/school-periods", schoolPeriodsRouter);
+  app.use("/api/v1/timetable", timetableRouter);
+  app.use("/api/v1/attendance", attendanceRouter);
+  app.use("/api/v1/events", eventsRouter);
+  // v5.0 modules
+  app.use("/api/v1/academic-sessions", academicSessionsRouter);
+  app.use("/api/v1/promotions", promotionsRouter);
+  app.use("/api/v1/school-profile", schoolProfileRouter);
+  app.use("/api/v1/settings", settingsRouter);
 
   app.use((_req, res) => {
     res.status(404).json({
@@ -69,8 +100,9 @@ export function createApp(): Application {
         code: "NOT_FOUND",
         message: "Endpoint not found",
         details: {},
-        timestamp: new Date().toISOString(),
       },
+      requestId: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
     });
   });
 

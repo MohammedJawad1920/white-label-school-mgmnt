@@ -16,6 +16,14 @@
  * - CR-21: Student.classId/className nullable; PromoteRequest union; GraduateResult
  * - CR-22: Student.status (Active|DroppedOff|Graduated); UpdateStudentRequest.status
  * - CR-23: Batch.status Archived → Graduated
+ *
+ * v5.0 changes (M-010 through M-017):
+ * - M-010: token_version in JWT (TOKEN_REVOKED on revocation)
+ * - M-011: mustChangePassword in JWT + forced /change-password redirect
+ * - M-012: AttendanceStatus += Excused; corrected_* → updated_by/updated_at
+ * - M-013: AcademicSession lifecycle (UPCOMING→ACTIVE→COMPLETED) + promotion workflow
+ * - M-017: SchoolProfile fields on tenant
+ * - Guardian role added to UserRole
  */
 
 // ─── ERROR ───────────────────────────────────────────────────────────────────
@@ -29,7 +37,7 @@ export interface ApiError {
 }
 
 // ─── AUTH ────────────────────────────────────────────────────────────────────
-export type UserRole = "Teacher" | "Admin" | "Student"; // v3.4
+export type UserRole = "Teacher" | "Admin" | "Student" | "Guardian"; // v5.0: Guardian added
 
 export interface TenantUser {
   id: string;
@@ -40,11 +48,18 @@ export interface TenantUser {
   activeRole: UserRole;
   /** v4.5 CR-38: Student record ID when activeRole is Student; null otherwise */
   studentId: string | null;
+  /** v5.0 M-011: true when admin has forced a password reset */
+  mustChangePassword: boolean;
+  /** v5.0: classId if user is class teacher for active session; null otherwise */
+  classTeacherOf: string | null;
+  /** v5.0 H-08: IANA timezone string from JWT e.g. "Asia/Kolkata" */
+  tenantTimezone: string;
 }
 export interface TenantLoginRequest {
   email: string;
   password: string;
-  tenantSlug: string;
+  /** v5.0 C-01fe: tenantId UUID from VITE_TENANT_ID (not slug) */
+  tenantId: string;
 }
 export interface TenantLoginResponse {
   token: string;
@@ -258,7 +273,7 @@ export type DayOfWeek =
   | "Friday"
   | "Saturday"
   | "Sunday";
-export type AttendanceStatus = "Present" | "Absent" | "Late";
+export type AttendanceStatus = "Present" | "Absent" | "Late" | "Excused"; // v5.0 M-012
 
 export interface TimeSlot {
   id: string;
@@ -291,14 +306,11 @@ export interface CreateTimeSlotResponse {
 export interface AttendanceRecord {
   id: string;
   date: string;
-  /** Effective status = correctedStatus ?? originalStatus (v3.4) */
   status: AttendanceStatus;
-  /** Immutable status written at record-time (v3.4) */
-  originalStatus: AttendanceStatus;
-  /** User ID of corrector; null if never corrected (v3.4) */
-  correctedBy: string | null;
-  /** ISO timestamp of last correction; null if never corrected (v3.4) */
-  correctedAt: string | null;
+  /** User ID of last editor; null if never updated after initial record (v5.0 M-012) */
+  updatedBy: string | null;
+  /** ISO timestamp of last update; null if never updated after initial record (v5.0 M-012) */
+  updatedAt: string | null;
   timeSlot: {
     id: string;
     subjectName?: string;
@@ -309,9 +321,9 @@ export interface AttendanceRecord {
   recordedAt: string;
 }
 
-// v3.4 CR-09: correct an attendance record status
+// v3.4 CR-09 / v5.0 M-012: update an attendance record status
 export interface CorrectAttendanceRequest {
-  status: AttendanceStatus;
+  status: AttendanceStatus; // v5.0: includes "Excused" (Admin-only)
 }
 export interface CorrectAttendanceResponse {
   record: AttendanceRecord & { studentId: string; timeslotId: string };
@@ -327,6 +339,7 @@ export interface RecordClassAttendanceResponse {
   present: number;
   absent: number;
   late: number;
+  excused: number; // v5.0 M-012
   date: string;
   timeSlot: {
     id: string;
@@ -343,6 +356,8 @@ export interface StudentAttendanceResponse {
     present: number;
     absent: number;
     late: number;
+    /** v5.0 I-05: Excused count added to match AttendanceStatus enum */
+    excused: number;
     attendanceRate: number;
   };
   pagination: { limit: number; offset: number; total: number };
@@ -526,4 +541,125 @@ export interface UpdateEventResponse {
 export interface ListEventsResponse {
   events: Event[];
   total: number;
+}
+
+// ─── AUTH v5.0 ────────────────────────────────────────────────────────────────
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+/** v5.0 C-02fe: response is token only — no user object (OpenAPI /auth/change-password) */
+export interface ChangePasswordResponse {
+  token: string;
+}
+
+// ─── ACADEMIC SESSIONS (v5.0 M-013) ──────────────────────────────────────────
+export type AcademicSessionStatus = "UPCOMING" | "ACTIVE" | "COMPLETED";
+
+export interface AcademicSession {
+  id: string;
+  tenantId: string;
+  name: string;
+  status: AcademicSessionStatus;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSessionRequest {
+  name: string;
+  startDate: string;
+  endDate: string;
+}
+export interface CreateSessionResponse {
+  session: AcademicSession;
+}
+export interface ListSessionsResponse {
+  sessions: AcademicSession[];
+}
+export interface CopyTimetableRequest {
+  sourceSessionId: string;
+}
+export interface CopyTimetableResponse {
+  copiedCount: number;
+}
+
+// Promotion preview — expires 10 min after creation
+export interface PromotionStudentPreview {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  currentClassId: string | null;
+  currentClassName: string | null;
+  targetClassId: string | null;
+  targetClassName: string | null;
+  action: "promote" | "graduate" | "unassigned";
+}
+export interface PromotionBatchPreview {
+  batchId: string;
+  batchName: string;
+  students: PromotionStudentPreview[];
+}
+export interface PromotionPreview {
+  /** v5.0 C-05fe: renamed from previewId → promotionPreviewId (matches OpenAPI) */
+  promotionPreviewId: string;
+  expiresAt: string; // ISO timestamp
+  sourceSessionId: string;
+  targetSessionId: string;
+  batches: PromotionBatchPreview[];
+}
+/** v5.0 C-04fe: field renamed targetSessionId → toSessionId (matches OpenAPI) */
+export interface TransitionPreviewRequest {
+  toSessionId: string;
+}
+/** v5.0 C-05fe: updated to match OpenAPI transition/commit body */
+export interface TransitionCommitRequest {
+  promotionPreviewId: string;
+  batches: Array<{
+    batchId: string;
+    promotedStudentIds: string[];
+    skippedStudentIds: string[];
+  }>;
+}
+export interface TransitionCommitResponse {
+  promotionLogId: string;
+  promoted: number;
+  graduated: number;
+}
+export interface RollbackPromotionResponse {
+  rolledBack: number;
+}
+
+// ─── SCHOOL PROFILE (v5.0 M-017) ─────────────────────────────────────────────
+export interface SchoolProfile {
+  tenantId: string;
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  brandingColor: string | null;
+  principalName: string | null;
+  principalSignatureUrl: string | null;
+  activeLevels: string[] | null;
+}
+export interface UpdateSchoolProfileRequest {
+  logoUrl?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  brandingColor?: string | null;
+  principalName?: string | null;
+  principalSignatureUrl?: string | null;
+  activeLevels?: string[] | null;
+}
+export interface UpdateSchoolProfileResponse {
+  profile: SchoolProfile;
+}
+export interface UploadProfileFileResponse {
+  url: string;
 }

@@ -20,7 +20,8 @@ import { attendanceApi } from "@/api/attendance";
 import { parseApiError } from "@/utils/errors";
 import { formatDisplayDate, todayISO } from "@/utils/dates";
 import { StatusBadge } from "@/components/StatusBadge";
-import type { AttendanceRecord } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
+import type { AttendanceRecord, AttendanceStatus } from "@/types/api";
 
 const PAGE_LIMIT = 50;
 
@@ -93,13 +94,20 @@ export default function StudentAttendanceHistoryPage() {
   // v3.4 CR-09: attendance correction
   const [correctingRecord, setCorrectingRecord] =
     useState<AttendanceRecord | null>(null);
-  const [correctStatus, setCorrectStatus] = useState<string>("");
+  // H-03fe: typed as AttendanceStatus (includes Excused); empty string before dialog opens
+  const [correctStatus, setCorrectStatus] = useState<AttendanceStatus | "">("");
   const [correctError, setCorrectError] = useState<string | null>(null);
 
   const offset = (page - 1) * PAGE_LIMIT;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["student-attendance", studentId, dateFrom, dateTo, page],
+    // M-04fe: use QUERY_KEYS factory instead of inline array
+    queryKey: QUERY_KEYS.studentAttendancePaged(
+      studentId!,
+      dateFrom,
+      dateTo,
+      page,
+    ),
     queryFn: () =>
       attendanceApi.getStudentHistory(studentId!, {
         from: dateFrom || undefined,
@@ -140,10 +148,14 @@ export default function StudentAttendanceHistoryPage() {
   const correctMut = useMutation({
     mutationFn: () =>
       attendanceApi.correctRecord(correctingRecord!.id, {
-        status: correctStatus as "Present" | "Absent" | "Late",
+        // H-03fe: cast to AttendanceStatus (now includes Excused)
+        status: correctStatus as AttendanceStatus,
       }),
     onSuccess: async () => {
       await qc.invalidateQueries({
+        // M-04fe: use QUERY_KEYS factory prefix for this student
+        // TODO M-04fe: QUERY_KEYS needs a base studentAttendance(studentId) key
+        //   for prefix-based invalidation; using inline array for now
         queryKey: ["student-attendance", studentId],
       });
       setCorrectingRecord(null);
@@ -340,9 +352,9 @@ export default function StudentAttendanceHistoryPage() {
                       </td>
                       <td className="px-4 py-2.5">
                         <StatusBadge status={record.status} />
-                        {record.correctedAt && (
+                        {record.updatedAt && (
                           <span className="block text-xs text-muted-foreground mt-0.5">
-                            corrected · was {record.originalStatus}
+                            edited
                           </span>
                         )}
                       </td>
@@ -428,12 +440,16 @@ export default function StudentAttendanceHistoryPage() {
                 <select
                   id="correct-status"
                   value={correctStatus}
-                  onChange={(e) => setCorrectStatus(e.target.value)}
+                  onChange={(e) =>
+                    setCorrectStatus(e.target.value as AttendanceStatus)
+                  }
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="Present">Present</option>
                   <option value="Absent">Absent</option>
                   <option value="Late">Late</option>
+                  {/* H-03fe: Excused option added (Admin-only per OpenAPI) */}
+                  <option value="Excused">Excused</option>
                 </select>
               </div>
               {correctError && (

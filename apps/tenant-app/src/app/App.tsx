@@ -17,6 +17,9 @@ import { FeatureGate } from "./FeatureGate";
 
 // ── Lazy-loaded routes ────────────────────────────────────────────────────────
 const LoginPage = lazy(() => import("@/features/auth/LoginPage"));
+const ChangePasswordPage = lazy(
+  () => import("@/features/auth/ChangePasswordPage"),
+);
 const PrivacyPage = lazy(() => import("@/features/static/PrivacyPage"));
 const TermsPage = lazy(() => import("@/features/static/TermsPage"));
 const Layout = lazy(() => import("@/components/Layout"));
@@ -48,8 +51,28 @@ const MonthlySheetPage = lazy(
   () => import("@/features/attendance/MonthlySheetPage"),
 );
 const EventsPage = lazy(() => import("@/features/manage/events/EventsPage"));
+const SessionListPage = lazy(
+  () => import("@/features/admin/sessions/SessionListPage"),
+);
+const SessionDetailPage = lazy(
+  () => import("@/features/admin/sessions/SessionDetailPage"),
+);
+const BatchPromotionWizardPage = lazy(
+  () => import("@/features/admin/sessions/BatchPromotionWizardPage"),
+);
+const SchoolProfilePage = lazy(
+  () => import("@/features/admin/settings/SchoolProfilePage"),
+);
 
-// ── QueryClient — Freeze §4.2 (CR-FE-017) ────────────────────────────────────
+// ── v5.0: Boot-time VITE_TENANT_ID validation ────────────────────────────────
+const TENANT_ID = import.meta.env.VITE_TENANT_ID as string | undefined;
+// H-02: Freeze §1.5 — VITE_TENANT_ID must be a valid UUID (not just non-empty)
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isTenantIdValid =
+  !!TENANT_ID && UUID_REGEX.test(TENANT_ID.trim());
+
+// ── QueryClient — Freeze §3 (QC1–QC4 locked rules) ────────────────────────────
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error: unknown) => {
@@ -60,14 +83,16 @@ const queryClient = new QueryClient({
   }),
   defaultOptions: {
     queries: {
+      // M-06: Freeze §3 — default retry locked to 1 (network errors only)
       retry: (failureCount: number, error: unknown): boolean => {
-        // never retry 4xx — only retry network/5xx errors up to 3 times
+        // never retry 4xx — only retry network/5xx errors up to 1 time (Freeze §3)
         if (isAxiosError(error) && error.response?.status) return false;
-        return failureCount < 3;
+        return failureCount < 1;
       },
       retryDelay: (attempt: number): number =>
         Math.min(1000 * 2 ** attempt, 4000),
-      refetchOnWindowFocus: true,
+      // H-01: Freeze §3 QC2 — refetchOnWindowFocus locked to false
+      refetchOnWindowFocus: false,
     },
     mutations: { retry: false },
   },
@@ -121,12 +146,36 @@ function RootError() {
   );
 }
 
+// ── Boot error — VITE_TENANT_ID missing / invalid ────────────────────────────
+function TenantIdError() {
+  return (
+    <div className="flex items-center justify-center min-h-screen p-8">
+      <div className="text-center max-w-sm">
+        <p className="text-destructive font-semibold">Configuration error</p>
+        <p className="text-sm text-muted-foreground mt-2">
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">
+            VITE_TENANT_ID
+          </code>{" "}
+          is missing or not a valid UUID. Set it in{" "}
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">.env</code> and
+          restart the dev server.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Per-route error boundary wrapper ─────────────────────────────────────────
 function Guarded({ children }: { children: React.ReactNode }) {
   return <ErrorBoundary fallbackRender={RouteError}>{children}</ErrorBoundary>;
 }
 
 export function App() {
+  // v5.0: fail fast if VITE_TENANT_ID is missing / malformed
+  if (!isTenantIdValid) {
+    return <TenantIdError />;
+  }
+
   // Clear all cached queries when active role changes — prevents cross-role data leaks
   React.useEffect(() => {
     function handleRoleSwitch() {
@@ -135,6 +184,13 @@ export function App() {
     window.addEventListener("ROLE_SWITCHED", handleRoleSwitch);
     return () => window.removeEventListener("ROLE_SWITCHED", handleRoleSwitch);
   }, []);
+
+  // TODO M-01fe: Freeze §2 requires createBrowserRouter (not BrowserRouter JSX wrapper).
+  // Switch to createBrowserRouter once all route definitions are stable to avoid
+  // breaking changes. Current BrowserRouter works correctly in the interim.
+
+  // TODO H-05: After useSessionStore is wired, call GET /academic-sessions/current
+  // on app boot (after auth hydration) and populate useSessionStore.setCurrentSession.
 
   return (
     <ErrorBoundary fallbackRender={RootError}>
@@ -177,8 +233,19 @@ export function App() {
                     }
                   />
 
-                  {/* ── Protected routes — all wrapped in Layout ────────────── */}
+                  {/* ── Protected routes ────────────────────────────────────── */}
                   <Route element={<ProtectedRoute />}>
+                    {/* v5.0 M-011: change-password outside Layout (forced mode has no nav) */}
+                    <Route
+                      path="/change-password"
+                      element={
+                        <Guarded>
+                          <ChangePasswordPage />
+                        </Guarded>
+                      }
+                    />
+
+                    {/* All other protected routes — wrapped in Layout */}
                     <Route element={<Layout />}>
                       <Route
                         index
@@ -331,6 +398,99 @@ export function App() {
                               <EventsPage />
                             </RoleGate>
                           </Guarded>
+                        }
+                      />
+
+                      {/* v5.0 M-013: Academic Sessions — Admin only */}
+                      <Route
+                        path="/admin/sessions"
+                        element={
+                          <Guarded>
+                            <RoleGate roles={["Admin"]}>
+                              <SessionListPage />
+                            </RoleGate>
+                          </Guarded>
+                        }
+                      />
+                      <Route
+                        path="/admin/sessions/:id"
+                        element={
+                          <Guarded>
+                            <RoleGate roles={["Admin"]}>
+                              <SessionDetailPage />
+                            </RoleGate>
+                          </Guarded>
+                        }
+                      />
+                      <Route
+                        path="/admin/sessions/:id/promote"
+                        element={
+                          <Guarded>
+                            <RoleGate roles={["Admin"]}>
+                              <BatchPromotionWizardPage />
+                            </RoleGate>
+                          </Guarded>
+                        }
+                      />
+
+                      {/* v5.0 M-017: School Profile — Admin only */}
+                      <Route
+                        path="/admin/settings/profile"
+                        element={
+                          <Guarded>
+                            <RoleGate roles={["Admin"]}>
+                              <SchoolProfilePage />
+                            </RoleGate>
+                          </Guarded>
+                        }
+                      />
+
+                      {/* H-06/H-07: Freeze §2 role-prefixed path aliases — redirect to
+                          canonical paths while full route migration is pending.
+                          These allow freeze-spec links (/admin/*, /teacher/*, etc.)
+                          to work without breaking existing /dashboard, /timetable links. */}
+                      <Route
+                        path="/admin/dashboard"
+                        element={<Navigate to="/dashboard" replace />}
+                      />
+                      <Route
+                        path="/teacher/dashboard"
+                        element={<Navigate to="/dashboard" replace />}
+                      />
+                      <Route
+                        path="/student/dashboard"
+                        element={<Navigate to="/dashboard" replace />}
+                      />
+                      <Route
+                        path="/admin/timetable"
+                        element={<Navigate to="/timetable" replace />}
+                      />
+                      <Route
+                        path="/teacher/timetable"
+                        element={<Navigate to="/timetable" replace />}
+                      />
+                      <Route
+                        path="/student/timetable"
+                        element={<Navigate to="/timetable" replace />}
+                      />
+                      <Route
+                        path="/teacher/attendance"
+                        element={<Navigate to="/attendance/record" replace />}
+                      />
+                      <Route
+                        path="/admin/attendance/daily"
+                        element={<Navigate to="/attendance/summary" replace />}
+                      />
+                      <Route
+                        path="/admin/attendance/monthly"
+                        element={
+                          <Navigate to="/attendance/monthly-sheet" replace />
+                        }
+                      />
+                      <Route
+                        path="/teacher/attendance/monthly"
+                        element={
+                          <Navigate to="/attendance/monthly-sheet" replace />
                         }
                       />
                     </Route>

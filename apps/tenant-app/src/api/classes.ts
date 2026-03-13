@@ -13,6 +13,11 @@ import type {
 export const classesApi = {
   list: () =>
     apiClient.get<ListClassesResponse>("/classes").then((r) => r.data),
+  /** H-04fe: list classes filtered by session ID (GET /classes?sessionId=:id) */
+  listBySession: (sessionId: string) =>
+    apiClient
+      .get<ListClassesResponse>("/classes", { params: { sessionId } })
+      .then((r) => r.data),
   create: (data: CreateClassRequest) =>
     apiClient.post<{ class: Class }>("/classes", data).then((r) => r.data),
   update: (id: string, data: UpdateClassRequest) =>

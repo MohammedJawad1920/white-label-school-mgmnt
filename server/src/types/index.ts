@@ -1,5 +1,5 @@
 // =====================================================
-// FREEZE v4.5 — Canonical Type Definitions (§3.2)
+// FREEZE v5.0 — Canonical Type Definitions (§3.2)
 // All application code must import from here.
 // =====================================================
 
@@ -14,6 +14,16 @@ export interface TenantRow {
   deactivated_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  // v5.0 M-017: school profile columns
+  logo_url: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  branding_color: string | null;
+  principal_name: string | null;
+  principal_signature_url: string | null;
+  active_levels: string[] | null;
 }
 
 export interface SuperAdminRow {
@@ -35,6 +45,9 @@ export interface UserRow {
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  // v5.0 M-010 / M-011
+  token_version: number;
+  must_change_password: boolean;
 }
 
 export interface BatchRow {
@@ -47,6 +60,9 @@ export interface BatchRow {
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  // v5.0 M-014
+  entry_level: string | null;
+  entry_session_id: string | null;
 }
 
 export interface SubjectRow {
@@ -67,6 +83,11 @@ export interface ClassRow {
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  // v5.0 M-015
+  session_id: string | null;
+  level: string | null;
+  section: string | null;
+  class_teacher_id: string | null;
 }
 
 export interface StudentRow {
@@ -82,6 +103,9 @@ export interface StudentRow {
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  // v5.0 M-016
+  enrolled_at: Date | string | null;
+  dropped_at: Date | string | null;
 }
 
 export interface SchoolPeriodRow {
@@ -115,13 +139,12 @@ export interface AttendanceRecordRow {
   student_id: string;
   timeslot_id: string;
   date: string; // DATE as ISO string
-  status: AttendanceStatus; // v3.4: NEVER mutated after insert (original status)
+  status: AttendanceStatus;
   recorded_by: string;
   recorded_at: Date;
-  // v3.4: correction audit trail
-  corrected_status: AttendanceStatus | null;
-  corrected_by: string | null;
-  corrected_at: Date | null;
+  // v5.0 M-012: replaces corrected_status/corrected_by/corrected_at
+  updated_by: string | null;
+  updated_at: Date | null;
 }
 
 export interface FeatureRow {
@@ -142,7 +165,7 @@ export interface TenantFeatureRow {
 
 // ─── Domain Enums / Unions ───────────────────────────────────────────────────
 
-export type UserRole = "Teacher" | "Admin" | "Student"; // v3.4: Student added
+export type UserRole = "Teacher" | "Admin" | "Student" | "Guardian" | "SuperAdmin"; // v5.0: Guardian added; SuperAdmin added for OpenAPI completeness (I-02)
 
 export type DayOfWeek =
   | "Monday"
@@ -153,7 +176,7 @@ export type DayOfWeek =
   | "Saturday"
   | "Sunday";
 
-export type AttendanceStatus = "Present" | "Absent" | "Late";
+export type AttendanceStatus = "Present" | "Absent" | "Late" | "Excused"; // v5.0 M-012: Excused added
 
 export type FeatureKey = "timetable" | "attendance";
 
@@ -170,8 +193,12 @@ export interface TenantJwtPayload {
   userId: string;
   tenantId: string;
   roles: UserRole[];
-  activeRole: UserRole; // v3.4: enum includes Student
-  studentId?: string | null; // v4.5 CR-38: populated when activeRole=Student and linked record exists; null otherwise; optional for backward-compat
+  activeRole: UserRole;
+  studentId?: string | null; // v4.5 CR-38: populated when activeRole=Student; null otherwise
+  // v5.0: logout revocation + forced password change
+  tokenVersion: number; // incremented in DB on logout; middleware rejects stale tokens
+  mustChangePassword: boolean; // frontend redirects to /change-password when true
+  classTeacherOf: string | null; // classId if user is class teacher for an active session; null otherwise
   iat?: number;
   exp?: number;
 }
@@ -195,7 +222,11 @@ declare global {
       userRoles?: UserRole[];
       activeRole?: UserRole;
       superAdminId?: string;
-      studentId?: string | null; // v4.5 CR-38: attached by tenantContextMiddleware; null for non-Student roles
+      studentId?: string | null; // v4.5 CR-38
+      // v5.0: attached by tenantContextMiddleware from JWT
+      tokenVersion?: number;
+      mustChangePassword?: boolean;
+      classTeacherOf?: string | null;
     }
   }
 }
@@ -210,6 +241,8 @@ export interface ApiUser {
   roles: UserRole[];
   activeRole: UserRole;
   studentId: string | null; // v4.5 CR-38
+  mustChangePassword: boolean; // v5.0
+  classTeacherOf: string | null; // v5.0
 }
 
 export interface ApiTenant {
@@ -255,12 +288,12 @@ export interface ApiAttendanceRecord {
   studentName: string;
   timeslotId: string;
   date: string;
-  originalStatus: AttendanceStatus; // v3.4: original recorded value, never changes
-  status: AttendanceStatus; // v3.4: effective = correctedStatus ?? originalStatus
-  correctedBy: string | null; // v3.4
-  correctedAt: string | null; // v3.4
+  status: AttendanceStatus;
   recordedBy: string;
   recordedAt: string;
+  // v5.0 M-012: replaces corrected_* fields
+  updatedBy: string | null;
+  updatedAt: string | null;
 }
 
 // ─── Standard Error Shape (matches OpenAPI v3.4.0) ──────────────────────────
@@ -322,4 +355,73 @@ export interface PaginatedResponse<T> {
   total: number;
   page: number;
   limit: number;
+}
+
+// ─── Academic Sessions (v5.0 M-013) ─────────────────────────────────────────
+
+export type AcademicSessionStatus = "UPCOMING" | "ACTIVE" | "COMPLETED";
+
+export interface AcademicSessionRow {
+  id: string;
+  tenant_id: string;
+  name: string;
+  status: AcademicSessionStatus;
+  start_date: string; // DATE as ISO string
+  end_date: string; // DATE as ISO string
+  deleted_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+  // v5.0 M-06: computed by queries as (status = 'ACTIVE'), not a DB column
+  is_current?: boolean;
+}
+
+export interface ApiAcademicSession {
+  id: string;
+  tenantId: string;
+  name: string;
+  status: AcademicSessionStatus;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  isCurrent: boolean; // v5.0 H-05: whether this is the currently active session
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PromotionPreviewRow {
+  id: string;
+  tenant_id: string;
+  source_session_id: string;
+  preview_data: Record<string, unknown>;
+  expires_at: Date;
+  created_at: Date;
+}
+
+export interface PromotionLogRow {
+  id: string;
+  tenant_id: string;
+  source_session_id: string;
+  target_session_id: string;
+  committed_by: string;
+  snapshot: Record<string, unknown>;
+  rolled_back: boolean;
+  rolled_back_at: Date | null;
+  rolled_back_by: string | null;
+  created_at: Date;
+}
+
+// ─── School Profile (v5.0 M-017) ────────────────────────────────────────────
+
+export interface ApiSchoolProfile {
+  tenantId: string;
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  brandingColor: string | null;
+  principalName: string | null;
+  principalSignatureUrl: string | null;
+  activeLevels: string[] | null;
 }

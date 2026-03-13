@@ -9,9 +9,8 @@
  */
 
 import { Pool, PoolClient, types } from "pg";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { config } from "../config/env";
+import { logger } from "../utils/logger";
 
 // Return PostgreSQL DATE columns (OID 1082) as plain YYYY-MM-DD strings.
 // Without this, pg creates a JS Date at local midnight, causing a timezone
@@ -19,26 +18,23 @@ dotenv.config();
 types.setTypeParser(1082, (v: string) => v);
 
 // ── Validate required env vars ───────────────────────────────────────────────
-const DATABASE_URL = process.env["DATABASE_URL"];
-if (!DATABASE_URL) {
-  throw new Error("Missing required environment variable: DATABASE_URL");
-}
+// DATABASE_URL is validated by config/env.ts at startup — no need to re-check here.
 
 export const pool = new Pool({
-  connectionString: DATABASE_URL,
-  min: parseInt(process.env["DATABASE_POOL_MIN"] ?? "2", 10),
-  max: parseInt(process.env["DATABASE_POOL_MAX"] ?? "10", 10),
+  connectionString: config.DATABASE_URL,
+  min: config.DATABASE_POOL_MIN,
+  max: config.DATABASE_POOL_MAX,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
   ssl:
-    process.env["NODE_ENV"] === "production"
+    config.NODE_ENV === "production"
       ? { rejectUnauthorized: true }
       : undefined,
 });
 
 // Log pool-level errors without crashing the process
 pool.on("error", (err: Error) => {
-  console.error("[DB Pool] Unexpected error on idle client:", err.message);
+  logger.error({ err, action: "db.pool.error" }, err.message);
 });
 
 // Verify connection on startup
@@ -51,10 +47,10 @@ pool.connect(
     release: (err?: Error) => void,
   ) => {
     if (err) {
-      console.error("Failed to connect to PostgreSQL:", err.message);
+      logger.error({ err, action: "db.connect.failed" }, err.message);
       process.exit(1);
     }
-    console.log("PostgreSQL connected");
+    logger.info({ action: "db.connected" }, "PostgreSQL connected");
     release();
   },
 );

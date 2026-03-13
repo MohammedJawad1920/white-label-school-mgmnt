@@ -1,10 +1,15 @@
 /**
  * Centralized TanStack Query key factory — tenant-app (GAP-04)
  *
+ * M-05: Keys aligned with Frontend Freeze §3 QK factory (v3.0).
+ *
  * Usage:
  *   useQuery({ queryKey: QUERY_KEYS.classes(), ... })
  *   useQuery({ queryKey: QUERY_KEYS.timetableToday(date), ... })
  *   qc.invalidateQueries({ queryKey: QUERY_KEYS.students() })
+ *
+ * NOTE: Inline query keys in components must use these factory functions —
+ * never hard-code key arrays in feature files.
  */
 
 export const QUERY_KEYS = {
@@ -53,9 +58,12 @@ export const QUERY_KEYS = {
   /** Consecutive absent streaks for a time slot (§3.3) */
   attendanceStreaks: (timeSlotId: string) =>
     ["attendance-streaks", timeSlotId] as const,
-  /** All slots summary for a class on a given date (§3.3) */
+  /**
+   * All slots summary for a class on a given date (§3.3).
+   * M-05: key root is ['attendance', 'daily-summary', ...] per Freeze §3 QK.attendanceDailySummary.
+   */
   attendanceDailySummary: (classId: string, date: string) =>
-    ["attendance-daily-summary", classId, date] as const,
+    ["attendance", "daily-summary", classId, date] as const,
   /** Full monthly sheet for a class + subject (§3.3) */
   attendanceMonthlySheet: (
     classId: string,
@@ -70,9 +78,12 @@ export const QUERY_KEYS = {
     to: string,
     offset: number,
   ) => ["attendance-toppers", classId, from, to, offset] as const,
-  /** Absent student names for a timeslot on a date — lazy (popup only) */
+  /**
+   * Absent student names for a timeslot on a date — lazy (popup only).
+   * M-05: key root is ['attendance', 'absentees', ...] per Freeze §3 QK.attendanceAbsentees.
+   */
   absentees: (timeSlotId: string, date: string) =>
-    ["absentees", timeSlotId, date] as const,
+    ["attendance", "absentees", timeSlotId, date] as const,
 
   // ── Events ────────────────────────────────────────────────────────────────
   /** Calendar events within a date range (§3.3) */
@@ -82,4 +93,26 @@ export const QUERY_KEYS = {
 
   // ── Features ──────────────────────────────────────────────────────────────
   features: () => ["features"] as const,
+
+  // ── Academic Sessions (v5.0 M-013) ───────────────────────────────────────
+  /** Root key for all sessions — invalidate to bust the entire sessions cache */
+  sessions: () => ["sessions"] as const,
+  /**
+   * Sessions list (with optional filters).
+   * Sits under ['sessions', 'list'] so invalidating sessions() busts this too.
+   */
+  sessionsList: (filters?: object) =>
+    filters
+      ? (["sessions", "list", filters] as const)
+      : (["sessions", "list"] as const),
+  /** Current active session (app-boot singleton) */
+  sessionCurrent: () => ["sessions", "current"] as const,
+  /**
+   * Single session by ID.
+   * M-05: key is ['sessions', id] per Freeze §3 QK.session — NOT ['sessions', 'detail', id].
+   */
+  sessionDetail: (id: string) => ["sessions", id] as const,
+
+  // ── School Profile (v5.0 M-017) ──────────────────────────────────────────
+  schoolProfile: () => ["school-profile"] as const,
 } as const;

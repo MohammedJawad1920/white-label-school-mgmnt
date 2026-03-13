@@ -14,6 +14,7 @@
  *     Student:  Dashboard, Timetable
  */
 import type { LucideIcon } from "lucide-react";
+import type { FeatureKey } from "@/types/api";
 import {
   LayoutDashboard,
   CalendarDays,
@@ -27,9 +28,11 @@ import {
   BookMarked,
   Clock,
   CalendarRange,
+  CalendarCheck2,
+  Building2,
 } from "lucide-react";
 
-export type Role = "Teacher" | "Admin" | "Student";
+export type Role = "Teacher" | "Admin" | "Student" | "Guardian"; // v5.0
 
 export interface NavItem {
   label: string;
@@ -44,6 +47,12 @@ export interface NavItem {
   isSubItem?: boolean;
   /** Group header label — renders a non-clickable divider above this item */
   groupLabel?: string;
+  /**
+   * M-02: Feature flag key — if set, this nav item is only shown when the
+   * named feature is enabled (mirrors FeatureGate on the corresponding route).
+   * undefined = always visible (no feature gate).
+   */
+  featureKey?: FeatureKey;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -58,18 +67,21 @@ export const NAV_ITEMS: NavItem[] = [
     url: "/timetable",
     allowedRoles: ["Teacher", "Admin", "Student"],
     icon: CalendarDays,
+    featureKey: "timetable",
   },
   {
     label: "Record Attendance",
     url: "/attendance/record",
     allowedRoles: ["Admin", "Teacher"],
     icon: ClipboardCheck,
+    featureKey: "attendance",
   },
   {
     label: "Attendance Summary",
     url: "/attendance/summary",
     allowedRoles: ["Admin"],
     icon: BarChart3,
+    featureKey: "attendance",
   },
   // v4.5 CR-36: Monthly sheet — Admin + Teacher
   {
@@ -77,6 +89,7 @@ export const NAV_ITEMS: NavItem[] = [
     url: "/attendance/monthly-sheet",
     allowedRoles: ["Admin", "Teacher"],
     icon: Sheet,
+    featureKey: "attendance",
   },
   // ── Manage group ─────────────────────────────────────────────────────────────
   {
@@ -121,6 +134,7 @@ export const NAV_ITEMS: NavItem[] = [
     allowedRoles: ["Admin"],
     icon: Clock,
     isSubItem: true,
+    featureKey: "timetable",
   },
   // v4.5 CR-37: Events — Admin only
   {
@@ -128,6 +142,22 @@ export const NAV_ITEMS: NavItem[] = [
     url: "/manage/events",
     allowedRoles: ["Admin"],
     icon: CalendarRange,
+    isSubItem: true,
+  },
+  // v5.0 M-013: Academic Sessions — Admin only
+  {
+    label: "Sessions",
+    url: "/admin/sessions",
+    allowedRoles: ["Admin"],
+    icon: CalendarCheck2,
+    isSubItem: true,
+  },
+  // v5.0 M-017: School Profile — Admin only
+  {
+    label: "School Profile",
+    url: "/admin/settings/profile",
+    allowedRoles: ["Admin"],
+    icon: Building2,
     isSubItem: true,
   },
 ];

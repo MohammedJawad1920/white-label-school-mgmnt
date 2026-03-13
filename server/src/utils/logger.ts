@@ -35,8 +35,37 @@ export function requestLogger(
       statusCode: res.statusCode,
       latencyMs: Date.now() - startMs,
     };
+    // eslint-disable-next-line no-console
     console.log(JSON.stringify(logEntry));
   });
 
   next();
 }
+
+// ─── Application Logger ───────────────────────────────────────────────────────
+// Simple structured logger for use in service and controller code.
+// Never log passwords, tokens, or PII.
+
+type LogLevel = "info" | "error" | "debug" | "warn";
+
+function log(
+  level: LogLevel,
+  data: Record<string, unknown>,
+  message: string,
+): void {
+  // eslint-disable-next-line no-console
+  console.log(
+    JSON.stringify({ level, message, ...data, ts: new Date().toISOString() }),
+  );
+}
+
+export const logger = {
+  info: (data: Record<string, unknown>, message: string) =>
+    log("info", data, message),
+  error: (data: Record<string, unknown>, message: string) =>
+    log("error", data, message),
+  debug: (data: Record<string, unknown>, message: string) =>
+    log("debug", data, message),
+  warn: (data: Record<string, unknown>, message: string) =>
+    log("warn", data, message),
+};
