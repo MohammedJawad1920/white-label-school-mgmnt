@@ -12,6 +12,7 @@ const teacher: TenantUser = {
   studentId: null,
   mustChangePassword: false,
   classTeacherOf: null,
+  tenantTimezone: "Asia/Kolkata",
 };
 
 const admin: TenantUser = {
@@ -24,6 +25,7 @@ const admin: TenantUser = {
   studentId: null,
   mustChangePassword: false,
   classTeacherOf: null,
+  tenantTimezone: "Asia/Kolkata",
 };
 
 const multiRole: TenantUser = {
@@ -36,6 +38,7 @@ const multiRole: TenantUser = {
   studentId: null,
   mustChangePassword: false,
   classTeacherOf: null,
+  tenantTimezone: "Asia/Kolkata",
 };
 
 describe("hasRole", () => {
