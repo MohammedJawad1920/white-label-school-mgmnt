@@ -27,9 +27,7 @@ export const pool = new Pool({
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
   ssl:
-    config.NODE_ENV === "production"
-      ? { rejectUnauthorized: true }
-      : undefined,
+    config.NODE_ENV === "production" ? { rejectUnauthorized: true } : undefined,
 });
 
 // Log pool-level errors without crashing the process

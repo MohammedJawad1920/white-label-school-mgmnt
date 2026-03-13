@@ -18,7 +18,12 @@ const app = createApp();
 
 const server = app.listen(config.PORT, () => {
   logger.info(
-    { event: "server_started", port: config.PORT, nodeEnv: config.NODE_ENV, version: "3.5.0" },
+    {
+      event: "server_started",
+      port: config.PORT,
+      nodeEnv: config.NODE_ENV,
+      version: "3.5.0",
+    },
     "Server started",
   );
 });
@@ -35,7 +40,10 @@ function shutdown(signal: string) {
 
   // Force-kill after 10 seconds if connections don't drain
   setTimeout(() => {
-    logger.error({ event: "shutdown_timeout_force_exit" }, "Shutdown timeout — force exit");
+    logger.error(
+      { event: "shutdown_timeout_force_exit" },
+      "Shutdown timeout — force exit",
+    );
     process.exit(1);
   }, 10_000);
 }
@@ -46,6 +54,9 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 // Catch unhandled rejections — log and exit so the process doesn't silently
 // continue in a broken state under a process manager that will restart it.
 process.on("unhandledRejection", (reason) => {
-  logger.error({ event: "unhandled_rejection", reason: String(reason) }, "Unhandled rejection");
+  logger.error(
+    { event: "unhandled_rejection", reason: String(reason) },
+    "Unhandled rejection",
+  );
   process.exit(1);
 });
