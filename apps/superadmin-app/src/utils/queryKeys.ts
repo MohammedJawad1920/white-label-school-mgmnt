@@ -9,6 +9,10 @@
 export const SA_QUERY_KEYS = {
   // ── Tenants ───────────────────────────────────────────────────────────────
   tenants: () => ["sa-tenants"] as const,
+  tenantsList: (f?: { status?: string; search?: string }) =>
+    f
+      ? (["sa-tenants", "list", f] as const)
+      : (["sa-tenants", "list"] as const),
   tenant: (id: string) => ["sa-tenants", id] as const,
 
   // ── Features ──────────────────────────────────────────────────────────────

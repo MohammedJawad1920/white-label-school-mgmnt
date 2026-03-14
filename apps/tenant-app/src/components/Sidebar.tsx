@@ -95,7 +95,7 @@ export function Sidebar() {
                 }}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors min-h-[40px]",
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors min-h-[40px] truncate",
                   item.isSubItem ? "pl-4" : "",
                   active
                     ? "bg-primary text-primary-foreground"

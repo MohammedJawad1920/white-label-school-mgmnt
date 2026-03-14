@@ -37,7 +37,7 @@ import { studentsApi } from "@/api/students";
 import { attendanceApi } from "@/api/attendance";
 import { todayISO, todayDayOfWeek } from "@/utils/dates";
 import { parseApiError } from "@/utils/errors";
-import { toast } from "sonner";
+import { useAppToast } from "@/hooks/useAppToast";
 import { cn } from "@/utils/cn";
 import { AT_RISK_THRESHOLD } from "@/utils/attendance";
 import type { TimeSlot, Student, AttendanceStreak } from "@/types/api";
@@ -174,6 +174,7 @@ export default function RecordAttendancePage() {
   const { user } = useAuth();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const appToast = useAppToast();
   const isAdmin = user?.activeRole === "Admin";
   const isTeacher = user?.activeRole === "Teacher";
 
@@ -372,14 +373,14 @@ export default function RecordAttendancePage() {
               updated !== 1 ? "s" : ""
             }.`,
       );
-      if (updated > 0) toast.success("Attendance updated successfully.");
+      if (updated > 0) appToast.success("Attendance updated successfully.");
       setAlreadyRecorded(false);
       await queryClient.invalidateQueries({ queryKey: ["student-attendance"] });
       await queryClient.invalidateQueries({ queryKey: ["attendance-summary"] });
     },
     onError: (err) => {
       setSubmitError(parseApiError(err).message);
-      toast.error("Something went wrong. Please try again.");
+      appToast.error("Something went wrong. Please try again.");
     },
   });
 
@@ -387,22 +388,21 @@ export default function RecordAttendancePage() {
   const mutation = useMutation({
     mutationFn: () =>
       attendanceApi.recordClass({
-        timeSlotId: selectedSlotId,
+        timeslotId: selectedSlotId,
         date: selectedDate,
-        defaultStatus,
-        exceptions: Array.from(exceptions.entries()).map(
-          ([studentId, status]) => ({
-            studentId,
-            status,
-          }),
-        ),
+        // Expand defaultStatus + exceptions into explicit per-student array
+        // (OpenAPI contract: timeslotId + students[], no defaultStatus/exceptions)
+        students: classStudents.map((student) => ({
+          studentId: student.id,
+          status: exceptions.get(student.id) ?? defaultStatus,
+        })),
       }),
     onSuccess: async (data) => {
       setSubmitError(null);
       setSuccessMsg(
         `${data.recorded} records saved. ${data.present} present, ${data.absent} absent, ${data.late} late.`,
       );
-      toast.success("Attendance recorded successfully.");
+      appToast.success("Attendance recorded successfully.");
       setExceptions(new Map());
       await queryClient.invalidateQueries({ queryKey: ["student-attendance"] });
       await queryClient.invalidateQueries({ queryKey: ["attendance-summary"] });
@@ -421,7 +421,7 @@ export default function RecordAttendancePage() {
         setSubmitError("You are not assigned to this class.");
       } else {
         setSubmitError(message);
-        toast.error("Something went wrong. Please try again.");
+        appToast.error("Something went wrong. Please try again.");
       }
     },
   });
@@ -511,6 +511,16 @@ export default function RecordAttendancePage() {
               }}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
+            {/* CR Finding 11: locked date picker helper text for Teacher role */}
+            {isTeacher && (
+              <p
+                id="date-locked-hint"
+                className="mt-1 text-xs text-muted-foreground"
+              >
+                Attendance can only be recorded for today. Contact Admin to
+                correct past records.
+              </p>
+            )}
           </div>
         </div>
       </div>

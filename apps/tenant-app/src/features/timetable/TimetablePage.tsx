@@ -177,7 +177,7 @@ export default function TimetablePage() {
     teacherId: filterTeacher || undefined,
   };
 
-  const canFetch = !!(filterClassId || filterTeacher);
+  const canFetch = !!(filterDay || filterClassId || filterTeacher);
 
   const timetableQ = useQuery({
     queryKey: ["timetable", filters],
@@ -344,7 +344,7 @@ export default function TimetablePage() {
       {!canFetch && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <p className="text-sm text-muted-foreground">
-            Select a class or teacher to view the timetable.
+            Select a day, class, or teacher to view the timetable.
           </p>
         </div>
       )}

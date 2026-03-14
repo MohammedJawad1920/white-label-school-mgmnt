@@ -1,7 +1,8 @@
 /**
  * SAAuthContext — SuperAdmin session state.
  * Mirror of tenant AuthContext but:
- *   - localStorage key: 'sa-auth' (Freeze §State Management — isolated key)
+ *   - sessionStorage key: 'sa-auth' (Freeze §8.1 / CR-FE-029 — localStorage
+ *     is forbidden for token storage in both apps)
  *   - Stores SuperAdmin object (not TenantUser)
  *   - Listens for SA_AUTH_EXPIRED (not AUTH_EXPIRED)
  *   - No switchRole (SuperAdmin has one role)
@@ -37,7 +38,7 @@ const SAAuthContext = createContext<SAAuthContextValue | null>(null);
 
 function readStorage(): SAAuthStorage | null {
   try {
-    const raw = localStorage.getItem(SA_AUTH_KEY);
+    const raw = sessionStorage.getItem(SA_AUTH_KEY);
     return raw ? (JSON.parse(raw) as SAAuthStorage) : null;
   } catch {
     return null;
@@ -54,7 +55,7 @@ export function SAAuthProvider({ children }: { children: React.ReactNode }) {
   const [isExpired, setIsExpired] = useState(false);
 
   const login = useCallback((newToken: string, newSuperAdmin: SuperAdmin) => {
-    localStorage.setItem(
+    sessionStorage.setItem(
       SA_AUTH_KEY,
       JSON.stringify({ token: newToken, superAdmin: newSuperAdmin }),
     );
@@ -65,7 +66,7 @@ export function SAAuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     superAdminAuthApi.logout().catch(() => {});
-    localStorage.removeItem(SA_AUTH_KEY);
+    sessionStorage.removeItem(SA_AUTH_KEY);
     setToken(null);
     setSuperAdmin(null);
   }, []);

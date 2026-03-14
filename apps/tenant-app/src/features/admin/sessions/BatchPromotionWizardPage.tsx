@@ -12,13 +12,14 @@
  * C-06fe: commit body now includes promotionPreviewId + per-batch student arrays.
  *         Unchecked students move to skippedStudentIds; all students default to promoted.
  */
-import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate, useBlocker } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { academicSessionsApi } from "@/api/academicSessions";
 import { parseApiError } from "@/utils/errors";
 import { QUERY_KEYS } from "@/utils/queryKeys";
+import { useAppToast } from "@/hooks/useAppToast";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type {
   AcademicSession,
   PromotionPreview,
@@ -48,13 +49,60 @@ export default function BatchPromotionWizardPage() {
   const { id: sourceSessionId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const appToast = useAppToast();
 
   const [step, setStep] = useState<1 | 2>(1);
   const [targetSessionId, setTargetSessionId] = useState("");
   const [preview, setPreview] = useState<PromotionPreview | null>(null);
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
-  // C-06fe: per-batch student selection state (all promoted by default)
   const [batchSelections, setBatchSelections] = useState<BatchSelections>({});
+  // CR Finding 6: countdown in seconds
+  const [timeRemainingSeconds, setTimeRemainingSeconds] = useState(0);
+
+  // Countdown timer — resets whenever preview changes
+  useEffect(() => {
+    if (!preview) return;
+    const computeRemaining = () =>
+      Math.max(
+        0,
+        Math.floor(
+          (new Date(preview.expiresAt).getTime() - Date.now()) / 1000,
+        ),
+      );
+    setTimeRemainingSeconds(computeRemaining());
+    const interval = setInterval(() => {
+      setTimeRemainingSeconds(computeRemaining());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [preview]);
+
+  // Auto-reset at 0 — fires before user can click Confirm (CR Finding 6)
+  useEffect(() => {
+    if (timeRemainingSeconds <= 0 && step === 2 && preview !== null) {
+      setStep(1);
+      setPreview(null);
+      setBatchSelections({});
+    }
+  }, [timeRemainingSeconds, step, preview]);
+
+  // Navigation guard — beforeunload (CR-FE-039)
+  useEffect(() => {
+    if (step !== 2) return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [step]);
+
+  // Navigation guard — useBlocker (CR-FE-039)
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      step === 2 &&
+      preview !== null &&
+      currentLocation.pathname !== nextLocation.pathname,
+  );
 
   const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
     queryKey: QUERY_KEYS.sessionsList(),
@@ -122,7 +170,7 @@ export default function BatchPromotionWizardPage() {
       setPreview(data);
       setStep(2);
     },
-    onError: (err) => toast.error(parseApiError(err).message),
+    onError: (err) => appToast.error(parseApiError(err).message),
   });
 
   const commitMutation = useMutation({
@@ -138,7 +186,7 @@ export default function BatchPromotionWizardPage() {
       }),
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: QUERY_KEYS.sessions() });
-      toast.success(
+      appToast.success(
         `Promoted ${data.promoted} students, graduated ${data.graduated}`,
       );
       navigate(`/admin/sessions/${sourceSessionId}`);
@@ -146,14 +194,14 @@ export default function BatchPromotionWizardPage() {
     onError: (err) => {
       const { code, message } = parseApiError(err);
       if (code === "PREVIEW_EXPIRED") {
-        toast.error(
+        appToast.error(
           "Preview expired (10 min limit). Please generate a new preview.",
         );
         setStep(1);
         setPreview(null);
         setBatchSelections({});
       } else {
-        toast.error(message);
+        appToast.error(message);
       }
     },
   });
@@ -254,10 +302,34 @@ export default function BatchPromotionWizardPage() {
       {/* Step 2: Review preview with per-student checkboxes */}
       {step === 2 && preview && (
         <div className="space-y-4">
-          <div className="rounded-lg border p-4 bg-amber-50 border-amber-200 text-sm text-amber-800">
-            Preview expires at{" "}
-            {new Date(preview.expiresAt).toLocaleTimeString()}. Confirm within
-            10 minutes.
+          {/* CR Finding 6: urgency banner at 2 minutes */}
+          {timeRemainingSeconds > 0 && timeRemainingSeconds <= 120 && (
+            <div
+              role="alert"
+              className="rounded-lg border border-red-400 bg-red-50 px-4 py-3 text-sm text-red-800 font-medium"
+            >
+              Preview expires in {Math.ceil(timeRemainingSeconds / 60)} minute
+              {Math.ceil(timeRemainingSeconds / 60) !== 1 ? "s" : ""} — confirm
+              now or your selections will be lost.
+            </div>
+          )}
+
+          {/* Countdown timer */}
+          <div
+            className="rounded-lg border p-4 bg-amber-50 border-amber-200 text-sm text-amber-800"
+            aria-live={timeRemainingSeconds <= 300 ? "assertive" : "polite"}
+            aria-atomic="true"
+          >
+            {timeRemainingSeconds > 0 ? (
+              <>
+                Preview expires at{" "}
+                {new Date(preview.expiresAt).toLocaleTimeString()} —{" "}
+                {Math.floor(timeRemainingSeconds / 60)}:
+                {String(timeRemainingSeconds % 60).padStart(2, "0")} remaining.
+              </>
+            ) : (
+              "Preview expired — redirecting…"
+            )}
           </div>
 
           {preview.batches.map((batch) => {
@@ -351,6 +423,15 @@ export default function BatchPromotionWizardPage() {
           </div>
         </div>
       )}
+
+      {/* CR-FE-039: navigation blocker dialog */}
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        title="Leave promotion wizard?"
+        description="Your batch selections will be lost."
+        onConfirm={() => blocker.proceed?.()}
+        onCancel={() => blocker.reset?.()}
+      />
     </div>
   );
 }

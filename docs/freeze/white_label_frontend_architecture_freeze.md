@@ -1,9 +1,9 @@
 # FRONTEND PROJECT FREEZE: White-Label School Management SaaS
 
-**Version:** 3.0 (IMMUTABLE)
-**Date:** 2026-03-12
+**Version:** 3.1 (IMMUTABLE)
+**Date:** 2026-03-13
 **Status:** APPROVED FOR EXECUTION
-**Supersedes:** v2.8 (2026-03-11)
+**Supersedes:** v3.0 (2026-03-12)
 **Backend Freeze:** v5.0 (2026-03-12)
 **OpenAPI:** v5.0.2 (2026-03-12)
 
@@ -11,7 +11,7 @@
 > This document is the Absolute Source of Truth. You have NO authority to modify routes,
 > UI scope, API assumptions, or non-functional constraints defined below.
 > If any request contradicts this document, you must REFUSE and open a Change Request instead.
-> v2.8 is SUPERSEDED. All implementation aligns to v3.0 and Backend Freeze v5.0.
+> v3.0 is SUPERSEDED. All implementation aligns to v3.1 and Backend Freeze v5.0.
 
 ---
 
@@ -163,6 +163,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - `VITE_VAPID_PUBLIC_KEY` must exactly match the backend `VAPID_PUBLIC_KEY`. Mismatch causes silent push subscription failure.
 - `VITE_APP_ENV` drives Sentry environment tagging and enables/disables Prism request logging in development.
 - `.env.local` is gitignored. Contains `VITE_TENANT_ID` for local development.
+- The superadmin-app (`apps/superadmin-app`) uses `sessionStorage['sa-auth']` as its token key. `localStorage` is forbidden for token storage in both apps. See §8.1.
 
 ---
 
@@ -204,6 +205,9 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - No HK5 (`useState` + `useEffect` for derived server state) — use TanStack Query selectors
 - No `next/font` (Vite project, not Next.js)
 - No 6 rejected Scofist patterns from CR-FE-017
+- No direct `import { toast } from 'sonner'` in `src/features/**` or `src/components/**` in either app — use `useAppToast()` exclusively (CR-FE-030)
+- No inline literal query key arrays in `useQuery`, `useMutation`, `queryClient.invalidateQueries`, or `queryClient.getQueryData` calls — use `QUERY_KEYS.*` (tenant-app) or `SA_QUERY_KEYS.*` (superadmin-app) exclusively (CR-FE-032)
+- No free-text `<input type="text">` for IANA timezone fields in any form (CR-FE-036)
 
 ---
 
@@ -281,6 +285,34 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - `/announcements/new` → Create Announcement (Admin, Teacher only; non-permitted roles redirected)
 - `/announcements/:id/edit` → Edit Announcement (creator only, before `publishAt`)
 - `/notifications` → Full Notification History
+
+---
+
+## 2.SA Superadmin Screen Specifications
+
+### §2.SA.1 — TenantsPage: Create Tenant / Edit Tenant — Timezone field (CR-FE-036)
+
+> - The timezone field MUST use a searchable combobox populated from `Intl.supportedValuesOf('timeZone')` (available in Chrome 99+, Safari 15+, Firefox 86+ — all within the locked browser support matrix).
+> - Implementation: `<input list="iana-timezone-list">` + `<datalist>` populated from `Intl.supportedValuesOf('timeZone')`. No additional dependencies required.
+> - The combobox MUST support keyboard search: typing `"Kolkata"` filters the list to `"Asia/Kolkata"`.
+> - Default value when empty: `"Asia/Kolkata"` (matches backend default).
+> - The field is required. Zod validation: `z.string().refine(tz => !tz || Intl.supportedValuesOf('timeZone').includes(tz), { message: "Select a valid timezone from the list (e.g. Asia/Kolkata)" })`.
+> - Free-text `<input type="text">` for timezone is forbidden in all forms.
+
+### §2.SA.2 — Superadmin Mutation Feedback (CR-FE-037)
+
+> Every mutation in the superadmin-app that completes successfully MUST produce a `toast.success()` notification. Silent success is forbidden.
+>
+> | Mutation | Toast message |
+> |----------|---------------|
+> | Create tenant | `"Tenant '[name]' created successfully."` |
+> | Edit tenant | `"Tenant '[name]' updated."` |
+> | Deactivate tenant | `"Tenant '[name]' deactivated."` |
+> | Reactivate tenant | `"Tenant '[name]' reactivated."` |
+>
+> Feature flag toggles are **exempt** from the success-toast rule — the toggle's immediate visual state change (switch animation + Enabled/Disabled badge update) provides sufficient feedback. Toggle errors continue to surface via the existing inline per-row error pattern.
+>
+> All four tenant mutations that fail MUST produce a `toast.error()` with the parsed API error message. Silent failures are forbidden.
 
 ---
 
@@ -406,6 +438,8 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Loading state: Step 1 → spinner while preview generates. Step 2 → progress indicator on commit.
 - Empty state: n/a.
 - Error states: `410 PREVIEW_EXPIRED` resets to Step 1. `400` validation errors shown inline. Countdown reaches 0: auto-reset to Step 1 with "Preview expired" message before user can click Confirm.
+- **TTL countdown urgency (CR Finding 6):** At 5 minutes remaining: `CountdownTimer` switches `aria-live` from `"polite"` to `"assertive"`. At 2 minutes remaining: render a persistent non-dismissible banner above the Step 2 student list: "Preview expires in [N] minutes — confirm now or your selections will be lost." This banner is not a toast and must not auto-dismiss. At 0: auto-reset fires before the user can click Confirm — the reset runs in the `useEffect` tick that detects `timeRemainingSeconds <= 0`, not in the Confirm button handler.
+- **Navigation guard (CR-FE-039):** `useBlocker` (react-router-dom v6) MUST be active when `step === 2 && preview !== null`. Block condition: `currentLocation.pathname !== nextLocation.pathname`. On block: render `<ConfirmDialog>` — "Leave promotion wizard? Your batch selections will be lost." Confirm: `blocker.proceed()`. Cancel: `blocker.reset()`. Additionally, `window.addEventListener('beforeunload', ...)` MUST be registered when `step === 2` to catch browser close and refresh — removed on cleanup. No `DELETE` call needed on navigation away — preview expires on its own TTL.
 - Form validation rules: At least one student must be included per batch to proceed.
 - Permissions: Admin only.
 - Accessibility: Stepper has `aria-current="step"` on active step. Countdown timer announces "Preview expires in X minutes" via `aria-live="polite"` on 5-minute and 1-minute marks.
@@ -527,6 +561,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Empty state: "Select a class and period to begin."
 - Error states: `400 BACKDATING_NOT_ALLOWED` toast. `403` toast "You are not authorised to record attendance for this class."
 - Form validation: Date picker locked to today (min=max=today, frontend-enforced). `Excused` status is not available to Teacher — it renders as read-only if already set by Admin; Teacher cannot set it (client-side and server-side enforcement).
+- **Locked date picker helper text (CR Finding 11):** When date picker is locked to today (`min === max === today`): render helper text immediately below the picker: "Attendance can only be recorded for today. To correct past records, use Attendance Correction (Admin only)." For Teacher role, omit the parenthetical and show: "Contact Admin to correct past records."
 - Permissions: Admin and Teacher. Admin sees class picker for any class. Teacher sees own assigned classes only (derived from JWT `classId`).
 - Accessibility: Status radio buttons use `aria-label` per student name + status. Student name uses `break-words` (not `truncate`) per CR-FE-023F. Mobile: status buttons show `P`/`A`/`L` with `aria-label` unchanged per CR-FE-020B.
 - Performance notes: Student list up to 200 items (`maxItems: 200` per Backend Freeze). If class size > 60, `@tanstack/react-virtual` row virtualization required.
@@ -566,12 +601,13 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Entry points: Admin sidebar → Attendance → Monthly.
 - Required API calls:
   1. `GET /attendance/monthly-sheet?classId=&month=` on picker change.
-- Server state: TQ key `['attendance', 'monthly-sheet', classId, month]`, stale time 120s.
+- Server state: TQ key `QUERY_KEYS.attendanceMonthlySheet(classId, subjectId, year, month)`, stale time 120s.
 - Loading state: Skeleton table.
 - Empty state: "No attendance records for this class/month."
 - Colour coding: Present=green, Absent=red, Late=yellow, Excused=blue. Today's date column highlighted per CR-FE-027D.
 - Export: Client-side CSV generation via `papaparse` — "Export CSV" button. No API call.
 - Attendance percentage column: Excused days excluded from denominator — matches server computation. Shown as `%` value, not colour-only (text badge alongside bar per CR-FE-027C).
+- **Mobile rendering (CR-FE-040):** At viewport width `< md` (< 768px): the full matrix table is replaced with a per-student accordion list. Each row shows student name + current month attendance % + expand chevron. Expanded: renders a `<CalendarGrid>` (v3.0 component) for that student's month data. The full matrix table renders only at `≥ md`. The same TQ query data feeds both views — no additional API call. Only one student may be expanded at a time.
 - Permissions: Admin (any class), Teacher (`isClassTeacher` for own class — server enforces, Frontend shows class picker limited to own class for Teacher).
 - Accessibility: Table `overflow-x-auto` + `min-w-` constraint. Student column sticky (`sticky left-0 bg-background z-10 border-r`) per CR-FE-022D. Today column `ring-2 ring-primary` per CR-FE-027D. For Student role: same endpoint called server-filters to own row. `aria-label="Attendance percentage: X%"` on percentage cell.
 - Performance notes: 30 days × 50 students = 1,500 cells. `@tanstack/react-virtual` column virtualization required when column count > 15.
@@ -638,6 +674,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
   1. `POST /leave` with `{ studentId: selectedChildId, leaveType, durationType, startDate, endDate, reason, expectedReturnAt }`. On `400 LEAVE_SUBMISSION_NOT_ALLOWED`: show non-dismissible inline error "You are not authorised to submit leave for this student. Contact the school office." Do not render the form. On success: navigate to `/guardian/leave`, toast "Leave request submitted. Request ID: [id]."
 - Local state: form fields, `isSubmitting`.
 - Guard: `GET /guardian/children` first — if `canSubmitLeave === false` for `selectedChildId`, render the error message without showing the form at all.
+- **`canSubmitLeave === false` state (CR Finding 3):** Do not render the form. Render a structured message block sourced from `GET /school-profile` (already cached at app boot): "Leave submission is currently disabled for [child name]. To request access, contact [profile.phone] or [profile.email]." If `profile.phone` and `profile.email` are both null, show: "Contact the school office to request access." This is not a toast — it is a persistent inline block rendered in place of the form.
 - Form validation: `leaveType` required (LeaveType enum). `durationType` required. `startDate` required, ≥ today. `endDate` ≥ `startDate`. `reason` required, minLength 10. `expectedReturnAt` required datetime (tenant timezone context label shown).
 - Permissions: Guardian role. `canSubmitLeave` check done client-side before rendering form; server enforces as final guard.
 - Accessibility: All pickers have associated labels. Datetime picker shows timezone label.
@@ -675,6 +712,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Local state: add/edit subject drawer open state.
 - Server state: TQ key `['exams', id]`.
 - Permissions: Admin only. Publish button hidden when any subject `marksStatus !== 'ENTERED'`. Delete button hidden when `status !== 'DRAFT'`. Unpublish button hidden when `status !== 'PUBLISHED'`.
+- **Publish button state (CR-FE-042):** The publish button MUST always be rendered. When any subject has `marksStatus !== 'ENTERED'`: button is `disabled` (not hidden), with `title` attribute listing pending subjects: "Marks pending for: [subject names]". An `aria-describedby` paragraph below the button renders the same text visibly. When all subjects are entered: button is enabled, description paragraph removed. The `409 MARKS_NOT_COMPLETE` server error is a secondary guard — the frontend prevents the call via this client-side check but must still handle the 409 for race conditions.
 - Accessibility: `marksStatus` badges have text. Publish confirm dialog traps focus.
 - Performance notes: None.
 
@@ -690,6 +728,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Local state: per-student `marksObtained` (number | null), `isAbsent` (boolean), `remarks`. `isAbsent === true` disables marks input.
 - Validation: `marksObtained ≤ totalMarks` enforced client-side on blur; zod schema. Server enforces as final guard.
 - Locked when `exam.status === 'PUBLISHED'` — all inputs read-only, no submit button.
+- **Locked state banner (CR Finding 9):** When `exam.status === 'PUBLISHED'`: render a non-dismissible `role="status"` info banner at the top of the sheet: "This exam has been published. Marks are now locked. Contact Admin to unpublish if corrections are needed." All inputs are `readOnly`; submit button is removed from DOM (not disabled).
 - Server state: TQ keys `['exams', id]`, `['exams', id, 'results']`.
 - Loading state: Skeleton rows.
 - Empty state: n/a (exam always has students).
@@ -709,6 +748,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Empty state: "Results not published yet." (guard: only reachable when PUBLISHED).
 - Grade computation: Frontend NEVER re-computes grades. Only displays `overallGrade`, `aggregatePercentage`, `classRank` from API response.
 - Report cards: "Download All Report Cards" → `GET /exams/:id/report-cards`. Triggers file download (`Content-Disposition: attachment`). Loading state: spinner + "Generating report cards…" message (may take 10–30s for large classes — no timeout on frontend, no polling required).
+- **Download guard (CR Finding 4):** "Download All Report Cards" button MUST be disabled immediately on click (re-click guard, re-enabled on error or completion). Display elapsed time counter: "Generating… [Xs]" updated every second. Axios call timeout: 60,000ms. On timeout: inline error "This is taking longer than expected — please try again." On success: button re-enables, elapsed counter clears.
 - Permissions: Admin (any class), `isClassTeacher` (own class only).
 - Accessibility: PASS/FAIL badge has `role="status"`.
 - Performance notes: 50 students × 10 subjects = 500 cells. `@tanstack/react-virtual` column virtualization required.
@@ -858,6 +898,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Edit availability: Edit button hidden when `publishAt < now` (already published).
 - Scheduled publish indicator: "Scheduled for [datetime in tenantTimezone]" badge shown when `publishAt > now`.
 - Permissions: Admin and Teacher for create. Teacher can only edit/delete own announcements.
+- **Unsaved changes guard (CR Finding 14):** `useBlocker` (react-router-dom v6) MUST activate when `isDirty === true` (react-hook-form). Block condition: `isDirty && currentLocation.pathname !== nextLocation.pathname`. On block: render `<ConfirmDialog>` with title "Leave without saving?" and description "Your announcement draft will be lost." Confirm: `blocker.proceed()`. Cancel: `blocker.reset()`. Blocker is cleared on successful form submission.
 - Accessibility: Datetime pickers labelled with timezone context. Draft preview before submit is optional (not in scope — CR-FE-10 spec does not require it).
 - Performance notes: None.
 
@@ -876,6 +917,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Loading state: Profile form skeleton.
 - Active levels warning: If a level is unchecked while active classes exist at that level (derived from `GET /classes` list), show inline warning: "Deactivating [level] will hide it from all pickers. Existing classes are unaffected."
 - Branding color: Live preview on sidebar/header using CSS variable update.
+- **Live brand color preview (CR Finding 13):** The `brandingColor` hex input MUST apply `document.documentElement.style.setProperty('--brand-color', value)` debounced 300ms after each keystroke, but only when the value matches `/^#[0-9A-Fa-f]{6}$/`. A color swatch `<span>` rendered adjacent to the input shows the live preview color (updates from local state immediately — the swatch is not debounced, only the CSS variable application is). On component unmount: restore `--brand-color` to the last saved `profile.brandingColor` value to prevent unsaved preview colors persisting if the user navigates away without saving.
 - Permissions: Admin only.
 - Accessibility: Logo upload has `aria-label="Upload school logo"`. Signature upload has `aria-label="Upload principal signature"`. File type errors are `aria-live`.
 - Performance notes: Image preview uses `URL.createObjectURL` — revoke on unmount.
@@ -914,6 +956,9 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - TTL countdown: `expiresAt` from Step 1 response. Client computes remaining seconds. Auto-reset to Step 1 when `timeRemainingSeconds <= 0` (before user can confirm). `aria-live="polite"` announces countdown at 10-minute and 2-minute marks.
 - Step 2 — no errors: green panel, preview table (first 10 rows). "Confirm Import" active.
 - Step 2 — has errors: red panel listing errors with row number + field + message. "Confirm Import" disabled. "Download Error Report" button: generates CSV from `errorData` via `papaparse` client-side. "Re-upload" link resets to Step 1 (DELETE `jobId` first).
+- **Client-side file type validation (CR Finding 15):** On file input `onChange`, before calling `POST /import/preview`: validate `file.name.toLowerCase().endsWith('.csv')`. If invalid: show inline error below the file input — "Please upload a CSV file (.csv). To export from Excel: File → Save As → CSV (Comma delimited)." Do not call the API. The error clears when the user selects a new file.
+- **TTL countdown urgency (CR Finding 6):** Same urgency rules as Batch Promotion Wizard: `aria-live="assertive"` at 5 minutes, persistent non-dismissible banner at 2 minutes, auto-reset at 0. Additionally: a new `POST /import/preview` (re-upload) creates a new `jobId` and fresh 30-minute TTL. The UI MUST update `expiresAt` and restart the countdown from the new value — it does not continue the prior countdown.
+- **Navigation guard (CR-FE-039):** `useBlocker` MUST be active when `step === 2 && jobId !== null`. On block: `<ConfirmDialog>` — "Leave import wizard? Your upload preview will be cancelled." On confirm: call `DELETE /import/:jobId` (fire-and-forget, proceed regardless of outcome) then `blocker.proceed()`. On cancel: `blocker.reset()`. `window.addEventListener('beforeunload', ...)` registered when `step === 2`.
 - Permissions: Admin only.
 - Accessibility: Stepper `aria-current="step"`. Error list is `role="list"`. Countdown `aria-live="polite"`.
 - Performance notes: None.
@@ -973,6 +1018,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - VAPID public key: `import.meta.env.VITE_VAPID_PUBLIC_KEY` used in `PushManager.subscribe({ applicationServerKey })`.
 - Failure handling: If `POST /push/subscribe` fails (network or 401): non-blocking — log to Sentry, continue. User is not notified of push registration failure.
 - Service worker push click: `self.addEventListener('push', ...)` in `sw.ts`. On notification click: `clients.openWindow(routeFromData)` using `notification.data` field. If app window is closed, user re-authenticates on next open (sessionStorage is cleared when PWA window closes).
+- **Post-auth deep-link requirement (CR-FE-038):** `clients.openWindow()` MUST be called with the role-specific route from `notification.data` — never with the app root `/`. Using `/` causes `ProtectedRoute` to capture `from = "/"`, landing the user on `/dashboard` after login instead of the intended screen. The existing `ProtectedRoute` → `LoginPage` redirect chain (`state.from` pattern) handles deep-linking correctly once the SW opens the correct URL.
 - iOS note: Push notifications require iOS 16.4+. Older iOS: in-app bell functions normally; push subscription is not attempted (`'serviceWorker' in navigator` check).
 - Permissions: All roles.
 - Performance notes: None. Push subscription is fire-and-forget, does not block page render.
@@ -1033,7 +1079,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Required API calls:
   1. `GET /attendance/monthly-sheet?classId=jwtPayload.classId&month=YYYY-MM` — server filters to own row.
 - Displays: calendar-style month view with status per day. Summary: attendance %, consecutive absent streak (shown prominently if > 0).
-- Server state: TQ key `['attendance', 'monthly-sheet', classId, month]`.
+- Server state: TQ key `QUERY_KEYS.attendanceMonthlySheet(classId, subjectId, year, month)`.
 - Permissions: Student. Own data only — enforced server-side.
 - Performance notes: None.
 
@@ -1227,7 +1273,7 @@ interface GuardianAttendanceResponse { attendancePercentage: number; consecutive
 
 ```typescript
 // src/lib/queryKeys.ts — locked query key factory
-export const QK = {
+export const QUERY_KEYS = {
   sessions:                 ()                              => ['sessions']                              as const,
   session:                  (id: string)                   => ['sessions', id]                          as const,
   currentSession:           ()                              => ['sessions', 'current']                   as const,
@@ -1240,7 +1286,7 @@ export const QK = {
   teacherTimetable:         ()                              => ['timetable', 'teacher']                  as const,
   attendanceDailySummary:   (cId: string, date: string)    => ['attendance', 'daily-summary', cId, date] as const,
   attendanceAbsentees:      (tId: string, date: string)    => ['attendance', 'absentees', tId, date]    as const,
-  attendanceMonthlySheet:   (cId: string, month: string)   => ['attendance', 'monthly-sheet', cId, month] as const,
+  attendanceMonthlySheet:   (cId: string, subjectId: string, year: number, month: number) => ['attendance-monthly-sheet', cId, subjectId, year, month] as const,
   leave:                    (f?: object)                   => ['leave', f]                              as const,
   leaveDetail:              (id: string)                   => ['leave', id]                             as const,
   leaveOnCampus:            ()                              => ['leave', 'on-campus']                   as const,
@@ -1265,6 +1311,25 @@ export const QK = {
   guardianAssignments:      (sId: string, ssnId?: string)  => ['guardian', sId, 'assignments', ssnId]   as const,
   guardianLeave:            (sId: string, f?: object)      => ['guardian', sId, 'leave', f]             as const,
   guardianTimetable:        (sId: string)                  => ['guardian', sId, 'timetable']            as const,
+} as const;
+```
+
+**Query key sourcing rule (LOCKED — CR-FE-032):**
+- `QUERY_KEYS.*` functions are the ONLY permitted source of query keys in all `useQuery`, `useMutation`, `queryClient.invalidateQueries`, and `queryClient.getQueryData` calls in `apps/tenant-app/src/**`.
+- `SA_QUERY_KEYS.*` functions are the ONLY permitted source in `apps/superadmin-app/src/**`.
+- Inline literal arrays (e.g. `queryKey: ["students"]`) are forbidden in all feature, component, and hook files in both apps.
+- If a new query has no matching `QUERY_KEYS` entry, a new entry MUST be added to `queryKeys.ts` in the same PR — never inline in the component.
+- ESLint enforcement: `eslint-plugin-query` `no-unstable-deps` rule, or a custom `no-inline-query-keys` rule targeting both apps.
+
+**`SA_QUERY_KEYS` factory (superadmin-app — `apps/superadmin-app/src/utils/queryKeys.ts`):**
+
+```typescript
+export const SA_QUERY_KEYS = {
+  tenants:        ()                                           => ['sa-tenants']                  as const,
+  tenantsList:    (f?: { status?: string; search?: string })  => f ? ['sa-tenants', 'list', f] : ['sa-tenants', 'list'] as const,
+  tenant:         (id: string)                                => ['sa-tenants', id]               as const,
+  features:       ()                                          => ['sa-features']                  as const,
+  tenantFeatures: (tenantId: string)                          => ['sa-features', tenantId]        as const,
 } as const;
 ```
 
@@ -1301,28 +1366,28 @@ export const QK = {
 
 | Mutation | Invalidates |
 |----------|------------|
-| Create/update/delete session | `QK.sessions()` |
-| Activate/close session | `QK.sessions()`, `QK.currentSession()` |
-| Batch promotion commit | `QK.sessions()`, `QK.students()` |
-| Create/update/delete batch | `QK.batches()` |
-| Create/update/delete class | `QK.classes(sessionId)` |
-| Create/update student | `QK.students()`, `QK.student(id)` |
-| Create/update/delete guardian | `QK.studentGuardians(studentId)` |
-| Create/delete timetable slot | `QK.timetable(classId, sessionId)` |
-| Record / update attendance | `QK.attendanceDailySummary(...)`, `QK.attendanceMonthlySheet(...)` |
-| Leave mutations (all) | `QK.leave(...)`, `QK.leaveDetail(id)`, `QK.leaveOnCampus()` |
-| Create/update exam | `QK.exams(...)`, `QK.exam(id)` |
-| Publish/unpublish exam | `QK.exam(id)`, `QK.examResults(id)` |
-| Save marks | `QK.examResults(id)` |
-| Create/delete fee charge | `QK.feeCharges(...)`, `QK.feeSummary(...)` |
-| Record payment | `QK.feeCharges(...)` |
-| Create/update/delete assignment | `QK.assignments(...)`, `QK.assignment(id)` |
-| Save marking sheet | `QK.assignment(id)` |
-| Create/update/delete announcement | `QK.announcements(...)` |
-| Confirm import | `QK.importHistory()` |
-| Mark notification read | `QK.notifications(...)`, `QK.notificationsUnreadCount()` |
-| Update school profile | `QK.schoolProfile()` |
-| Upload logo/signature | `QK.schoolProfile()` |
+| Create/update/delete session | `QUERY_KEYS.sessions()` |
+| Activate/close session | `QUERY_KEYS.sessions()`, `QUERY_KEYS.currentSession()` |
+| Batch promotion commit | `QUERY_KEYS.sessions()`, `QUERY_KEYS.students()` |
+| Create/update/delete batch | `QUERY_KEYS.batches()` |
+| Create/update/delete class | `QUERY_KEYS.classes(sessionId)` |
+| Create/update student | `QUERY_KEYS.students()`, `QUERY_KEYS.student(id)` |
+| Create/update/delete guardian | `QUERY_KEYS.studentGuardians(studentId)` |
+| Create/delete timetable slot | `QUERY_KEYS.timetable(classId, sessionId)` |
+| Record / update attendance | `QUERY_KEYS.attendanceDailySummary(...)`, `QUERY_KEYS.attendanceMonthlySheet(...)` |
+| Leave mutations (all) | `QUERY_KEYS.leave(...)`, `QUERY_KEYS.leaveDetail(id)`, `QUERY_KEYS.leaveOnCampus()` |
+| Create/update exam | `QUERY_KEYS.exams(...)`, `QUERY_KEYS.exam(id)` |
+| Publish/unpublish exam | `QUERY_KEYS.exam(id)`, `QUERY_KEYS.examResults(id)` |
+| Save marks | `QUERY_KEYS.examResults(id)` |
+| Create/delete fee charge | `QUERY_KEYS.feeCharges(...)`, `QUERY_KEYS.feeSummary(...)` |
+| Record payment | `QUERY_KEYS.feeCharges(...)` |
+| Create/update/delete assignment | `QUERY_KEYS.assignments(...)`, `QUERY_KEYS.assignment(id)` |
+| Save marking sheet | `QUERY_KEYS.assignment(id)` |
+| Create/update/delete announcement | `QUERY_KEYS.announcements(...)` |
+| Confirm import | `QUERY_KEYS.importHistory()` |
+| Mark notification read | `QUERY_KEYS.notifications(...)`, `QUERY_KEYS.notificationsUnreadCount()` |
+| Update school profile | `QUERY_KEYS.schoolProfile()` |
+| Upload logo/signature | `QUERY_KEYS.schoolProfile()` |
 
 **Optimistic updates:** None. All mutations wait for server confirmation before updating UI. Exception: notification read state (mark as read) may optimistically flip `readAt` for perceived responsiveness.
 
@@ -1375,6 +1440,9 @@ const useAuthStore = create<AuthState>((set) => ({
 - Axios interceptor reads `token` from `useAuthStore.getState().token` (not from `sessionStorage` directly) to avoid redundant reads per request.
 - On app mount: if `sessionStorage.getItem('auth_token')` is non-null, store is hydrated automatically (see initial state above). No explicit "restore session" step needed.
 
+**Auth migration status (v3.1 note):**
+During v3.1 implementation, `AuthContext.tsx` remains the active source of truth for auth state in `apps/tenant-app`. `authStore.ts` is the target pattern (Freeze §4 locked). The migration to `useAuthStore` as the sole auth source — including installing `zustand` and `jwt-decode` in `apps/tenant-app/package.json` — MUST be complete before CR-FE-01 (PWA + service worker) implementation begins. Rationale: the service worker push subscription flow reads auth state; it must read from the Zustand store, not React context. This migration is a hard prerequisite for CR-FE-01, not a nice-to-have. Until migration is complete, both `AuthContext` and `useAuthStore` may coexist; `AuthContext` is authoritative and `useAuthStore` is kept in sync via `setAuth` calls in `AuthContext` login/logout handlers.
+
 **Session store (locked pattern):**
 
 ```typescript
@@ -1400,6 +1468,36 @@ const useGuardianStore = create<GuardianState>((set) => ({
 ```
 
 `selectedChildId` is set on Guardian dashboard mount. All guardian portal API calls use this value. Tab close clears sessionStorage (and therefore triggers re-auth on next tab open), which also clears Zustand stores.
+
+**Guardian store `selectedChildId` persistence (CR-FE-041):**
+`useGuardianStore` MUST persist `selectedChildId` to `sessionStorage['guardian-selected-child']` on every `setSelectedChild` call. On store initialization: read from `sessionStorage` and validate that the stored ID exists in the fetched `children[]` array before applying — if not found (child unlinked since last session), fall back to `children[0].studentId`. On `clearGuardian` (logout): call `sessionStorage.removeItem('guardian-selected-child')`. This prevents the silent child-switch bug where a page reload resets to child[0] regardless of prior selection.
+
+The corrected locked pattern:
+
+```typescript
+const CHILD_KEY = 'guardian-selected-child';
+
+const useGuardianStore = create<GuardianState>((set) => ({
+  selectedChildId: sessionStorage.getItem(CHILD_KEY),
+  children: [],
+  setSelectedChild: (id: string) => {
+    sessionStorage.setItem(CHILD_KEY, id);
+    set({ selectedChildId: id });
+  },
+  setChildren: (children: GuardianChild[]) => {
+    const persisted = sessionStorage.getItem(CHILD_KEY);
+    const selectedId = persisted && children.some(c => c.studentId === persisted)
+      ? persisted
+      : children[0]?.studentId ?? null;
+    if (selectedId) sessionStorage.setItem(CHILD_KEY, selectedId);
+    set({ children, selectedChildId: selectedId });
+  },
+  clearGuardian: () => {
+    sessionStorage.removeItem(CHILD_KEY);
+    set({ selectedChildId: null, children: [] });
+  },
+}));
+```
 
 **Cross-tab / session behaviour:**
 
@@ -1437,6 +1535,23 @@ const useGuardianStore = create<GuardianState>((set) => ({
 **Component inventory (MVP — locked):**
 Inherited from v2.8: `Button`, `Input`, `Select`, `Modal/Dialog`, `Table`, `Toast (sonner)`, `ConfirmDialog`, `RoleBadge`, `ActionBtn (SP11)`, `ErrorBoundary (SP10)`, `BottomTabBar`, `Sidebar`.
 
+**Toast calling convention (LOCKED — CR-FE-030):**
+- `useAppToast()` is the ONLY permitted interface for showing toast notifications in `src/features/**` and `src/components/**` in both apps.
+- Direct `import { toast } from 'sonner'` in feature and component files is forbidden.
+- `useAppToast` MUST expose at minimum: `success(message: string)`, `error(message: string)`, `mutationError(err: unknown)`.
+- The `mutationError(err)` helper MUST call `parseApiError(err)` internally and pass the result to `toast.error`.
+- Only `src/hooks/useAppToast.ts` itself may import directly from `'sonner'`.
+- ESLint enforcement: `no-restricted-imports` rule targeting `import.*toast.*from.*sonner` in `src/features/**` and `src/components/**`.
+
+**Destructive action rule (LOCKED — CR-FE-031 — all screens, both apps):**
+Every mutation that is irreversible from the user's perspective — including but not limited to: DELETE (hard or soft), deactivate, close, revoke, promote, rollback, and any bulk operation affecting more than one record — MUST be gated by `<ConfirmDialog>` (Radix `AlertDialog` primitive, SP from v2.7) before the mutation is called.
+- The dialog body MUST state what will be affected and that the action cannot be undone.
+- The confirm button MUST use `variant="destructive"` styling (`bg-destructive`).
+- Focus MUST return to the trigger element on dialog close (both confirm and cancel paths).
+- The Bulk Charge Wizard confirm step and the Batch Promotion Wizard commit step satisfy this rule via their Step 3 confirm UX. All future bulk mutations must implement an equivalent explicit confirm step.
+- Exceptions require an explicit freeze annotation on the affected screen spec. There are no current exceptions.
+- Superadmin-app: use `<SAConfirmDialog>` (Radix `AlertDialog` primitive, local to `apps/superadmin-app/src/components/`) — identical API to the tenant-app `<ConfirmDialog>`.
+
 New in v3.0:
 - `LeaveDetail` — status timeline (PENDING → APPROVED → ACTIVE → COMPLETED/OVERDUE) + all leave fields
 - `GradeBadge` — grade string + colour band (A+=emerald, A=green, B=yellow, C=orange, F=red)
@@ -1448,6 +1563,36 @@ New in v3.0:
 - `StepWizard` — generic 3-step wizard shell (used for promotion + import)
 - `CountdownTimer` — TTL countdown display with `aria-live` announcements
 - `CalendarGrid` — 7-column monthly calendar for guardian attendance view
+
+New in v3.1:
+- `PasswordInput` — password field with show/hide toggle. Used on all password inputs in both apps (CR-FE-035). See §6 password visibility toggle rule.
+- `SADrawer` — Radix Dialog-based slide-in panel for superadmin-app. Replaces custom div drawers (CR-FE-033).
+- `SAConfirmDialog` — Radix AlertDialog-based confirm dialog for superadmin-app (CR-FE-031, CR-FE-033).
+- `TimezoneCombobox` — IANA timezone searchable input for superadmin-app (CR-FE-036).
+
+**`StatusBadge` render contract for `AttendanceStatus` (LOCKED — CR-FE-034):**
+`StatusBadge` MUST render all four `AttendanceStatus` values with the following Tailwind class sets:
+
+| Status | Light mode | Dark mode |
+|--------|-----------|-----------|
+| `Present` | `bg-green-100 text-green-800` | `dark:bg-green-900/40 dark:text-green-200` |
+| `Absent` | `bg-red-100 text-red-800` | `dark:bg-red-900/40 dark:text-red-200` |
+| `Late` | `bg-yellow-100 text-yellow-800` | `dark:bg-yellow-900/30 dark:text-yellow-200` |
+| `Excused` | `bg-blue-100 text-blue-800` | `dark:bg-blue-900/40 dark:text-blue-200` |
+
+The fallback class (`bg-muted text-muted-foreground`) is reserved ONLY for values not in `AttendanceStatus`.
+
+TypeScript enforcement (both compile-time and runtime):
+```typescript
+const STATUS_CLASSES = {
+  Present: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
+  Absent:  "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
+  Late:    "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200",
+  Excused: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
+} satisfies Record<AttendanceStatusLabel, string>;
+```
+
+`satisfies Record<AttendanceStatusLabel, string>` produces a compile error if a new `AttendanceStatus` value is added without a corresponding color entry. When any new value is added to `AttendanceStatus` in `types/api.ts`, a corresponding color entry MUST be added to `StatusBadge` in the same PR.
 
 **Responsiveness:**
 - Breakpoints: Tailwind default (`sm`: 640px, `md`: 768px, `lg`: 1024px, `xl`: 1280px)
@@ -1485,6 +1630,27 @@ New in v3.0:
 - Marks entry table: each input `aria-label="Marks for [student name]"`
 - Off-campus panel: new OVERDUE entries announced via `aria-live="polite"` during polling
 
+**Password visibility toggle (LOCKED — CR-FE-035 — all password inputs, both apps):**
+Every `<input type="password">` in both apps MUST include an adjacent show/hide toggle button:
+- Element: `<button type="button">` — `type="button"` is mandatory to prevent form submission on toggle click.
+- `aria-label`: `"Show password"` when concealed; `"Hide password"` when revealed.
+- `aria-pressed`: `false` when concealed; `true` when revealed.
+- Toggle switches the input's `type` attribute between `"password"` and `"text"`.
+- Icons: `EyeIcon` (concealed) / `EyeOffIcon` (revealed), both `aria-hidden="true"`.
+- Implementation: use the shared `<PasswordInput>` component (v3.1, both apps).
+- Applies to: Login page (both apps), Change Password page, Reset Password modal (Student Detail), Admin Password field in Create Tenant drawer (superadmin-app), any future password field.
+
+## 6.2 Superadmin-App Accessibility Baseline (LOCKED — CR-FE-033)
+
+The "inherited unchanged from v2.8" clause does not constitute a WCAG 2.1 AA exemption. The following rules apply to `apps/superadmin-app/src/**`:
+
+1. **Semantic tables:** All data tables MUST use `<table>`, `<thead>`, `<tbody>`, `<tr>`, `<th scope="col">`, `<td>`. CSS-grid `<div>` tables are forbidden. `TenantsPage` tenant list is the primary non-compliant instance and MUST be refactored.
+2. **Focus trap:** All modal overlays (drawers, dialogs) — including `SASessionExpiredModal` — MUST implement a focus trap via `<SADrawer>` (Radix Dialog) for slide-in panels or `<SAConfirmDialog>` (Radix AlertDialog) for confirm dialogs. Custom `<div role="dialog">` elements with only `onKeyDown` Escape handlers are not sufficient and must be replaced.
+3. **Focus on open:** When any drawer or dialog opens, focus MUST move to the first focusable element within it (first form field, or close button if no form field is present).
+4. **Navigation semantics:** `<Link to={path}>` (react-router-dom) MUST be used for all navigation to known static paths. `<button onClick={() => navigate(path)}>` for static-path navigation is forbidden. Exception: `useNavigate(-1)` (back to unknown prior path) may remain as `<button>`.
+5. **Loading state roles:** All spinner/loading indicators MUST have `role="status"` and a visible or `sr-only` text label (e.g., `<span className="sr-only">Loading…</span>`). This includes `PageLoader` in `App.tsx`.
+6. **axe-core CI scope:** `TenantsPage` (all interactive states: loaded, filtered, create-drawer-open, edit-drawer-open, deactivate-dialog-open) added to the axe-core/Playwright CI audit. Target: 0 violations.
+
 ---
 
 ## 7. Performance Budgets (LOCKED)
@@ -1508,7 +1674,7 @@ New in v3.0:
 | Image optimization | R2-hosted assets served at optimised size; `<img loading="lazy">` on non-critical images |
 | Virtualised rows | `@tanstack/react-virtual` on: attendance monthly sheet (cols > 15), student list (> 200 rows), promotion preview table, consolidated results table |
 | 60s notification poll | `refetchInterval: 60_000` on unread count only |
-| 30s off-campus poll | `refetchInterval: 30_000` on `QK.leaveOnCampus()` only |
+| 30s off-campus poll | `refetchInterval: 30_000` on `QUERY_KEYS.leaveOnCampus()` only |
 | Dashboard 5-min auto-refresh | `refetchInterval: 300_000` on grid queries |
 | `react-window` avoided | `@tanstack/react-virtual` used exclusively (consistent with stack) |
 
@@ -1571,6 +1737,7 @@ Content-Security-Policy:
 
 **Sensitive data rendering rules:**
 - `temporaryPassword` cleared from component state on modal `onOpenChange(false)`. No copy to clipboard retained after close.
+- **Temporary password modal guard (CR Finding 1):** The modal displaying `temporaryPassword` MUST NOT close on backdrop click or Escape key. It MUST present two explicit CTAs: "Copy & Close" (primary) and "Close without copying" (secondary, triggers a confirm: "Password will not be shown again. Close anyway?"). `temporaryPassword` is cleared from component state only after either CTA is actioned. `onInteractOutside={(e) => e.preventDefault()}` (Radix Dialog prop) disables backdrop-close.
 - JWT token is not rendered anywhere in the UI.
 - Student `dateOfBirth`, guardian `phone`/`email` are not masked in Admin views (Admin role has full access by design) but are not included in Sentry error breadcrumbs.
 
@@ -1586,6 +1753,17 @@ Content-Security-Policy:
 
 **Clickjacking protection:**
 - `X-Frame-Options: DENY` required in server/CDN config (outside frontend scope — noted in deployment README).
+
+## 8.1 Superadmin-App Token Storage (LOCKED — CR-FE-029)
+
+The "inherited unchanged from v2.8" clause does not constitute a security exemption. The following rules apply to `apps/superadmin-app/src/**`:
+
+- SuperAdmin JWT MUST be stored in `sessionStorage['sa-auth']` only. `localStorage` is forbidden for token storage.
+- `apps/superadmin-app/src/api/client.ts` MUST read the token via `sessionStorage.getItem('sa-auth')` in its request interceptor.
+- `apps/superadmin-app/src/features/auth/SAAuthContext.tsx` MUST read and write `sessionStorage` — not `localStorage` — in `readStorage()`, `login()`, and `logout()`.
+- The ESLint `'no-restricted-globals': ['error', 'localStorage']` rule applies to `apps/superadmin-app/src/**` identically to `apps/tenant-app/src/**`.
+- Cross-tab behaviour: each tab maintains an independent session; opening a new tab requires re-authentication. This is intentional for a privileged portal.
+- Token is never logged, sent to Sentry, or placed in a URL parameter.
 
 ---
 
@@ -1737,7 +1915,7 @@ Content-Security-Policy:
 │   │   └── guardian.store.ts           (selectedChildId + children list)
 │   ├── /lib
 │   │   ├── timezone.ts                 (date-fns-tz helpers — formatInTz, parseInTz, toTenantTz)
-│   │   ├── queryKeys.ts                (QK factory — locked from §3)
+│   │   ├── queryKeys.ts                (QUERY_KEYS factory — locked from §3)
 │   │   └── push.service.ts             (VAPID subscription + SW push click handler)
 │   ├── /config
 │   │   └── nav.ts                      (SINGLE SOURCE for all nav items — roles + routes)
@@ -1880,6 +2058,16 @@ If requested → create Change Request → re-price → approve/reject.
 - **v2.7** (2026-03-11): CR-FE-024–027 — Toast standardization, ConfirmDialog wiring, client-side filters, 4 WCAG 2.1 AA gaps closed.
 - **v2.8** (2026-03-11): CR-FE-028a–028e — Targeted visual/UX bug fixes (timetable add-slot guard, multi-slot overflow, dark theme text, dashboard sticky column, attendance rankings alignment).
 - **v3.0** (2026-03-12): Major scope addition — aligned to Backend Freeze v5.0 / OpenAPI v5.0.2. Incorporates CR-FE-01 through CR-FE-15 (all 15 modules approved). Session-scoped data model alignment throughout. New modules: Academic Sessions + Batch Promotion, Student/Guardian Management, Leave Management, Exam Management + Results + Report Cards, Fee Management, Assignments, Announcements, Bulk CSV Import, Push Notifications + In-App Bell, Guardian Portal, Student Self-Service Portal, School Profile + Settings, PWA manifest + service worker. Auth token: sessionStorage (Decision 4). Tenant resolution: `VITE_TENANT_ID` env var (Decision 2). Guardian attendance calendar: `records[]` array per day per CR-43 / OpenAPI v5.0.1→v5.0.2. `isClassTeacher` compound check locked. Browser support: Chrome 90+, Safari 14+, Firefox 90+, Edge 90+. Performance budgets locked: LCP ≤ 2500ms, INP ≤ 200ms, CLS ≤ 0.1, initial bundle ≤ 200KB gzipped. CSP at server/CDN layer. Hosting TBD.
+- **v3.1** (2026-03-13): Audit-driven amendments. CR-FE-029 through CR-FE-042 applied.
+  - **Security:** superadmin-app `localStorage` → `sessionStorage` for JWT (§8.1, CR-FE-029).
+  - **Data correctness:** `StatusBadge` — `Excused` color added (blue), dark variants added to all four statuses, `satisfies` exhaustive compile-time guard added (§5, CR-FE-034).
+  - **Consistency:** `useAppToast()` mandated as sole toast interface in feature/component code (§5, CR-FE-030). `QUERY_KEYS.*` mandated as sole query key source; inline literal arrays banned (§3, CR-FE-032). `QUERY_KEYS` locked as canonical factory name (was `QK` in v3.0 template). `attendanceMonthlySheet` key signature corrected to match OpenAPI: `(classId, subjectId, year, month)` → `['attendance-monthly-sheet', ...]`. `SA_QUERY_KEYS` factory documented and mandated for superadmin-app.
+  - **Interaction safety:** `<ConfirmDialog>` / `<SAConfirmDialog>` mandated globally for all destructive mutations (§5, CR-FE-031). `useBlocker` navigation guard mandated for Batch Promotion Wizard and CSV Import Wizard (§2, CR-FE-039). Announcement create/edit nav guard added (§2, Finding 14).
+  - **Accessibility:** WCAG 2.1 AA baseline for superadmin-app: semantic table, Radix focus traps, `<Link>` navigation, `role="status"` spinners (§6.2, CR-FE-033). Password visibility toggle mandated on all password inputs in both apps, `<PasswordInput>` component added (§6, CR-FE-035).
+  - **Superadmin UX:** IANA timezone combobox replaces free-text input (§2.SA.1, CR-FE-036). Mutation success/error toasts mandated for all four tenant mutations; feature flag toggles exempt (§2.SA.2, CR-FE-037).
+  - **New spec notes for unimplemented modules:** Push deep-link SW `clients.openWindow()` must use role-specific route (§2, CR-FE-038). Monthly sheet mobile card accordion at `< md` (§2, CR-FE-040). Guardian `selectedChildId` persisted to `sessionStorage` (§4, CR-FE-041). Exam publish button always rendered as disabled-with-tooltip, never hidden (§2, CR-FE-042).
+  - **Screen spec amendments (9):** Temp password modal guard (Finding 1). Guardian `canSubmitLeave` contact info block (Finding 3). Report card download timeout + re-click guard (Finding 4). TTL countdown `aria-live="assertive"` at 5min + persistent banner at 2min (Finding 6). Marks locked state info banner (Finding 9). Date picker locked helper text (Finding 11). Live brand color CSS variable preview + 300ms debounce (Finding 13). CSV file type client-side validation (Finding 15).
+  - **Architecture note:** Auth migration status documented — `AuthContext.tsx` remains source of truth until `useAuthStore` migration completes; migration is a hard prerequisite for CR-FE-01 (§4).
 
 ---
 

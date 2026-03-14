@@ -81,7 +81,7 @@ function AbsenteePopup({
           side="top"
           align="center"
           sideOffset={6}
-          className="z-50 w-64 rounded-lg border bg-popover shadow-lg p-3 text-sm outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+          className="z-50 w-64 rounded-lg border bg-card text-card-foreground shadow-lg p-3 text-sm outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -542,7 +542,7 @@ export default function TodayTimetableGrid({
             {classRows.map(([classId, className]) => (
               <tr key={classId}>
                 {/* Class name cell (sticky) */}
-                <td className="sticky left-0 bg-background z-10 border-r border-border px-2 py-2 text-xs font-medium whitespace-nowrap w-[72px] max-w-[72px] truncate">
+                <td className="sticky left-0 bg-background z-10 border-r border-border px-2 py-2 text-xs font-medium whitespace-nowrap max-w-fit truncate">
                   {className}
                 </td>
                 {/* Period cells */}

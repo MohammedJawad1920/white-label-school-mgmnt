@@ -149,10 +149,30 @@ export async function recordClassAttendance(
     }
   });
 
+  const counts = { present: 0, absent: 0, late: 0, excused: 0 };
+  for (const entry of students) {
+    switch (entry.status) {
+      case "Present":
+        counts.present++;
+        break;
+      case "Absent":
+        counts.absent++;
+        break;
+      case "Late":
+        counts.late++;
+        break;
+      case "Excused":
+        counts.excused++;
+        break;
+    }
+  }
+
   res.status(200).json({
-    data: {
-      recorded: students.length,
-    },
+    recorded: students.length,
+    present: counts.present,
+    absent: counts.absent,
+    late: counts.late,
+    excused: counts.excused,
   });
 }
 

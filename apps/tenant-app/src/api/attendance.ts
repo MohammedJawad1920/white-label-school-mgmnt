@@ -100,10 +100,11 @@ export const attendanceApi = {
       .then((r) => r.data),
 
   // CR-39/CR-41: absent student names for a timeslot on a date (absentee popup)
+  // Route: GET /attendance/absentees/:timeslotId?date=... (timeslotId is a path param)
   getAbsentees: (timeSlotId: string, date: string) =>
     apiClient
-      .get<GetAbsenteesResponse>("/attendance/absentees", {
-        params: { timeSlotId, date },
+      .get<GetAbsenteesResponse>(`/attendance/absentees/${timeSlotId}`, {
+        params: { date },
       })
       .then((r) => r.data),
 };

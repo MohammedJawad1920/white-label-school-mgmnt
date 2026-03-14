@@ -329,10 +329,9 @@ export interface CorrectAttendanceResponse {
   record: AttendanceRecord & { studentId: string; timeslotId: string };
 }
 export interface RecordClassAttendanceRequest {
-  timeSlotId: string;
+  timeslotId: string;
   date: string;
-  defaultStatus: AttendanceStatus;
-  exceptions: Array<{ studentId: string; status: AttendanceStatus }>;
+  students: Array<{ studentId: string; status: AttendanceStatus }>;
 }
 export interface RecordClassAttendanceResponse {
   recorded: number;

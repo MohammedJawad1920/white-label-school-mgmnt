@@ -25,9 +25,21 @@ import { z } from "zod";
 import { tenantsApi } from "@/api/tenants";
 import { parseApiError } from "@/utils/errors";
 import { cn } from "@/utils/cn";
+import { SA_QUERY_KEYS } from "@/utils/queryKeys";
+import { useAppToast } from "@/hooks/useAppToast";
 import type { Tenant } from "@/types/api";
 
 // ── Zod schemas — Freeze §Screen: Tenant Management validation ────────────────
+// CR-FE-036: timezone must be a valid IANA tz string from Intl.supportedValuesOf
+const validTimezone = z
+  .string()
+  .refine(
+    (tz) => !tz || Intl.supportedValuesOf("timeZone").includes(tz),
+    { message: "Select a valid timezone from the list (e.g. Asia/Kolkata)" },
+  )
+  .optional()
+  .or(z.literal(""));
+
 const createSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
   slug: z
@@ -35,8 +47,8 @@ const createSchema = z.object({
     .min(1, "Slug is required")
     .max(100)
     .regex(/^[a-z0-9-]+$/, "Lowercase letters, numbers and dash only"),
-  // v3.6 CR-17: optional IANA timezone, defaults to Asia/Kolkata
-  timezone: z.string().min(1).optional().or(z.literal("")),
+  // CR-FE-036: valid IANA timezone
+  timezone: validTimezone,
   // v3.4 CR-06: first admin account
   admin: z.object({
     name: z.string().min(1, "Required").max(255),
@@ -52,8 +64,8 @@ const updateSchema = z.object({
     .regex(/^[a-z0-9-]*$/, "Lowercase letters, numbers and dash only")
     .optional()
     .or(z.literal("")),
-  // v3.6 CR-17
-  timezone: z.string().min(1).optional().or(z.literal("")),
+  // CR-FE-036: valid IANA timezone
+  timezone: validTimezone,
 });
 type CreateFormValues = z.infer<typeof createSchema>;
 type UpdateFormValues = z.infer<typeof updateSchema>;
@@ -101,6 +113,7 @@ interface CreateDrawerProps {
 }
 function CreateDrawer({ open, onClose }: CreateDrawerProps) {
   const queryClient = useQueryClient();
+  const toast = useAppToast();
   const {
     register,
     handleSubmit,
@@ -111,8 +124,9 @@ function CreateDrawer({ open, onClose }: CreateDrawerProps) {
 
   const mutation = useMutation({
     mutationFn: (data: CreateFormValues) => tenantsApi.create(data),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["sa-tenants"] });
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: SA_QUERY_KEYS.tenants() });
+      toast.success(`Tenant '${variables.name}' created successfully.`);
       reset();
       onClose();
     },
@@ -127,6 +141,7 @@ function CreateDrawer({ open, onClose }: CreateDrawerProps) {
       } else {
         setError("root", { message });
       }
+      toast.error(message);
     },
   });
 
@@ -336,7 +351,7 @@ function CreateDrawer({ open, onClose }: CreateDrawerProps) {
               8 default school periods will be seeded automatically on creation.
             </div>
 
-            {/* Timezone (v3.6 CR-17) */}
+            {/* Timezone (CR-FE-036) */}
             <div>
               <label
                 htmlFor="tenant-timezone"
@@ -347,18 +362,38 @@ function CreateDrawer({ open, onClose }: CreateDrawerProps) {
               <input
                 id="tenant-timezone"
                 type="text"
-                placeholder="e.g. Asia/Kolkata (default)"
-                aria-describedby="tenant-timezone-hint"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                list="iana-timezone-list-create"
+                placeholder="Asia/Kolkata (default)"
+                defaultValue="Asia/Kolkata"
+                aria-describedby={
+                  errors.timezone ? "tenant-timezone-error" : "tenant-timezone-hint"
+                }
+                aria-invalid={errors.timezone ? true : undefined}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
                 {...register("timezone")}
               />
-              <p
-                id="tenant-timezone-hint"
-                className="mt-1 text-xs text-muted-foreground"
-              >
-                IANA timezone string (e.g. Asia/Kolkata, America/New_York).
-                Leave blank to use default.
-              </p>
+              <datalist id="iana-timezone-list-create">
+                {Intl.supportedValuesOf("timeZone").map((tz) => (
+                  <option key={tz} value={tz} />
+                ))}
+              </datalist>
+              {errors.timezone ? (
+                <p
+                  id="tenant-timezone-error"
+                  role="alert"
+                  className="mt-1 text-xs text-destructive"
+                >
+                  {errors.timezone.message}
+                </p>
+              ) : (
+                <p
+                  id="tenant-timezone-hint"
+                  className="mt-1 text-xs text-muted-foreground"
+                >
+                  Type to search (e.g. "Kolkata" → "Asia/Kolkata"). Leave blank
+                  to use default.
+                </p>
+              )}
             </div>
           </div>
 
@@ -418,6 +453,7 @@ interface EditDrawerProps {
 }
 function EditDrawer({ tenant, onClose }: EditDrawerProps) {
   const queryClient = useQueryClient();
+  const toast = useAppToast();
   const {
     register,
     handleSubmit,
@@ -437,8 +473,9 @@ function EditDrawer({ tenant, onClose }: EditDrawerProps) {
 
   const mutation = useMutation({
     mutationFn: (data: UpdateFormValues) => tenantsApi.update(tenant!.id, data),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["sa-tenants"] });
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: SA_QUERY_KEYS.tenants() });
+      toast.success(`Tenant '${variables.name ?? tenant!.name}' updated.`);
       reset();
       onClose();
     },
@@ -449,6 +486,7 @@ function EditDrawer({ tenant, onClose }: EditDrawerProps) {
       } else {
         setError("root", { message });
       }
+      toast.error(message);
     },
   });
 
@@ -557,7 +595,7 @@ function EditDrawer({ tenant, onClose }: EditDrawerProps) {
                 </p>
               )}
             </div>
-            {/* Timezone (v3.6 CR-17) */}
+            {/* Timezone (CR-FE-036) */}
             <div>
               <label
                 htmlFor="edit-timezone"
@@ -568,11 +606,16 @@ function EditDrawer({ tenant, onClose }: EditDrawerProps) {
               <input
                 id="edit-timezone"
                 type="text"
-                placeholder="e.g. Asia/Kolkata"
+                list="iana-timezone-list-edit"
                 aria-invalid={errors.timezone ? true : undefined}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
                 {...register("timezone")}
               />
+              <datalist id="iana-timezone-list-edit">
+                {Intl.supportedValuesOf("timeZone").map((tz) => (
+                  <option key={tz} value={tz} />
+                ))}
+              </datalist>
               {errors.timezone && (
                 <p role="alert" className="mt-1 text-xs text-destructive">
                   {errors.timezone.message}
@@ -610,18 +653,21 @@ interface DeactivateDialogProps {
 }
 function DeactivateDialog({ tenant, onClose }: DeactivateDialogProps) {
   const queryClient = useQueryClient();
+  const toast = useAppToast();
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
     mutationFn: () => tenantsApi.deactivate(tenant!.id),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["sa-tenants"] });
+      await queryClient.invalidateQueries({ queryKey: SA_QUERY_KEYS.tenants() });
+      toast.success(`Tenant '${tenant!.name}' deactivated.`);
       onClose();
     },
     onError: (err) => {
       const { code, message } = parseApiError(err);
       if (code === "ALREADY_INACTIVE") setError("Tenant is already inactive.");
       else setError(message);
+      toast.error(message);
     },
   });
 
@@ -703,18 +749,21 @@ interface ReactivateDialogProps {
 }
 function ReactivateDialog({ tenant, onClose }: ReactivateDialogProps) {
   const queryClient = useQueryClient();
+  const toast = useAppToast();
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
     mutationFn: () => tenantsApi.reactivate(tenant!.id),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["sa-tenants"] });
+      await queryClient.invalidateQueries({ queryKey: SA_QUERY_KEYS.tenants() });
+      toast.success(`Tenant '${tenant!.name}' reactivated.`);
       onClose();
     },
     onError: (err) => {
       const { code, message } = parseApiError(err);
       if (code === "ALREADY_ACTIVE") setError("Tenant is already active.");
       else setError(message);
+      toast.error(message);
     },
   });
 
@@ -802,7 +851,11 @@ export default function TenantsPage() {
   );
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["sa-tenants", statusFilter, search],
+    queryKey: SA_QUERY_KEYS.tenantsList(
+      statusFilter || search
+        ? { status: statusFilter || undefined, search: search || undefined }
+        : undefined,
+    ),
     queryFn: () =>
       tenantsApi.list({
         status: statusFilter || undefined,

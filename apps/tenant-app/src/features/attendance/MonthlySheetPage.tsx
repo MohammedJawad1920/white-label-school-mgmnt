@@ -19,6 +19,7 @@ import { attendanceApi } from "@/api/attendance";
 import { classesApi } from "@/api/classes";
 import { subjectsApi } from "@/api/subjects";
 import { parseApiError } from "@/utils/errors";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const THIS_YEAR = new Date().getFullYear();
@@ -75,6 +76,85 @@ function SheetSkeleton() {
   );
 }
 
+// ── Attendance percentage helper (CR-FE-040) ──────────────────────────────
+// Excused excluded from denominator — matches server computation.
+function calcStudentPct(
+  days: Record<string, { status: string; timeSlotId: string }[]>,
+): number {
+  let attended = 0,
+    total = 0;
+  Object.values(days).forEach((records) => {
+    records.forEach((r) => {
+      if (r.status !== "Excused") {
+        total++;
+        if (r.status === "Present" || r.status === "Late") attended++;
+      }
+    });
+  });
+  return total === 0 ? 100 : Math.round((attended / total) * 100);
+}
+
+// ── Mobile per-student calendar view (CR-FE-040) ──────────────────────────
+// Renders a simple month-grid showing each day's worst status badge.
+interface MobileCalendarProps {
+  year: number;
+  month: number;
+  days: Record<string, { status: string; timeSlotId: string }[]>;
+}
+function MobileCalendar({ year, month, days }: MobileCalendarProps) {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const firstDayOfWeek = new Date(year, month - 1, 1).getDay(); // 0=Sun
+  const cells: (number | null)[] = [
+    ...Array(firstDayOfWeek).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  const rows: (number | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    rows.push(cells.slice(i, i + 7));
+  }
+
+  return (
+    <div className="px-3 pb-3 pt-1">
+      {/* Day-of-week header */}
+      <div className="grid grid-cols-7 gap-0.5 mb-0.5">
+        {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+          <div
+            key={d}
+            className="text-center text-xs text-muted-foreground py-1"
+          >
+            {d}
+          </div>
+        ))}
+      </div>
+      {rows.map((row, ri) => (
+        <div key={ri} className="grid grid-cols-7 gap-0.5 mb-0.5">
+          {row.map((d, ci) => {
+            if (d === null) return <div key={ci} />;
+            const records = days[String(d)] ?? [];
+            // worst-status wins: Absent > Late > Present
+            let worstStatus: string | null = null;
+            records.forEach((r) => {
+              if (r.status === "Absent") worstStatus = "Absent";
+              else if (r.status === "Late" && worstStatus !== "Absent")
+                worstStatus = "Late";
+              else if (!worstStatus) worstStatus = r.status;
+            });
+            return (
+              <div
+                key={ci}
+                className={`aspect-square flex items-center justify-center rounded text-xs font-medium ${statusCls(worstStatus)}`}
+                aria-label={`Day ${d}: ${worstStatus ?? "no record"}`}
+              >
+                {d}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Select helpers ─────────────────────────────────────────────────────────────
 const selectCls =
   "rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -86,6 +166,10 @@ export default function MonthlySheetPage() {
   const [subjectId, setSubjectId] = useState("");
   const [year, setYear] = useState(THIS_YEAR);
   const [month, setMonth] = useState(THIS_MONTH);
+  // CR-FE-040: only one student expanded at a time in mobile accordion
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(
+    null,
+  );
 
   const classesQ = useQuery({
     queryKey: ["classes"],
@@ -100,7 +184,12 @@ export default function MonthlySheetPage() {
   });
 
   const sheetQ = useQuery({
-    queryKey: ["monthly-sheet", classId, subjectId, year, month],
+    queryKey: QUERY_KEYS.attendanceMonthlySheet(
+      classId,
+      subjectId,
+      year,
+      month,
+    ),
     queryFn: () =>
       attendanceApi.getMonthlySheet({ classId, subjectId, year, month }),
     staleTime: 5 * 60 * 1000,
@@ -307,8 +396,8 @@ export default function MonthlySheetPage() {
               </span>
             </div>
 
-            {/* Scrollable grid */}
-            <div className="overflow-x-auto -mx-4 md:mx-0 rounded-lg border">
+            {/* Scrollable grid — desktop only (CR-FE-040: ≥ md) */}
+            <div className="hidden md:block overflow-x-auto -mx-4 md:mx-0 rounded-lg border">
               <div
                 role="table"
                 aria-label={`Monthly attendance sheet: ${subjectName} – ${className}, ${monthLabel} ${year}`}
@@ -401,6 +490,68 @@ export default function MonthlySheetPage() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Mobile accordion (CR-FE-040) — < md only, per-student expand */}
+            <div className="md:hidden rounded-lg border divide-y">
+              {students.map((student) => {
+                const isExpanded = expandedStudentId === student.studentId;
+                const pct = calcStudentPct(student.days);
+                return (
+                  <div key={student.studentId}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedStudentId(
+                          isExpanded ? null : student.studentId,
+                        )
+                      }
+                      aria-expanded={isExpanded}
+                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/20 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {student.studentName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {student.admissionNumber}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-3">
+                        <span
+                          aria-label={`Attendance percentage: ${pct}%`}
+                          className="text-sm font-medium"
+                        >
+                          {pct}%
+                        </span>
+                        <svg
+                          className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          aria-hidden="true"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 9l-7 7-7-7"
+                          />
+                        </svg>
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div className="border-t bg-muted/10">
+                        <MobileCalendar
+                          year={year}
+                          month={month}
+                          days={student.days}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

@@ -7,15 +7,15 @@
  *   PUT  /school-profile          — update profile fields
  *   POST /school-profile/upload   — upload logo / principal signature
  */
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { toast } from "sonner";
 import { schoolProfileApi } from "@/api/schoolProfile";
 import { parseApiError } from "@/utils/errors";
 import { QUERY_KEYS } from "@/utils/queryKeys";
+import { useAppToast } from "@/hooks/useAppToast";
 import type { UpdateSchoolProfileRequest } from "@/types/api";
 
 // Valid student levels — mirrors VALID_LEVELS on server (M-017)
@@ -59,6 +59,7 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function SchoolProfilePage() {
   const qc = useQueryClient();
+  const appToast = useAppToast();
   const logoInputRef = useRef<HTMLInputElement>(null);
   const sigInputRef = useRef<HTMLInputElement>(null);
   const [selectedLevels, setSelectedLevels] = useState<string[]>([]);
@@ -79,11 +80,40 @@ export default function SchoolProfilePage() {
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors, isSubmitting, isDirty },
   } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     mode: "onBlur",
   });
+
+  // CR Finding 13: live brand color preview — debounced CSS variable update
+  const brandingColorValue = watch("brandingColor");
+  useEffect(() => {
+    const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
+    if (!HEX_RE.test(brandingColorValue ?? "")) return;
+    const timer = setTimeout(() => {
+      document.documentElement.style.setProperty(
+        "--brand-color",
+        brandingColorValue!,
+      );
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [brandingColorValue]);
+
+  // Restore --brand-color on unmount (CR Finding 13)
+  useEffect(() => {
+    const saved = profile?.brandingColor ?? null;
+    return () => {
+      if (saved) {
+        document.documentElement.style.setProperty("--brand-color", saved);
+      } else {
+        document.documentElement.style.removeProperty("--brand-color");
+      }
+    };
+    // profile reference intentionally captured at mount time only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Initialize form + levels when data loads
   if (profile && !levelsInitialized) {
@@ -104,9 +134,9 @@ export default function SchoolProfilePage() {
       schoolProfileApi.update(payload),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: QUERY_KEYS.schoolProfile() });
-      toast.success("School profile updated");
+      appToast.success("School profile updated");
     },
-    onError: (err) => toast.error(parseApiError(err).message),
+    onError: (err) => appToast.error(parseApiError(err).message),
   });
 
   const uploadMutation = useMutation({
@@ -120,11 +150,11 @@ export default function SchoolProfilePage() {
       schoolProfileApi.uploadFile(file).then((r) => ({ url: r.url, field })),
     onSuccess: ({ url, field }) => {
       updateMutation.mutate({ [field]: url });
-      toast.success(
+      appToast.success(
         field === "logoUrl" ? "Logo uploaded" : "Signature uploaded",
       );
     },
-    onError: (err) => toast.error(parseApiError(err).message),
+    onError: (err) => appToast.error(parseApiError(err).message),
   });
 
   function onSubmit(values: ProfileFormValues) {
@@ -315,6 +345,18 @@ export default function SchoolProfilePage() {
                 aria-invalid={errors.brandingColor ? true : undefined}
                 className="w-36 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
                 {...register("brandingColor")}
+              />
+              {/* CR Finding 13: live color swatch — updates from local state immediately */}
+              <span
+                className="inline-block h-8 w-8 rounded border border-input shrink-0"
+                style={{
+                  backgroundColor: /^#[0-9A-Fa-f]{6}$/.test(
+                    brandingColorValue ?? "",
+                  )
+                    ? brandingColorValue
+                    : "transparent",
+                }}
+                aria-hidden="true"
               />
               <p className="text-xs text-muted-foreground">Hex e.g. #1A5276</p>
             </div>
