@@ -29,14 +29,14 @@ async function run(): Promise<void> {
 
   // Seed 8 default school periods (required for timetable + attendance)
   const periods = [
-    { n: 1, label: "Period 1",   start: "08:00", end: "08:45" },
-    { n: 2, label: "Period 2",   start: "08:50", end: "09:35" },
-    { n: 3, label: "Period 3",   start: "09:40", end: "10:25" },
-    { n: 4, label: "Period 4",   start: "10:30", end: "11:15" },
-    { n: 5, label: "Period 5",   start: "11:30", end: "12:15" },
-    { n: 6, label: "Period 6",   start: "12:20", end: "13:05" },
-    { n: 7, label: "Period 7",   start: "14:00", end: "14:45" },
-    { n: 8, label: "Period 8",   start: "14:50", end: "15:35" },
+    { n: 1, label: "Period 1", start: "08:00", end: "08:45" },
+    { n: 2, label: "Period 2", start: "08:50", end: "09:35" },
+    { n: 3, label: "Period 3", start: "09:40", end: "10:25" },
+    { n: 4, label: "Period 4", start: "10:30", end: "11:15" },
+    { n: 5, label: "Period 5", start: "11:30", end: "12:15" },
+    { n: 6, label: "Period 6", start: "12:20", end: "13:05" },
+    { n: 7, label: "Period 7", start: "14:00", end: "14:45" },
+    { n: 8, label: "Period 8", start: "14:50", end: "15:35" },
   ];
   for (const p of periods) {
     await pool.query(
@@ -63,7 +63,9 @@ async function run(): Promise<void> {
      VALUES ($1, $2, 'Test Admin', 'admin@test.com', $3, '["Admin"]'::jsonb, NOW(), NOW())`,
     [userId, tenantId, passwordHash],
   );
-  console.log(`[reset-tenants] Created admin  email=admin@test.com  password=admin123`);
+  console.log(
+    `[reset-tenants] Created admin  email=admin@test.com  password=admin123`,
+  );
 
   await pool.end();
 
@@ -71,7 +73,9 @@ async function run(): Promise<void> {
   console.log("─────────────────────────────────────────────");
   console.log(`VITE_TENANT_ID=${tenantId}`);
   console.log("─────────────────────────────────────────────");
-  console.log("Copy the line above into apps/tenant-app/.env and restart Vite.");
+  console.log(
+    "Copy the line above into apps/tenant-app/.env and restart Vite.",
+  );
 }
 
 run().catch((err) => {
