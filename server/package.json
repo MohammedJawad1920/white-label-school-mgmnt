@@ -9,6 +9,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "seed:superadmin": "ts-node src/db/seeds/superadmin.ts",
+    "seed:reset-tenants": "ts-node -r dotenv/config src/db/seeds/reset-tenants.ts",
+    "migrate:018": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/018_tenants_uuid_primary_key.sql', {stdio:'inherit', shell:true})\"",
     "migrate": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/001_initial_schema.sql', {stdio:'inherit', shell:true})\"",
     "migrate:002": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/002_add_student_user_id.sql', {stdio:'inherit', shell:true})\"",
     "migrate:003": "node -r dotenv/config -e \"require('child_process').execSync('psql ' + process.env.DATABASE_URL + ' -f src/db/migrations/003_add_attendance_corrections.sql', {stdio:'inherit', shell:true})\"",

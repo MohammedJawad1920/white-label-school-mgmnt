@@ -15,6 +15,8 @@ import { randomUUID } from "crypto";
 // Extend Request type locally to carry requestId
 interface RequestWithId extends Request {
   requestId?: string;
+  userId?: string;
+  superAdminId?: string;
 }
 
 export function requestLogger(

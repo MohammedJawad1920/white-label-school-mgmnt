@@ -45,7 +45,6 @@ export interface ListTenantsResponse {
 }
 // POST /super-admin/tenants — v3.4 CR-06: admin block required; v3.6 CR-17: timezone optional
 export interface CreateTenantRequest {
-  id: string;
   name: string;
   slug: string;
   timezone?: string; // v3.6 CR-17: optional, defaults to Asia/Kolkata

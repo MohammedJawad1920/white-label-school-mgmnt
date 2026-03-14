@@ -171,8 +171,7 @@ export async function listTenants(req: Request, res: Response): Promise<void> {
 // ═══════════════════════════════════════════════════════════════════
 
 export async function createTenant(req: Request, res: Response): Promise<void> {
-  const { id, name, slug, timezone, admin } = req.body as {
-    id?: string;
+  const { name, slug, timezone, admin } = req.body as {
     name?: string;
     slug?: string;
     timezone?: string;
@@ -190,12 +189,8 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
   const resolvedTimezone = timezone?.trim() ?? "Asia/Kolkata";
 
   // ── Validate tenant fields ────────────────────────────────────────
-  if (!id || !name || !slug) {
-    send400(res, "id, name, and slug are required");
-    return;
-  }
-  if (id.length > 50 || !/^[a-zA-Z0-9-]+$/.test(id)) {
-    send400(res, "id must be 1–50 alphanumeric/dash characters");
+  if (!name || !slug) {
+    send400(res, "name and slug are required");
     return;
   }
   if (name.length > 255) {
@@ -239,10 +234,10 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
     const { tenant, adminUser } = await withTransaction(async (client) => {
       // 1. Insert tenant
       const tenantResult = await client.query<TenantRow>(
-        `INSERT INTO tenants (id, name, slug, status, timezone, created_at, updated_at)
-         VALUES ($1, $2, $3, 'active', $4, NOW(), NOW())
+        `INSERT INTO tenants (name, slug, status, timezone, created_at, updated_at)
+         VALUES ($1, $2, 'active', $3, NOW(), NOW())
          RETURNING id, name, slug, status, timezone, deactivated_at, created_at, updated_at`,
-        [id, name.trim(), slug.trim(), resolvedTimezone],
+        [name.trim(), slug.trim(), resolvedTimezone],
       );
       const newTenant = tenantResult.rows[0];
       if (!newTenant) throw new Error("Tenant insert returned no rows");

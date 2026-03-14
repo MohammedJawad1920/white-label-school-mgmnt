@@ -66,7 +66,8 @@ const SchoolProfilePage = lazy(
 
 // ── v5.0: Boot-time VITE_TENANT_ID validation ────────────────────────────────
 const TENANT_ID = import.meta.env.VITE_TENANT_ID as string | undefined;
-// H-02: Freeze §1.5 — VITE_TENANT_ID must be a valid UUID (not just non-empty)
+// H-02: Freeze §1.5 — VITE_TENANT_ID must be a valid UUID.
+// tenants.id is UUID type after migration 018.
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isTenantIdValid =

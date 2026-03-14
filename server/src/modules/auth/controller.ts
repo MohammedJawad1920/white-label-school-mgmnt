@@ -145,7 +145,7 @@ export async function tenantLogin(req: Request, res: Response): Promise<void> {
   }
 
   const tenantResult = await pool.query<Pick<TenantRow, "id" | "status">>(
-    "SELECT id, status FROM tenants WHERE id = $1 AND deleted_at IS NULL",
+    "SELECT id, status FROM tenants WHERE id = $1",
     [tenantId.trim()],
   );
   const tenant = tenantResult.rows[0];

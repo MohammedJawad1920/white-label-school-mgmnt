@@ -29,11 +29,6 @@ import type { Tenant } from "@/types/api";
 
 // ── Zod schemas — Freeze §Screen: Tenant Management validation ────────────────
 const createSchema = z.object({
-  id: z
-    .string()
-    .min(1, "ID is required")
-    .max(50)
-    .regex(/^[a-zA-Z0-9-]+$/, "Alphanumeric and dash only"),
   name: z.string().min(1, "Name is required").max(255),
   slug: z
     .string()
@@ -199,43 +194,6 @@ function CreateDrawer({ open, onClose }: CreateDrawerProps) {
                 {errors.root.message}
               </div>
             )}
-
-            {/* Tenant ID */}
-            <div>
-              <label
-                htmlFor="tenant-id"
-                className="block text-sm font-medium mb-1.5"
-              >
-                Tenant ID
-              </label>
-              <input
-                id="tenant-id"
-                type="text"
-                placeholder="e.g. springfield-high"
-                aria-describedby={
-                  errors.id ? "tenant-id-error" : "tenant-id-hint"
-                }
-                aria-invalid={errors.id ? true : undefined}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
-                {...register("id")}
-              />
-              {errors.id ? (
-                <p
-                  id="tenant-id-error"
-                  role="alert"
-                  className="mt-1 text-xs text-destructive"
-                >
-                  {errors.id.message}
-                </p>
-              ) : (
-                <p
-                  id="tenant-id-hint"
-                  className="mt-1 text-xs text-muted-foreground"
-                >
-                  Immutable after creation. Alphanumeric + dash, max 50 chars.
-                </p>
-              )}
-            </div>
 
             {/* Name */}
             <div>
