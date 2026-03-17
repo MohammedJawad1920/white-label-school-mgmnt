@@ -42,7 +42,7 @@ async function run(): Promise<void> {
     await pool.query(
       `INSERT INTO school_periods (id, tenant_id, period_number, label, start_time, end_time, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-      [`SP-${uuidv4()}`, tenantId, p.n, p.label, p.start, p.end],
+      [uuidv4(), tenantId, p.n, p.label, p.start, p.end],
     );
   }
 
@@ -56,7 +56,7 @@ async function run(): Promise<void> {
   }
 
   // Create default admin user
-  const userId = `U-${uuidv4()}`;
+  const userId = uuidv4();
   const passwordHash = await bcrypt.hash("admin123", config.BCRYPT_ROUNDS);
   await pool.query(
     `INSERT INTO users (id, tenant_id, name, email, password_hash, roles, created_at, updated_at)

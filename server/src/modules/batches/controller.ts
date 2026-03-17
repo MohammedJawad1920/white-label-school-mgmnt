@@ -53,7 +53,7 @@ export async function createBatch(req: Request, res: Response): Promise<void> {
   }
   const batchStatus: BatchStatus =
     status === "Graduated" ? "Graduated" : "Active";
-  const id = `B-${uuidv4()}`;
+  const id = uuidv4();
   const result = await pool.query<BatchRow>(
     `INSERT INTO batches (id, tenant_id, name, start_year, end_year, status, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())

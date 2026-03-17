@@ -11,6 +11,7 @@ import {
   bulkDeleteStudents,
   linkStudentAccount,
 } from "./controller";
+import { guardiansController } from "../guardians/routes";
 
 const router = Router();
 router.use(tenantContextMiddleware);
@@ -19,6 +20,11 @@ router.use(tenantContextMiddleware);
 router.post("/bulk", requireRole("Admin"), asyncHandler(bulkDeleteStudents));
 router.get("/", asyncHandler(listStudents));
 router.get("/:id", asyncHandler(getStudent)); // CR-15: Admin + Teacher(scoped) + Student(own)
+router.get(
+  "/:id/guardians",
+  requireRole("Admin"),
+  asyncHandler(guardiansController.listStudentGuardians),
+);
 router.post("/", requireRole("Admin"), asyncHandler(createStudent));
 // v3.4 CR-08: link-account must precede /:id  (DEPRECATED v3.5 — backend retained only)
 router.put(

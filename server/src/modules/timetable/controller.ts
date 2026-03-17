@@ -227,7 +227,7 @@ export async function createTimeslot(
   }
 
   // ── Insert ────────────────────────────────────────────────────────
-  const id = `TS-${uuidv4()}`;
+  const id = uuidv4();
 
   try {
     await pool.query(

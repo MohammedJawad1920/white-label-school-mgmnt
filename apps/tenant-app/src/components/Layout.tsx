@@ -22,6 +22,7 @@ import { Sun, Moon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Sidebar } from "./Sidebar";
 import { BottomTabBar } from "./BottomTabBar";
+import { NotificationBell } from "./NotificationBell";
 import { useAuth } from "@/hooks/useAuth";
 
 function TopBar() {
@@ -33,6 +34,7 @@ function TopBar() {
         {import.meta.env.VITE_APP_NAME ?? "School App"}
       </span>
       <div className="flex items-center gap-2">
+        <NotificationBell />
         <button
           onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
           className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

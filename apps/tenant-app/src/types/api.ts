@@ -662,3 +662,385 @@ export interface UpdateSchoolProfileResponse {
 export interface UploadProfileFileResponse {
   url: string;
 }
+
+// ─── LEAVE (Phase 1) ─────────────────────────────────────────────────────────
+export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'ACTIVE' | 'COMPLETED' | 'OVERDUE';
+export type LeaveType = 'SICK' | 'CASUAL' | 'EMERGENCY' | 'OTHER';
+export type DurationType = 'FULL_DAY' | 'HALF_DAY';
+
+export interface LeaveRequest {
+  id: string;
+  tenantId: string;
+  studentId: string;
+  studentName: string;
+  classId: string;
+  className: string;
+  sessionId: string;
+  requestedById: string;
+  requestedByName: string;
+  leaveType: LeaveType;
+  durationType: DurationType;
+  startDate: string; // ISO date
+  endDate: string;   // ISO date
+  totalDays: number;
+  reason: string;
+  status: LeaveStatus;
+  reviewedById: string | null;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+  departedAt: string | null;
+  returnedAt: string | null;
+  createdAt: string;
+}
+
+export interface SubmitLeaveRequest {
+  studentId: string;
+  leaveType: LeaveType;
+  durationType: DurationType;
+  startDate: string;
+  endDate: string;
+  reason: string;
+}
+
+// ─── GUARDIANS (Phase 1) ─────────────────────────────────────────────────────
+export interface Guardian {
+  id: string;
+  tenantId: string;
+  name: string;
+  relationship: string;
+  phone: string | null;
+  email: string | null;
+  canSubmitLeave: boolean;
+  userId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateGuardianRequest {
+  studentId: string;
+  name: string;
+  relationship: string;
+  phone?: string;
+  email?: string;
+  canSubmitLeave?: boolean;
+  createAccount?: boolean;
+  password?: string;
+}
+
+export interface CreateGuardianResponse {
+  guardian: Guardian;
+  userCreated: boolean;
+}
+
+// ─── NOTIFICATIONS (Phase 1) ──────────────────────────────────────────────────
+export type NotificationType =
+  | 'LEAVE_APPROVED' | 'LEAVE_REJECTED' | 'LEAVE_SUBMITTED'
+  | 'EXAM_PUBLISHED' | 'EXAM_MARKS_ENTRY_OPEN'
+  | 'ANNOUNCEMENT' | 'FEE_REMINDER'
+  | 'ATTENDANCE_ALERT' | 'ASSIGNMENT_DUE';
+
+export interface Notification {
+  id: string;
+  tenantId: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  route: string | null;
+  data: Record<string, unknown> | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+// ─── EXAMS (Phase 1) ──────────────────────────────────────────────────────────
+export type ExamStatus = 'DRAFT' | 'PUBLISHED' | 'UNPUBLISHED';
+export type MarksStatus = 'PENDING' | 'ENTERED' | 'ABSENT';
+
+export interface GradeBoundary {
+  grade: string;
+  minPercent: number;
+  label: string;
+}
+
+export interface Exam {
+  id: string;
+  tenantId: string;
+  name: string;
+  type: string;
+  classId: string;
+  className: string;
+  sessionId: string;
+  sessionName: string;
+  status: ExamStatus;
+  publishedAt: string | null;
+  gradeBoundaries: GradeBoundary[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExamSubject {
+  id: string;
+  examId: string;
+  subjectId: string;
+  subjectName: string;
+  totalMarks: number;
+  passMarks: number;
+  marksStatus: MarksStatus;
+  createdAt: string;
+}
+
+export interface ExamResult {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  marksObtained: number | null;
+  isAbsent: boolean;
+  grade: string | null;
+  isPass: boolean | null;
+  marksStatus: MarksStatus;
+}
+
+export interface ConsolidatedResults {
+  examId: string;
+  examName: string;
+  students: {
+    studentId: string;
+    studentName: string;
+    admissionNumber: string;
+    totalMarksObtained: number;
+    totalMarksPossible: number;
+    aggregatePercentage: number;
+    overallGrade: string;
+    overallResult: string;
+    classRank: number | null;
+  }[];
+}
+
+export interface ExamStudentSummary {
+  examId: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  totalMarksObtained: number;
+  totalMarksPossible: number;
+  aggregatePercentage: number;
+  overallGrade: string;
+  overallResult: string;
+  classRank: number | null;
+  subjects: {
+    subjectName: string;
+    totalMarks: number;
+    passMarks: number;
+    marksObtained: number | null;
+    isAbsent: boolean;
+    grade: string | null;
+    isPass: boolean | null;
+  }[];
+}
+
+export interface ExternalResult {
+  id: string;
+  tenantId: string;
+  studentId: string;
+  studentName: string;
+  examName: string;
+  examBody: string;
+  year: number;
+  grade: string | null;
+  marksObtained: number | null;
+  totalMarks: number | null;
+  remarks: string | null;
+  createdAt: string;
+}
+
+// ─── FEES (Phase 1) ───────────────────────────────────────────────────────────
+export type FeeCategory = 'TUITION' | 'TRANSPORT' | 'HOSTEL' | 'EXAM' | 'LIBRARY' | 'SPORTS' | 'OTHER';
+
+export interface FeeCharge {
+  id: string;
+  tenantId: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  classId: string;
+  className: string;
+  sessionId: string;
+  sessionName: string;
+  category: FeeCategory;
+  description: string;
+  amount: number;
+  dueDate: string | null;
+  totalPaid: number;
+  balance: number;
+  createdAt: string;
+}
+
+export interface FeePayment {
+  id: string;
+  chargeId: string;
+  tenantId: string;
+  amount: number;
+  paymentMode: 'Cash' | 'SelfPaid';
+  paidAt: string;
+  receiptNumber: string | null;
+  notes: string | null;
+  recordedById: string;
+  createdAt: string;
+}
+
+export interface FeeSummaryEntry {
+  classId: string;
+  className: string;
+  totalCharged: number;
+  totalPaid: number;
+  totalBalance: number;
+  studentCount: number;
+}
+
+export interface BulkChargeRequest {
+  sessionId: string;
+  category: FeeCategory;
+  description: string;
+  amount: number;
+  dueDate?: string;
+  studentIds?: string[];
+  classId?: string;
+}
+
+// ─── ANNOUNCEMENTS (Phase 1) ──────────────────────────────────────────────────
+export type AudienceType = 'All' | 'Teachers' | 'Students' | 'Guardians' | 'Class';
+
+export interface Announcement {
+  id: string;
+  tenantId: string;
+  title: string;
+  body: string;
+  audienceType: AudienceType;
+  audienceClassId: string | null;
+  audienceClassName: string | null;
+  publishAt: string | null;
+  expiresAt: string | null;
+  createdById: string;
+  createdByName: string;
+  pushSent: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAnnouncementRequest {
+  title: string;
+  body: string;
+  audienceType: AudienceType;
+  audienceClassId?: string;
+  publishAt?: string;
+  expiresAt?: string;
+}
+
+// ─── ASSIGNMENTS (Phase 1) ────────────────────────────────────────────────────
+export type AssignmentType = 'HOMEWORK' | 'PROJECT' | 'CLASSWORK' | 'QUIZ' | 'LAB' | 'OTHER';
+export type SubmissionStatus = 'PENDING' | 'COMPLETED' | 'INCOMPLETE' | 'NOT_SUBMITTED';
+
+export interface Assignment {
+  id: string;
+  tenantId: string;
+  title: string;
+  description: string | null;
+  assignmentType: AssignmentType;
+  classId: string;
+  className: string;
+  subjectId: string;
+  subjectName: string;
+  sessionId: string;
+  sessionName: string;
+  dueDate: string | null;
+  maxMarks: number | null;
+  status: 'OPEN' | 'CLOSED';
+  createdById: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssignmentSubmission {
+  id: string;
+  assignmentId: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  status: SubmissionStatus;
+  marksObtained: number | null;
+  remark: string | null;
+  markedById: string | null;
+  markedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BulkMarkRequest {
+  submissions: {
+    submissionId: string;
+    status: SubmissionStatus;
+    marksObtained?: number;
+    remark?: string;
+  }[];
+}
+
+// ─── IMPORT (Phase 1) ─────────────────────────────────────────────────────────
+export type ImportJobStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED';
+
+export interface ImportError {
+  row: number;
+  field: string;
+  message: string;
+}
+
+export interface ApiImportJob {
+  id: string;
+  tenantId: string;
+  entity: string;
+  status: ImportJobStatus;
+  totalRows: number;
+  validRows: number;
+  errorRows: number;
+  errors: ImportError[];
+  previewData: Record<string, unknown>[];
+  createdById: string;
+  expiresAt: string;
+  confirmedAt: string | null;
+  createdAt: string;
+}
+
+export interface ImportPreviewResponse {
+  job: ApiImportJob;
+}
+
+// ─── GUARDIAN PORTAL (Phase 2) ────────────────────────────────────────────────
+export interface GuardianChild {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  classId: string;
+  className: string;
+  batchId: string | null;
+  batchName: string | null;
+  canSubmitLeave: boolean;
+  relationship: string;
+}
+
+export interface GuardianAttendanceCalendar {
+  studentId: string;
+  month: string;
+  records: {
+    date: string;
+    dayOfWeek: number;
+    status: string | null;
+  }[];
+  summary: {
+    present: number;
+    absent: number;
+    late: number;
+    excused: number;
+    total: number;
+  };
+}

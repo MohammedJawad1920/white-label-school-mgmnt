@@ -267,8 +267,8 @@ export async function createStudent(
   const rawPassword = `${trimmedAdmission}${dDMMYYYY(dob)}`;
   const passwordHash = await bcrypt.hash(rawPassword, config.BCRYPT_ROUNDS);
 
-  const userId = `U-${uuidv4()}`;
-  const studentId = `STU-${uuidv4()}`;
+  const userId = uuidv4();
+  const studentId = uuidv4();
 
   try {
     await withTransaction(async (client) => {

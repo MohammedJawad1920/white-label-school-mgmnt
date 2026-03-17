@@ -425,3 +425,581 @@ export interface ApiSchoolProfile {
   principalSignatureUrl: string | null;
   activeLevels: string[] | null;
 }
+
+// ─── Leave Requests (v5.0 M-019) ────────────────────────────────────────────
+
+export type LeaveStatus =
+  | "DRAFT"
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "ACTIVE"
+  | "COMPLETED"
+  | "OVERDUE";
+
+export type LeaveType =
+  | "HomeVisit"
+  | "Medical"
+  | "Emergency"
+  | "ExternalExam"
+  | "OfficialDuty"
+  | "Personal";
+
+export type DurationType = "HalfDayAM" | "HalfDayPM" | "FullDay" | "MultiDay";
+
+export interface LeaveRequestRow {
+  id: string;
+  tenant_id: string;
+  session_id: string;
+  student_id: string;
+  requested_by_user_id: string;
+  requested_by_role: string;
+  proxy_for: string | null;
+  leave_type: LeaveType;
+  duration_type: DurationType;
+  start_date: string;
+  end_date: string;
+  reason: string;
+  attachment_url: string | null;
+  status: LeaveStatus;
+  reviewed_by: string | null;
+  reviewed_at: Date | null;
+  rejection_reason: string | null;
+  departed_at: Date | null;
+  expected_return_at: Date;
+  returned_at: Date | null;
+  return_noted_by: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ApiLeaveRequest {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  studentId: string;
+  studentName: string;
+  requestedByUserId: string;
+  requestedByRole: string;
+  leaveType: LeaveType;
+  durationType: DurationType;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  attachmentUrl: string | null;
+  status: LeaveStatus;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+  departedAt: string | null;
+  expectedReturnAt: string;
+  returnedAt: string | null;
+  createdAt: string;
+}
+
+// ─── Guardians (v5.0 M-020) ─────────────────────────────────────────────────
+
+export interface GuardianRow {
+  id: string;
+  tenant_id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  relationship: string | null;
+  is_primary: boolean;
+  can_submit_leave: boolean;
+  user_id: string | null;
+  created_at: Date;
+  deleted_at: Date | null;
+}
+
+export interface ApiGuardian {
+  id: string;
+  tenantId: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  relationship: string | null;
+  isPrimary: boolean;
+  canSubmitLeave: boolean;
+  userId: string | null;
+  createdAt: string;
+}
+
+// ─── Push Subscriptions (v5.0 M-022) ────────────────────────────────────────
+
+export interface PushSubscriptionRow {
+  id: string;
+  user_id: string;
+  tenant_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  device_label: string | null;
+  created_at: Date;
+}
+
+// ─── Notifications (v5.0 M-023) ─────────────────────────────────────────────
+
+export type NotificationType =
+  | "LEAVE_SUBMITTED"
+  | "LEAVE_APPROVED"
+  | "LEAVE_REJECTED"
+  | "STUDENT_DEPARTED"
+  | "STUDENT_RETURNED"
+  | "LEAVE_OVERDUE"
+  | "ABSENCE_ALERT"
+  | "EXAM_PUBLISHED"
+  | "ASSIGNMENT_CREATED"
+  | "ANNOUNCEMENT"
+  | "FEE_CHARGED";
+
+export interface NotificationRow {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  data: Record<string, unknown> | null;
+  read_at: Date | null;
+  push_sent_at: Date | null;
+  push_delivered: boolean | null;
+  created_at: Date;
+}
+
+export interface ApiNotification {
+  id: string;
+  tenantId: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  data: Record<string, unknown> | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+// ─── Exams (v5.0 M-027 through M-031) ───────────────────────────────────────
+
+export type ExamStatus =
+  | "DRAFT"
+  | "SCHEDULED"
+  | "ONGOING"
+  | "MARKS_PENDING"
+  | "UNDER_REVIEW"
+  | "PUBLISHED"
+  | "UNPUBLISHED";
+
+export type MarksStatus = "PENDING" | "ENTERED" | "LOCKED";
+
+export interface GradeBoundary {
+  grade: string;
+  minPercentage: number;
+  maxPercentage: number;
+  label: string;
+}
+
+export interface ExamRow {
+  id: string;
+  tenant_id: string;
+  session_id: string;
+  class_id: string;
+  name: string;
+  type: "TermExam" | "PeriodicTest";
+  status: ExamStatus;
+  grade_boundaries: GradeBoundary[];
+  created_by: string;
+  published_by: string | null;
+  published_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+  deleted_at: Date | null;
+}
+
+export interface ExamSubjectRow {
+  id: string;
+  tenant_id: string;
+  exam_id: string;
+  subject_id: string;
+  teacher_id: string;
+  exam_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  total_marks: number;
+  pass_marks: number;
+  marks_status: MarksStatus;
+  created_at: Date;
+}
+
+export interface ExamResultRow {
+  id: string;
+  tenant_id: string;
+  exam_subject_id: string;
+  student_id: string;
+  marks_obtained: number | null;
+  is_absent: boolean;
+  grade: string | null;
+  is_pass: boolean | null;
+  entered_by: string | null;
+  entered_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ExamStudentSummaryRow {
+  id: string;
+  tenant_id: string;
+  exam_id: string;
+  student_id: string;
+  total_marks_obtained: number;
+  total_marks_possible: number;
+  aggregate_percentage: number;
+  overall_grade: string;
+  overall_result: "PASS" | "FAIL";
+  class_rank: number | null;
+  created_at: Date;
+}
+
+export interface ExternalResultRow {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  session_id: string;
+  exam_name: string;
+  conducted_by: string;
+  result_summary: string | null;
+  document_url: string | null;
+  recorded_by: string;
+  recorded_at: Date;
+}
+
+export interface ApiExam {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  classId: string;
+  className: string;
+  name: string;
+  type: "TermExam" | "PeriodicTest";
+  status: ExamStatus;
+  gradeBoundaries: GradeBoundary[];
+  subjects: ApiExamSubject[];
+  createdBy: string;
+  publishedBy: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiExamSubject {
+  id: string;
+  examId: string;
+  subjectId: string;
+  subjectName: string;
+  teacherId: string;
+  teacherName: string;
+  examDate: string;
+  startTime: string | null;
+  endTime: string | null;
+  totalMarks: number;
+  passMarks: number;
+  marksStatus: MarksStatus;
+}
+
+export interface ApiExamResult {
+  examSubjectId: string;
+  marksObtained: number | null;
+  isAbsent: boolean;
+  grade: string | null;
+  isPass: boolean | null;
+}
+
+export interface ApiConsolidatedResults {
+  examId: string;
+  subjects: Array<{
+    subjectId: string;
+    subjectName: string;
+    totalMarks: number;
+    passMarks: number;
+  }>;
+  students: Array<{
+    studentId: string;
+    studentName: string;
+    admissionNumber: string;
+    results: ApiExamResult[];
+    summary: {
+      totalMarksObtained: number;
+      totalMarksPossible: number;
+      aggregatePercentage: number;
+      overallGrade: string;
+      overallResult: "PASS" | "FAIL";
+      classRank: number | null;
+    };
+  }>;
+}
+
+export interface ApiExternalResult {
+  id: string;
+  tenantId: string;
+  studentId: string;
+  studentName: string;
+  sessionId: string;
+  examName: string;
+  conductedBy: string;
+  resultSummary: string | null;
+  documentUrl: string | null;
+  recordedBy: string;
+  recordedAt: string;
+}
+
+// ─── Fees (v5.0 M-032 / M-033) ──────────────────────────────────────────────
+
+export type FeeCategory =
+  | "BoardExamFee"
+  | "UniversityExamFee"
+  | "InternalExamFee"
+  | "Books"
+  | "Other";
+
+export interface FeeChargeRow {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  session_id: string;
+  description: string;
+  category: FeeCategory;
+  amount: number;
+  due_date: string | null;
+  raised_by: string;
+  notes: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface FeePaymentRow {
+  id: string;
+  tenant_id: string;
+  charge_id: string;
+  student_id: string;
+  amount_paid: number;
+  payment_mode: "Cash" | "SelfPaid";
+  paid_at: string;
+  receipt_number: string | null;
+  recorded_by: string;
+  notes: string | null;
+  recorded_at: Date;
+}
+
+export interface ApiFeeCharge {
+  id: string;
+  tenantId: string;
+  studentId: string;
+  studentName: string;
+  sessionId: string;
+  description: string;
+  category: FeeCategory;
+  amount: number;
+  dueDate: string | null;
+  totalPaid: number;
+  balance: number;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface ApiFeePayment {
+  id: string;
+  chargeId: string;
+  amountPaid: number;
+  paymentMode: "Cash" | "SelfPaid";
+  paidAt: string;
+  receiptNumber: string | null;
+  recordedBy: string;
+  notes: string | null;
+  recordedAt: string;
+}
+
+// ─── Announcements (v5.0 M-034) ─────────────────────────────────────────────
+
+export type AudienceType =
+  | "All"
+  | "Class"
+  | "Batch"
+  | "StudentsOnly"
+  | "TeachersOnly"
+  | "GuardiansOnly";
+
+export interface AnnouncementRow {
+  id: string;
+  tenant_id: string;
+  session_id: string;
+  title: string;
+  body: string;
+  link_url: string | null;
+  link_label: string | null;
+  audience_type: AudienceType;
+  audience_class_id: string | null;
+  audience_batch_id: string | null;
+  created_by: string;
+  created_by_role: string;
+  publish_at: Date;
+  expires_at: Date | null;
+  push_sent: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ApiAnnouncement {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  title: string;
+  body: string;
+  linkUrl: string | null;
+  linkLabel: string | null;
+  audienceType: AudienceType;
+  audienceClassId: string | null;
+  audienceBatchId: string | null;
+  createdBy: string;
+  createdByName: string;
+  publishAt: string;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Import Jobs (v5.0 M-035) ───────────────────────────────────────────────
+
+export type ImportJobStatus =
+  | "PREVIEW"
+  | "CONFIRMED"
+  | "COMPLETED"
+  | "CANCELLED"
+  | "FAILED";
+
+export interface ImportJobRow {
+  id: string;
+  tenant_id: string;
+  entity_type: "Student" | "User";
+  status: ImportJobStatus;
+  total_rows: number;
+  valid_rows: number;
+  error_rows: number;
+  preview_data: unknown[] | null;
+  error_data: unknown[] | null;
+  imported_rows: number | null;
+  created_by: string;
+  confirmed_at: Date | null;
+  created_at: Date;
+  expires_at: Date;
+}
+
+export interface ImportError {
+  row: number;
+  field: string;
+  code: string;
+  message: string;
+}
+
+export interface ApiImportJob {
+  id: string;
+  tenantId: string;
+  entityType: "Student" | "User";
+  status: ImportJobStatus;
+  totalRows: number;
+  validRows: number;
+  errorRows: number;
+  previewData: unknown[] | null;
+  errors: ImportError[] | null;
+  importedRows: number | null;
+  createdBy: string;
+  confirmedAt: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
+// ─── Assignments (v5.0 M-037 / M-038) ───────────────────────────────────────
+
+export type AssignmentType =
+  | "Written"
+  | "Memorization"
+  | "Reading"
+  | "ProblemSet"
+  | "Project"
+  | "Revision";
+
+export type SubmissionStatus =
+  | "PENDING"
+  | "COMPLETED"
+  | "INCOMPLETE"
+  | "NOT_SUBMITTED";
+
+export interface AssignmentRow {
+  id: string;
+  tenant_id: string;
+  session_id: string;
+  class_id: string;
+  subject_id: string;
+  created_by: string;
+  title: string;
+  description: string | null;
+  type: AssignmentType;
+  due_date: string;
+  is_graded: boolean;
+  max_marks: number | null;
+  status: "ACTIVE" | "CLOSED";
+  created_at: Date;
+  updated_at: Date;
+  deleted_at: Date | null;
+}
+
+export interface AssignmentSubmissionRow {
+  id: string;
+  tenant_id: string;
+  assignment_id: string;
+  student_id: string;
+  status: SubmissionStatus;
+  marks_obtained: number | null;
+  remark: string | null;
+  marked_by: string | null;
+  marked_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ApiAssignment {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  classId: string;
+  className: string;
+  subjectId: string;
+  subjectName: string;
+  createdBy: string;
+  createdByName: string;
+  title: string;
+  description: string | null;
+  type: AssignmentType;
+  dueDate: string;
+  isGraded: boolean;
+  maxMarks: number | null;
+  status: "ACTIVE" | "CLOSED";
+  submissionsTotal: number;
+  submissionsCompleted: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiSubmission {
+  id: string;
+  assignmentId: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  status: SubmissionStatus;
+  marksObtained: number | null;
+  remark: string | null;
+  markedBy: string | null;
+  markedAt: string | null;
+}

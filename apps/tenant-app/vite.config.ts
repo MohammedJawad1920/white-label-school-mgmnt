@@ -24,6 +24,33 @@ export default defineConfig({
           },
         ],
       },
+      workbox: {
+        runtimeCaching: [
+          {
+            // API responses — NetworkFirst: always try network, fall back to cache
+            urlPattern: /^https?:.*\/api\/v1\/.*/,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "api-cache",
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 5 * 60, // 5 minutes
+              },
+            },
+          },
+          {
+            // Google Fonts — CacheFirst: long-lived, rarely changes
+            urlPattern: /^https?:\/\/fonts\.(googleapis|gstatic)\.com\/.*/,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "font-cache",
+              expiration: {
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+              },
+            },
+          },
+        ],
+      },
     }),
   ],
   resolve: {

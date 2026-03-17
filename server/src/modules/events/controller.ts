@@ -117,7 +117,7 @@ export async function createEvent(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const id = `EVT-${uuidv4()}`;
+  const id = uuidv4();
 
   const result = await pool.query<EventRow>(
     `INSERT INTO events

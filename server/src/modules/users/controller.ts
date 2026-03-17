@@ -146,7 +146,7 @@ export async function createUser(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const id = `U-${uuidv4()}`;
+  const id = uuidv4();
 
   // CR-20: auto-generate password when not provided
   let finalPassword: string;

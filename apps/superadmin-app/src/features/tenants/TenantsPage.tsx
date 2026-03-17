@@ -30,11 +30,29 @@ import { useAppToast } from "@/hooks/useAppToast";
 import type { Tenant } from "@/types/api";
 
 // ── Zod schemas — Freeze §Screen: Tenant Management validation ────────────────
-// CR-FE-036: timezone must be a valid IANA tz string from Intl.supportedValuesOf
+// CR-FE-036: timezone must be a valid IANA tz string.
+// Use Intl.DateTimeFormat instead of Intl.supportedValuesOf — the latter is
+// ICU-build-dependent and may exclude canonicalized aliases like "Asia/Kolkata"
+// (resolved to "Asia/Calcutta" on some Windows ICU builds).
+function isIanaTimezone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Pre-compute datalist options once at module level (safe fallback for older envs)
+const IANA_TZ_LIST: string[] =
+  typeof Intl.supportedValuesOf === "function"
+    ? (Intl.supportedValuesOf("timeZone") as string[])
+    : [];
+
 const validTimezone = z
   .string()
   .refine(
-    (tz) => !tz || Intl.supportedValuesOf("timeZone").includes(tz),
+    (tz) => !tz || isIanaTimezone(tz),
     { message: "Select a valid timezone from the list (e.g. Asia/Kolkata)" },
   )
   .optional()
@@ -373,7 +391,7 @@ function CreateDrawer({ open, onClose }: CreateDrawerProps) {
                 {...register("timezone")}
               />
               <datalist id="iana-timezone-list-create">
-                {Intl.supportedValuesOf("timeZone").map((tz) => (
+                {IANA_TZ_LIST.map((tz) => (
                   <option key={tz} value={tz} />
                 ))}
               </datalist>
@@ -612,7 +630,7 @@ function EditDrawer({ tenant, onClose }: EditDrawerProps) {
                 {...register("timezone")}
               />
               <datalist id="iana-timezone-list-edit">
-                {Intl.supportedValuesOf("timeZone").map((tz) => (
+                {IANA_TZ_LIST.map((tz) => (
                   <option key={tz} value={tz} />
                 ))}
               </datalist>

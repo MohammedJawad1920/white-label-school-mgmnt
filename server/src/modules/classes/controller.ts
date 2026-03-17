@@ -57,7 +57,7 @@ export async function createClass(req: Request, res: Response): Promise<void> {
     send404(res, "Batch not found");
     return;
   }
-  const id = `CLS-${uuidv4()}`;
+  const id = uuidv4();
   const result = await pool.query<ClassRow>(
     `INSERT INTO classes (id, tenant_id, name, batch_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, NOW(), NOW())

@@ -134,7 +134,7 @@ export async function recordClassAttendance(
   // ── Upsert attendance records in a transaction ────────────────────
   await withTransaction(async (client) => {
     for (const entry of students) {
-      const id = `AR-${uuidv4()}`;
+      const id = uuidv4();
       await client.query(
         `INSERT INTO attendance_records
            (id, tenant_id, student_id, timeslot_id, date, status, recorded_by, recorded_at)

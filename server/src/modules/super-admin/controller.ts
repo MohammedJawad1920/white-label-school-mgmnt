@@ -225,7 +225,7 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
     admin.password,
     config.BCRYPT_ROUNDS,
   );
-  const adminId = `U-${uuidv4()}`;
+  const adminId = uuidv4();
 
   // ── Atomic transaction: tenant + 8 periods + 2 feature rows + Admin user ─
   // WHY withTransaction: any failure in any step rolls everything back.
@@ -248,7 +248,7 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
           `INSERT INTO school_periods
              (id, tenant_id, period_number, label, start_time, end_time, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-          [`SP-${uuidv4()}`, newTenant.id, p.number, p.label, p.start, p.end],
+          [uuidv4(), newTenant.id, p.number, p.label, p.start, p.end],
         );
       }
 

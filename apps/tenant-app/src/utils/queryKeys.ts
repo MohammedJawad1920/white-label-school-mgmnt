@@ -115,4 +115,93 @@ export const QUERY_KEYS = {
 
   // ── School Profile (v5.0 M-017) ──────────────────────────────────────────
   schoolProfile: () => ["school-profile"] as const,
+
+  // ── Leave (Phase 1) ───────────────────────────────────────────────────────
+  leave: {
+    all: () => ["leave"] as const,
+    list: (filters?: Record<string, unknown>) => ["leave", "list", filters] as const,
+    detail: (id: string) => ["leave", id] as const,
+    onCampus: () => ["leave", "on-campus"] as const,
+  },
+
+  // ── Exams (Phase 1) ───────────────────────────────────────────────────────
+  exams: {
+    all: () => ["exams"] as const,
+    list: (filters?: Record<string, unknown>) => ["exams", "list", filters] as const,
+    detail: (id: string) => ["exams", id] as const,
+    results: (id: string) => ["exams", id, "results"] as const,
+    marks: (examId: string, subjectId: string) =>
+      ["exams", examId, "subjects", subjectId, "marks"] as const,
+    reportCard: (examId: string, studentId: string) =>
+      ["exams", examId, "report-card", studentId] as const,
+  },
+
+  // ── External Results (Phase 1) ────────────────────────────────────────────
+  externalResults: {
+    list: (filters?: Record<string, unknown>) =>
+      ["external-results", "list", filters] as const,
+  },
+
+  // ── Fees (Phase 1) ────────────────────────────────────────────────────────
+  fees: {
+    all: () => ["fees"] as const,
+    charges: (filters?: Record<string, unknown>) =>
+      ["fees", "charges", filters] as const,
+    summary: (filters?: Record<string, unknown>) =>
+      ["fees", "summary", filters] as const,
+  },
+
+  // ── Announcements (Phase 1) ───────────────────────────────────────────────
+  announcements: {
+    all: () => ["announcements"] as const,
+    list: (filters?: Record<string, unknown>) =>
+      ["announcements", "list", filters] as const,
+    detail: (id: string) => ["announcements", id] as const,
+  },
+
+  // ── Assignments (Phase 1) ─────────────────────────────────────────────────
+  assignments: {
+    all: () => ["assignments"] as const,
+    list: (filters?: Record<string, unknown>) =>
+      ["assignments", "list", filters] as const,
+    detail: (id: string) => ["assignments", id] as const,
+    submissions: (id: string) => ["assignments", id, "submissions"] as const,
+  },
+
+  // ── Import Jobs (Phase 1) ─────────────────────────────────────────────────
+  importJobs: {
+    history: () => ["import", "history"] as const,
+    detail: (id: string) => ["import", id] as const,
+  },
+
+  // ── Notifications (Phase 1) ───────────────────────────────────────────────
+  notifications: {
+    all: () => ["notifications"] as const,
+    list: (filters?: Record<string, unknown>) =>
+      ["notifications", "list", filters] as const,
+    unreadCount: () => ["notifications", "unread-count"] as const,
+  },
+
+  // ── Guardian Portal (Phase 2) ─────────────────────────────────────────────
+  guardianPortal: {
+    children: () => ["guardian-portal", "children"] as const,
+    attendance: (studentId: string, month: string) =>
+      ["guardian-portal", studentId, "attendance", month] as const,
+    timetable: (studentId: string) =>
+      ["guardian-portal", studentId, "timetable"] as const,
+    results: (studentId: string, sessionId?: string) =>
+      ["guardian-portal", studentId, "results", sessionId] as const,
+    fees: (studentId: string, sessionId?: string) =>
+      ["guardian-portal", studentId, "fees", sessionId] as const,
+    assignments: (studentId: string, sessionId?: string) =>
+      ["guardian-portal", studentId, "assignments", sessionId] as const,
+    leave: (studentId: string) =>
+      ["guardian-portal", studentId, "leave"] as const,
+  },
+
+  // ── Guardians (Phase 1) ───────────────────────────────────────────────────
+  guardians: {
+    list: (studentId: string) => ["guardians", "student", studentId] as const,
+    detail: (id: string) => ["guardians", id] as const,
+  },
 } as const;

@@ -170,7 +170,7 @@ export default function BatchPromotionWizardPage() {
       setPreview(data);
       setStep(2);
     },
-    onError: (err) => appToast.error(parseApiError(err).message),
+    onError: (err) => appToast.mutationError(parseApiError(err).message),
   });
 
   const commitMutation = useMutation({
@@ -194,14 +194,14 @@ export default function BatchPromotionWizardPage() {
     onError: (err) => {
       const { code, message } = parseApiError(err);
       if (code === "PREVIEW_EXPIRED") {
-        appToast.error(
+        appToast.mutationError(
           "Preview expired (10 min limit). Please generate a new preview.",
         );
         setStep(1);
         setPreview(null);
         setBatchSelections({});
       } else {
-        appToast.error(message);
+        appToast.mutationError(message);
       }
     },
   });

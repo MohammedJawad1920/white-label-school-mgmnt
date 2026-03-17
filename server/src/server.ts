@@ -13,6 +13,7 @@
 import { createApp } from "./app";
 import { config } from "./config/env";
 import { logger } from "./utils/logger";
+import { startAllJobs, stopAllJobs } from "./services/cron.service";
 
 const app = createApp();
 
@@ -26,6 +27,8 @@ const server = app.listen(config.PORT, () => {
     },
     "Server started",
   );
+  // Start background cron jobs after server is listening
+  startAllJobs();
 });
 
 // Graceful shutdown — wait for in-flight requests before exiting.
@@ -33,6 +36,7 @@ const server = app.listen(config.PORT, () => {
 // locks. SIGTERM from Docker/K8s gives the process time to drain.
 function shutdown(signal: string) {
   logger.info({ event: "shutdown_signal", signal }, "Shutdown signal received");
+  stopAllJobs();
   server.close(() => {
     logger.info({ event: "server_closed" }, "Server closed");
     process.exit(0);

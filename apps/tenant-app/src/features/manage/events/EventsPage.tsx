@@ -337,7 +337,7 @@ export default function EventsPage() {
         title="Events"
         subtitle="Academic calendar: holidays, exams, and school events"
         onAdd={openCreate}
-        addLabel="+ New Event"
+        addLabel="New Event"
       />
 
       {/* Filters */}

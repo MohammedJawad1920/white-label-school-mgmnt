@@ -7,11 +7,17 @@
  *
  * Freeze §5 nav.ts (CR-FE-017):
  *   icon is a LucideIcon — no string-based NavIcon pattern (banned §1.6 S17).
- *   Role visibility rules:
- *     Teacher:  Dashboard, Timetable, Record Attendance, Monthly Sheet
- *     Admin:    Dashboard, Timetable, Attendance Summary, Monthly Sheet,
- *               Manage group (6 sub-items), Events
- *     Student:  Dashboard, Timetable
+ *   Role visibility rules (Phase 1):
+ *     Admin:    Dashboard, Timetable (canonical), Attendance Summary,
+ *               Monthly Sheet, Record Attendance, Manage group, Events,
+ *               Leave Management, Exams, Fees, Assignments, Announcements,
+ *               Import (sub-item), Notifications
+ *     Teacher:  Dashboard, Timetable, Record Attendance, Monthly Sheet,
+ *               Leave Queue, Exams, Assignments, Announcements, Notifications
+ *     Student:  Dashboard, Attendance, Results, Assignments, Fees,
+ *               Timetable, Announcements, Notifications
+ *     Guardian: Dashboard, Attendance, Leave, Results, Fees, Assignments,
+ *               Timetable, Notifications
  */
 import type { LucideIcon } from "lucide-react";
 import type { FeatureKey } from "@/types/api";
@@ -30,6 +36,17 @@ import {
   CalendarRange,
   CalendarCheck2,
   Building2,
+  FileCheck2,
+  ClipboardList,
+  FileText,
+  Wallet,
+  BookCheck,
+  Upload,
+  Megaphone,
+  Bell,
+  Award,
+  Settings,
+  SlidersHorizontal,
 } from "lucide-react";
 
 export type Role = "Teacher" | "Admin" | "Student" | "Guardian"; // v5.0
@@ -58,14 +75,14 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   {
     label: "Dashboard",
-    url: "/dashboard",
-    allowedRoles: ["Teacher", "Admin", "Student"],
+    url: "/admin/dashboard",
+    allowedRoles: ["Admin"],
     icon: LayoutDashboard,
   },
   {
     label: "Timetable",
     url: "/timetable",
-    allowedRoles: ["Teacher", "Admin", "Student"],
+    allowedRoles: ["Admin"],
     icon: CalendarDays,
     featureKey: "timetable",
   },
@@ -91,6 +108,14 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Sheet,
     featureKey: "attendance",
   },
+  // Phase 1: Attendance correction — Admin only
+  {
+    label: "Attendance Correction",
+    url: "/admin/attendance/correction",
+    allowedRoles: ["Admin"],
+    icon: ClipboardCheck,
+    featureKey: "attendance",
+  },
   // ── Manage group ─────────────────────────────────────────────────────────────
   {
     label: "Users",
@@ -102,7 +127,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     label: "Students",
-    url: "/manage/students",
+    url: "/admin/students",
     allowedRoles: ["Admin"],
     icon: GraduationCap,
     isSubItem: true,
@@ -159,6 +184,213 @@ export const NAV_ITEMS: NavItem[] = [
     allowedRoles: ["Admin"],
     icon: Building2,
     isSubItem: true,
+  },
+  // Phase 1: Grade Config — Admin only
+  {
+    label: "Grade Config",
+    url: "/admin/settings/grades",
+    allowedRoles: ["Admin"],
+    icon: SlidersHorizontal,
+    isSubItem: true,
+  },
+  // Phase 1: Feature Flags — Admin only
+  {
+    label: "Feature Flags",
+    url: "/admin/settings/features",
+    allowedRoles: ["Admin"],
+    icon: Settings,
+    isSubItem: true,
+  },
+
+  // ── Phase 1 Admin items ───────────────────────────────────────────────────────
+  {
+    label: "Leave Management",
+    url: "/admin/leave",
+    allowedRoles: ["Admin"],
+    icon: FileCheck2,
+  },
+  {
+    label: "Exams",
+    url: "/admin/exams",
+    allowedRoles: ["Admin"],
+    icon: FileText,
+  },
+  {
+    label: "Fees",
+    url: "/admin/fees",
+    allowedRoles: ["Admin"],
+    icon: Wallet,
+  },
+  {
+    label: "Outstanding Fees",
+    url: "/admin/fees/summary",
+    allowedRoles: ["Admin"],
+    icon: Wallet,
+    isSubItem: true,
+  },
+  {
+    label: "Assignments",
+    url: "/admin/assignments",
+    allowedRoles: ["Admin"],
+    icon: BookCheck,
+  },
+  {
+    label: "Announcements",
+    url: "/announcements",
+    allowedRoles: ["Admin"],
+    icon: Megaphone,
+  },
+  {
+    label: "Import",
+    url: "/admin/import",
+    allowedRoles: ["Admin"],
+    icon: Upload,
+    isSubItem: true,
+  },
+
+  // ── Phase 1 Teacher items ─────────────────────────────────────────────────────
+  {
+    label: "Dashboard",
+    url: "/teacher/dashboard",
+    allowedRoles: ["Teacher"],
+    icon: LayoutDashboard,
+  },
+  {
+    label: "Timetable",
+    url: "/teacher/timetable",
+    allowedRoles: ["Teacher"],
+    icon: CalendarDays,
+    featureKey: "timetable",
+  },
+  {
+    label: "Leave Queue",
+    url: "/teacher/leave",
+    allowedRoles: ["Teacher"],
+    icon: ClipboardList,
+  },
+  {
+    label: "Exams",
+    url: "/teacher/exams",
+    allowedRoles: ["Teacher"],
+    icon: FileText,
+  },
+  {
+    label: "Assignments",
+    url: "/teacher/assignments",
+    allowedRoles: ["Teacher"],
+    icon: BookCheck,
+  },
+  {
+    label: "Announcements",
+    url: "/announcements",
+    allowedRoles: ["Teacher"],
+    icon: Megaphone,
+  },
+
+  // ── Phase 1 Student portal items ─────────────────────────────────────────────
+  {
+    label: "Dashboard",
+    url: "/student/dashboard",
+    allowedRoles: ["Student"],
+    icon: LayoutDashboard,
+  },
+  {
+    label: "Attendance",
+    url: "/student/attendance",
+    allowedRoles: ["Student"],
+    icon: ClipboardCheck,
+    featureKey: "attendance",
+  },
+  {
+    label: "Results",
+    url: "/student/results",
+    allowedRoles: ["Student"],
+    icon: Award,
+  },
+  {
+    label: "Assignments",
+    url: "/student/assignments",
+    allowedRoles: ["Student"],
+    icon: BookCheck,
+  },
+  {
+    label: "Fees",
+    url: "/student/fees",
+    allowedRoles: ["Student"],
+    icon: Wallet,
+  },
+  {
+    label: "Timetable",
+    url: "/student/timetable",
+    allowedRoles: ["Student"],
+    icon: CalendarDays,
+    featureKey: "timetable",
+  },
+  {
+    label: "Announcements",
+    url: "/announcements",
+    allowedRoles: ["Student"],
+    icon: Megaphone,
+  },
+
+  // ── Phase 1 Guardian portal items ────────────────────────────────────────────
+  {
+    label: "Dashboard",
+    url: "/guardian/dashboard",
+    allowedRoles: ["Guardian"],
+    icon: LayoutDashboard,
+  },
+  {
+    label: "Attendance",
+    url: "/guardian/attendance",
+    allowedRoles: ["Guardian"],
+    icon: ClipboardCheck,
+    featureKey: "attendance",
+  },
+  {
+    label: "Leave",
+    url: "/guardian/leave",
+    allowedRoles: ["Guardian"],
+    icon: FileCheck2,
+  },
+  {
+    label: "Results",
+    url: "/guardian/results",
+    allowedRoles: ["Guardian"],
+    icon: Award,
+  },
+  {
+    label: "Fees",
+    url: "/guardian/fees",
+    allowedRoles: ["Guardian"],
+    icon: Wallet,
+  },
+  {
+    label: "Assignments",
+    url: "/guardian/assignments",
+    allowedRoles: ["Guardian"],
+    icon: BookCheck,
+  },
+  {
+    label: "Announcements",
+    url: "/announcements",
+    allowedRoles: ["Guardian"],
+    icon: Megaphone,
+  },
+  {
+    label: "Timetable",
+    url: "/guardian/timetable",
+    allowedRoles: ["Guardian"],
+    icon: CalendarDays,
+    featureKey: "timetable",
+  },
+
+  // ── All roles ─────────────────────────────────────────────────────────────────
+  {
+    label: "Notifications",
+    url: "/notifications",
+    allowedRoles: ["Admin", "Teacher", "Student", "Guardian"],
+    icon: Bell,
   },
 ];
 

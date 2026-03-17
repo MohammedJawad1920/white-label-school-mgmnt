@@ -131,7 +131,7 @@ export async function createPeriod(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const id = `SP-${uuidv4()}`;
+  const id = uuidv4();
 
   try {
     const result = await pool.query<SchoolPeriodRow>(

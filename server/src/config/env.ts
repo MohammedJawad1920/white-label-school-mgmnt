@@ -126,6 +126,7 @@ function buildConfig() {
   // v5.0: Web Push VAPID keys — optional until P2 (push notifications feature)
   const VAPID_PUBLIC_KEY = process.env["VAPID_PUBLIC_KEY"] ?? "";
   const VAPID_PRIVATE_KEY = process.env["VAPID_PRIVATE_KEY"] ?? "";
+  const VAPID_SUBJECT = process.env["VAPID_SUBJECT"] ?? "";
 
   // v5.0: Sentry DSN — optional error tracking
   const SENTRY_DSN = process.env["SENTRY_DSN"] ?? "";
@@ -151,6 +152,7 @@ function buildConfig() {
     R2_PUBLIC_URL,
     VAPID_PUBLIC_KEY,
     VAPID_PRIVATE_KEY,
+    VAPID_SUBJECT,
     SENTRY_DSN,
   } as const;
 }

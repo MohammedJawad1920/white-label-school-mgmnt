@@ -27,6 +27,19 @@ import academicSessionsRouter, {
 } from "./modules/academic-sessions/routes";
 import schoolProfileRouter from "./modules/school-profile/routes";
 import settingsRouter from "./modules/settings/routes";
+// Phase 5 (v5.0 Phase 1+2)
+import guardiansRouter from "./modules/guardians/routes";
+import notificationsRouter from "./modules/notifications/routes";
+import pushRouter from "./modules/push/routes";
+import leaveRouter from "./modules/leave/routes";
+import examsRouter, {
+  externalResultsRouter,
+} from "./modules/exams/routes";
+import feesRouter from "./modules/fees/routes";
+import announcementsRouter from "./modules/announcements/routes";
+import assignmentsRouter from "./modules/assignments/routes";
+import importRouter from "./modules/import/routes";
+import guardianPortalRouter from "./modules/guardian-portal/routes";
 
 export function createApp(): Application {
   const app = express();
@@ -93,6 +106,18 @@ export function createApp(): Application {
   app.use("/api/v1/promotions", promotionsRouter);
   app.use("/api/v1/school-profile", schoolProfileRouter);
   app.use("/api/v1/settings", settingsRouter);
+  // Phase 1+2 modules
+  app.use("/api/v1/guardians", guardiansRouter);
+  app.use("/api/v1/notifications", notificationsRouter);
+  app.use("/api/v1/push", pushRouter);
+  app.use("/api/v1/leave", leaveRouter);
+  app.use("/api/v1/exams", examsRouter);
+  app.use("/api/v1/external-results", externalResultsRouter);
+  app.use("/api/v1/fees", feesRouter);
+  app.use("/api/v1/announcements", announcementsRouter);
+  app.use("/api/v1/assignments", assignmentsRouter);
+  app.use("/api/v1/import", importRouter);
+  app.use("/api/v1/guardian", guardianPortalRouter);
 
   app.use((_req, res) => {
     res.status(404).json({

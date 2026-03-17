@@ -433,7 +433,7 @@ export default function TimetablePage() {
                     {/* Period header cell */}
                     <div
                       role="rowheader"
-                      className="w-20 shrink-0 flex flex-col justify-center px-2 py-2 bg-muted/20 border-r"
+                      className="w-24 shrink-0 flex flex-col justify-center px-2 py-2 bg-muted/20 border-r truncate"
                     >
                       <span className="text-xs font-semibold">
                         P{period.periodNumber}

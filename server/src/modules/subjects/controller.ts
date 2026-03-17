@@ -36,7 +36,7 @@ export async function createSubject(
     send400(res, "name is required");
     return;
   }
-  const id = `SUB-${uuidv4()}`;
+  const id = uuidv4();
   const result = await pool.query<SubjectRow>(
     `INSERT INTO subjects (id, tenant_id, name, code, created_at, updated_at)
      VALUES ($1, $2, $3, $4, NOW(), NOW())

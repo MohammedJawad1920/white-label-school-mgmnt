@@ -380,7 +380,7 @@ export default function RecordAttendancePage() {
     },
     onError: (err) => {
       setSubmitError(parseApiError(err).message);
-      appToast.error("Something went wrong. Please try again.");
+      appToast.mutationError("Something went wrong. Please try again.");
     },
   });
 
@@ -421,7 +421,7 @@ export default function RecordAttendancePage() {
         setSubmitError("You are not assigned to this class.");
       } else {
         setSubmitError(message);
-        appToast.error("Something went wrong. Please try again.");
+        appToast.mutationError("Something went wrong. Please try again.");
       }
     },
   });

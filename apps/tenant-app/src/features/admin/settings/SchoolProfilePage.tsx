@@ -136,7 +136,7 @@ export default function SchoolProfilePage() {
       void qc.invalidateQueries({ queryKey: QUERY_KEYS.schoolProfile() });
       appToast.success("School profile updated");
     },
-    onError: (err) => appToast.error(parseApiError(err).message),
+    onError: (err) => appToast.mutationError(parseApiError(err).message),
   });
 
   const uploadMutation = useMutation({
@@ -154,7 +154,7 @@ export default function SchoolProfilePage() {
         field === "logoUrl" ? "Logo uploaded" : "Signature uploaded",
       );
     },
-    onError: (err) => appToast.error(parseApiError(err).message),
+    onError: (err) => appToast.mutationError(parseApiError(err).message),
   });
 
   function onSubmit(values: ProfileFormValues) {

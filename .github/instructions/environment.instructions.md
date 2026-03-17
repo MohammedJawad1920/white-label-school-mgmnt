@@ -96,6 +96,11 @@ cd server && docker-compose up -d      # starts PostgreSQL on port 5432
 psql -U postgres -c "CREATE DATABASE school_management;"
 
 # 4. Run migrations in order (001 → latest)
+#    IMPORTANT: 018 is destructive (TRUNCATE tenants CASCADE + VARCHAR→UUID).
+#    IMPORTANT: 039 converts all remaining entity ids to UUID and MUST run before 019–038.
+#    Run them in this exact sequence:
+
+# Phase 0 — initial schema (001–017)
 psql -U postgres -d school_management -f src/db/migrations/001_initial_schema.sql
 psql -U postgres -d school_management -f src/db/migrations/002_add_student_user_id.sql
 psql -U postgres -d school_management -f src/db/migrations/003_add_attendance_corrections.sql
@@ -114,7 +119,39 @@ psql -U postgres -d school_management -f src/db/migrations/015_classes_session_l
 psql -U postgres -d school_management -f src/db/migrations/016_students_enrollment_dates.sql
 psql -U postgres -d school_management -f src/db/migrations/017_tenants_school_profile.sql
 
+# v5.0 — tenants.id VARCHAR→UUID (DESTRUCTIVE: truncates all tenant data)
+psql -U postgres -d school_management -f src/db/migrations/018_tenants_uuid.sql
+
+# v5.0 prerequisite — convert ALL remaining entity ids to UUID before Phase 1+2 migrations
+# (numbered 039 but logically a prerequisite for 019–038; must run here)
+psql -U postgres -d school_management -f src/db/migrations/039_entity_ids_to_uuid.sql
+
+# Phase 1+2 — feature modules (019–038)
+psql -U postgres -d school_management -f src/db/migrations/019_leave_requests.sql
+psql -U postgres -d school_management -f src/db/migrations/020_guardians.sql
+psql -U postgres -d school_management -f src/db/migrations/021_student_guardians.sql
+psql -U postgres -d school_management -f src/db/migrations/022_push_subscriptions.sql
+psql -U postgres -d school_management -f src/db/migrations/023_notifications.sql
+psql -U postgres -d school_management -f src/db/migrations/024_events_check_session_id.sql
+psql -U postgres -d school_management -f src/db/migrations/025_promotion_logs_v5.sql
+psql -U postgres -d school_management -f src/db/migrations/026_promotion_previews_v5.sql
+psql -U postgres -d school_management -f src/db/migrations/027_exams.sql
+psql -U postgres -d school_management -f src/db/migrations/028_exam_subjects.sql
+psql -U postgres -d school_management -f src/db/migrations/029_exam_results.sql
+psql -U postgres -d school_management -f src/db/migrations/030_exam_student_summaries.sql
+psql -U postgres -d school_management -f src/db/migrations/031_external_results.sql
+psql -U postgres -d school_management -f src/db/migrations/032_fee_charges.sql
+psql -U postgres -d school_management -f src/db/migrations/033_fee_payments.sql
+psql -U postgres -d school_management -f src/db/migrations/034_announcements.sql
+psql -U postgres -d school_management -f src/db/migrations/035_import_jobs.sql
+psql -U postgres -d school_management -f src/db/migrations/036_tenants_profile_note.sql
+psql -U postgres -d school_management -f src/db/migrations/037_assignments.sql
+psql -U postgres -d school_management -f src/db/migrations/038_assignment_submissions.sql
+
 # 5. Seed in this order (superadmin must exist before tenants)
+#    NOTE: Migration 018 is destructive — tenant data is wiped on a fresh run.
+#    After seeding, copy the new tenant UUID from the SuperAdmin app into
+#    apps/tenant-app/.env as VITE_TENANT_ID=<uuid>
 npx ts-node src/db/seeds/superadmin.ts
 npx ts-node src/db/seeds/reset-tenants.ts
 
