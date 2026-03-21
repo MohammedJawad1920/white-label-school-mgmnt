@@ -10,13 +10,14 @@
 
 import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { pool, withTransaction } from "../../db/pool";
+import { PoolClient } from "pg";
 import { config } from "../../config/env";
 import { send400, send404, sendError } from "../../utils/errors";
 import { logger } from "../../utils/logger";
 import { ImportJobRow, ApiImportJob, ImportError } from "../../types";
-import { PoolClient } from "pg";
 
 // ─── Local CSV Row Interfaces ─────────────────────────────────────────────────
 
@@ -485,9 +486,9 @@ export async function confirmImport(
     return;
   }
 
-  // ── Fetch job with PREVIEW status ─────────────────────────────────────────
+  // ── Fetch job with PREVIEW status and lock it ────────────────────────────────
   const { rows: previewRows } = await pool.query<ImportJobRow>(
-    `SELECT * FROM import_jobs WHERE id = $1 AND tenant_id = $2 AND status = 'PREVIEW'`,
+    `SELECT * FROM import_jobs WHERE id = $1 AND tenant_id = $2 AND status = 'PREVIEW' FOR UPDATE`,
     [jobId, tenantId],
   );
 
@@ -550,6 +551,8 @@ export async function confirmImport(
   }
 
   // ── Execute import in transaction ─────────────────────────────────────────
+  let temporaryPassword: string | undefined;
+
   const updatedJob = await withTransaction(async (client: PoolClient) => {
     let importedCount = 0;
 
@@ -581,7 +584,8 @@ export async function confirmImport(
     } else {
       // entityType === 'User'
       const previewData = (job.preview_data ?? []) as UserCsvRow[];
-      const tempPassword = uuidv4().slice(0, 12);
+      const tempPassword = crypto.randomBytes(8).toString("hex").slice(0, 12);
+      temporaryPassword = tempPassword;
       const passwordHash = await bcrypt.hash(
         tempPassword,
         config.BCRYPT_ROUNDS,
@@ -619,6 +623,20 @@ export async function confirmImport(
     );
 
     return updatedRows[0]!;
+  }).catch(async (err) => {
+    // On transaction error, set job status to FAILED
+    try {
+      await pool.query(
+        `UPDATE import_jobs SET status = 'FAILED', confirmed_at = NOW() WHERE id = $1`,
+        [jobId],
+      );
+    } catch (updateErr) {
+      logger.error(
+        { err: updateErr, jobId },
+        "Failed to mark import job as FAILED",
+      );
+    }
+    throw err;
   });
 
   logger.info(
@@ -631,7 +649,15 @@ export async function confirmImport(
     "Import job confirmed",
   );
 
-  res.status(200).json({ data: fmtJob(updatedJob) });
+  const responseBody: { data: ApiImportJob; temporaryPassword?: string } = {
+    data: fmtJob(updatedJob),
+  };
+
+  if (temporaryPassword !== undefined) {
+    responseBody.temporaryPassword = temporaryPassword;
+  }
+
+  res.status(200).json(responseBody);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

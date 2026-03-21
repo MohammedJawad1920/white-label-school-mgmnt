@@ -12,6 +12,7 @@
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { pool, withTransaction } from "../../db/pool";
 import { PoolClient } from "pg";
 import { send400, send404, send409 } from "../../utils/errors";
@@ -168,7 +169,7 @@ export async function createGuardian(
       }
 
       // Generate temporary password
-      const tmpPassword = Math.random().toString(36).slice(2, 12);
+      const tmpPassword = crypto.randomBytes(8).toString("hex").slice(0, 12);
       temporaryPassword = tmpPassword;
       const passwordHash = await bcrypt.hash(tmpPassword, config.BCRYPT_ROUNDS);
 
@@ -351,9 +352,10 @@ export async function deleteGuardian(
       `UPDATE guardians SET deleted_at = NOW() WHERE id = $1 AND tenant_id = $2`,
       [id, tenantId],
     );
-    await client.query(`DELETE FROM student_guardians WHERE guardian_id = $1`, [
-      id,
-    ]);
+    await client.query(
+      `DELETE FROM student_guardians WHERE guardian_id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+    );
   });
 
   logger.info(

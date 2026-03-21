@@ -1,33 +1,44 @@
 openapi: 3.1.0
 info:
   title: School Management SaaS API
-  version: 5.0.2
+  version: 6.0.0
   description: |
     White-label school management SaaS for residential Islamic educational institutions.
-    Backend Freeze v5.0 — 2026-03-12.
+    Backend Freeze v6.0 — 2026-03-19.
 
     **Auth:** Bearer JWT on all protected endpoints.
     **Base path:** /api/v1
     **Error format:** All errors return `{ error: { code, message, details }, requestId, timestamp }`
 
+    ## v6.0 Corrections (from 135-issue audit)
+    - User.roles is now an array (`roles: string[]`), not singular `role: string`
+    - JWT payload: removed tenantTimezone, classId, batchId, linkedStudentIds
+    - Login/changePassword/switchRole responses use flat `{ token, user }` (NOT `{ data: { token, user } }`)
+    - `GET /academic-sessions/current` returns `{ data: AcademicSession }`
+    - `GET /exams` returns `{ data: Exam[] }` (was `{ exams }`)
+    - `GET /exams/:id` returns `{ data: Exam }` (was `{ exam }`)
+    - `GET /notifications` returns `{ data: Notification[], total }` (was `{ notifications, unreadCount, total }`)
+    - `PUT /notifications/read-all` returns `{ updated: N }` (was `{ updatedCount }`)
+    - `POST /fees/charges/:id/payments` body uses `amountPaid` + `paidAt` (was `amount`)
+    - `POST /academic-sessions/:id/copy-timetable` body uses `fromSessionId` (was `sourceSessionId`)
+    - `POST /school-profile/upload` requires `type` field in multipart form
+    - `POST /users/:id/reset-password` endpoint added (was missing)
+    - SchoolProfile uses `slug` not `subdomain`
+    - AttendanceRecord has no `classId` field
+    - AcademicSession has no `isCurrent` boolean field — computed from `status === 'ACTIVE'`
+    - `GET /settings/grade-config` returns 8-grade A+ scale (not 6-grade S scale)
+    - Import confirm for User entity returns `temporaryPassword`
+
     ## Role Clarification — ClassTeacher vs Teacher
-    ClassTeacher is NOT a distinct UserRole value. The UserRole enum contains only Teacher.
-    A Teacher is acting as Class Teacher when JWT.classTeacherOf != null.
-    Frontend authorization: isClassTeacher = (role === "Teacher" && classTeacherOf != null).
-    Endpoint auth notes referencing "ClassTeacher" mean Teacher with classTeacherOf set.
-
-    ## Tenant ID Resolution
-    Tenant ID is provided via VITE_TENANT_ID environment variable per deployment.
-    No GET /tenant/resolve endpoint exists. Each school is a separate build with its own env file.
-
-    ## Token Persistence
-    JWT stored in sessionStorage only. Survives tab refresh, clears on tab close.
-    No localStorage. No httpOnly cookie — JWT auth mode is locked in Backend Freeze v5.0.
+    ClassTeacher is NOT a distinct UserRole value. A Teacher acts as Class Teacher
+    when `JWT.classTeacherOf != null`.
+    Frontend: `isClassTeacher = (activeRole === "Teacher" && classTeacherOf != null)`
 
     ## Changelog
     - v5.0.0: Initial freeze
-    - v5.0.1: CR-43 guardian attendance records[], lateDays, month required
-    - v5.0.2: ClassTeacher clarification, tenant ID strategy, token persistence notes
+    - v5.0.1: CR-43 guardian attendance
+    - v5.0.2: ClassTeacher clarification
+    - v6.0.0: 135-issue corrective freeze (2026-03-19)
 
 servers:
   - url: /api/v1
@@ -53,12 +64,12 @@ components:
     ISO8601:
       type: string
       format: date-time
-      example: "2026-03-12T08:00:00.000Z"
+      example: "2026-03-19T08:00:00.000Z"
 
     DateString:
       type: string
       format: date
-      example: "2026-03-12"
+      example: "2026-03-19"
 
     # ─── Error ───────────────────────────────────────────────────────
     ErrorResponse:
@@ -74,7 +85,6 @@ components:
               example: "VALIDATION_ERROR"
             message:
               type: string
-              example: "Human-readable description"
             details:
               type: object
               additionalProperties: true
@@ -87,11 +97,6 @@ components:
     UserRole:
       type: string
       enum: [SuperAdmin, Admin, Teacher, Student, Guardian]
-      description: |
-        Distinct role values stored in users.role and JWT.activeRole.
-        NOTE: "ClassTeacher" referenced in endpoint auth descriptions is NOT a separate enum value.
-        It means role=Teacher with JWT.classTeacherOf != null.
-        Frontend check: isClassTeacher = (role === "Teacher" && classTeacherOf != null).
 
     StudentLevel:
       type: string
@@ -153,33 +158,41 @@ components:
       type: string
       enum: [PENDING, COMPLETED, INCOMPLETE, NOT_SUBMITTED]
 
+    NotificationType:
+      type: string
+      enum:
+        - LEAVE_SUBMITTED
+        - LEAVE_APPROVED
+        - LEAVE_REJECTED
+        - STUDENT_DEPARTED
+        - STUDENT_RETURNED
+        - LEAVE_OVERDUE
+        - ABSENCE_ALERT
+        - EXAM_PUBLISHED
+        - ASSIGNMENT_CREATED
+        - ANNOUNCEMENT
+        - FEE_CHARGED
+
     ImportEntityType:
       type: string
       enum: [Student, User]
+      description: Only Student and User are supported. Classes/subjects import is out of scope.
 
-    NotificationType:
+    ImportJobStatus:
       type: string
-      enum: [LEAVE_SUBMITTED, LEAVE_APPROVED, LEAVE_REJECTED, STUDENT_DEPARTED, STUDENT_RETURNED,
-             LEAVE_OVERDUE, ABSENCE_ALERT, EXAM_PUBLISHED, ASSIGNMENT_CREATED, ANNOUNCEMENT, FEE_CHARGED]
+      enum: [PREVIEW, CONFIRMED, COMPLETED, CANCELLED, FAILED]
 
-    GradeBoundary:
-      type: object
-      required: [grade, minPercentage, maxPercentage, label]
-      properties:
-        grade:
-          type: string
-          example: "A+"
-        minPercentage:
-          type: number
-          example: 90
-        maxPercentage:
-          type: number
-          example: 100
-        label:
-          type: string
-          example: "Outstanding"
+    GradeValue:
+      type: string
+      # A+ scale — 8 grades. S/A/B/C/D/F scale is INCORRECT.
+      enum: ["A+", "A", "B+", "B", "C+", "C", "D", "F", "AB"]
+      description: |
+        AB = absent. F = failed (marks < pass_marks). A+ through D = percentage brackets.
+        Default grade_boundaries: A+(≥90), A(≥80), B+(≥70), B(≥60), C+(≥50), C(≥40), D(≥30), F(<30)
 
-    # ─── Domain objects ───────────────────────────────────────────────
+    # ─── Domain schemas ──────────────────────────────────────────────
+
+    # [CORRECTED] roles is array, not singular role string
     User:
       type: object
       properties:
@@ -190,19 +203,35 @@ components:
         email:
           type: string
           format: email
+          nullable: true
         phone:
           type: string
+          nullable: true
         name:
           type: string
-        role:
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserRole'
+          description: Array — was singular role in v5.0 (CORRECTED)
+        activeRole:
           $ref: '#/components/schemas/UserRole'
-        isActive:
-          type: boolean
         mustChangePassword:
           type: boolean
+        isActive:
+          type: boolean
+        classTeacherOf:
+          $ref: '#/components/schemas/UUID'
+          nullable: true
+          description: classId if Teacher is class teacher for active session; null otherwise
+        studentId:
+          $ref: '#/components/schemas/UUID'
+          nullable: true
+          description: Populated for Student role only
         createdAt:
           $ref: '#/components/schemas/ISO8601'
 
+    # [CORRECTED] AcademicSession has no isCurrent column — computed from status
     AcademicSession:
       type: object
       properties:
@@ -217,10 +246,11 @@ components:
           $ref: '#/components/schemas/DateString'
         endDate:
           $ref: '#/components/schemas/DateString'
-        isCurrent:
-          type: boolean
         status:
           $ref: '#/components/schemas/SessionStatus'
+        isCurrent:
+          type: boolean
+          description: Computed field — true when status = ACTIVE. Not stored as DB column.
         createdAt:
           $ref: '#/components/schemas/ISO8601'
 
@@ -233,20 +263,17 @@ components:
           $ref: '#/components/schemas/UUID'
         name:
           type: string
-          example: "Verity"
         startYear:
           type: integer
-          example: 2019
         endYear:
           type: integer
-          example: 2026
         entryLevel:
           $ref: '#/components/schemas/StudentLevel'
-        entrySessionId:
-          $ref: '#/components/schemas/UUID'
         status:
           type: string
           enum: [Active, Graduated]
+        createdAt:
+          $ref: '#/components/schemas/ISO8601'
 
     Class:
       type: object
@@ -264,12 +291,13 @@ components:
         section:
           type: string
           nullable: true
-          example: "A"
         name:
           type: string
-          example: "Plus One A"
         classTeacherId:
           $ref: '#/components/schemas/UUID'
+          nullable: true
+        createdAt:
+          $ref: '#/components/schemas/ISO8601'
 
     Student:
       type: object
@@ -280,28 +308,52 @@ components:
           $ref: '#/components/schemas/UUID'
         userId:
           $ref: '#/components/schemas/UUID'
+          nullable: true
         batchId:
           $ref: '#/components/schemas/UUID'
+          nullable: true
         classId:
           $ref: '#/components/schemas/UUID'
+          nullable: true
         admissionNumber:
           type: string
         name:
           type: string
-        gender:
-          type: string
-          enum: [Male, Female]
-        dateOfBirth:
+        dob:
           $ref: '#/components/schemas/DateString'
-        phone:
-          type: string
+          nullable: true
         status:
           type: string
           enum: [Active, DroppedOff, Graduated]
-        enrolledAt:
+        createdAt:
+          $ref: '#/components/schemas/ISO8601'
+
+    # [CORRECTED] AttendanceRecord has no classId field
+    AttendanceRecord:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        timeslotId:
+          $ref: '#/components/schemas/UUID'
+        studentId:
+          $ref: '#/components/schemas/UUID'
+        studentName:
+          type: string
+        date:
           $ref: '#/components/schemas/DateString'
-        droppedAt:
-          $ref: '#/components/schemas/DateString'
+        status:
+          $ref: '#/components/schemas/AttendanceStatus'
+        recordedBy:
+          $ref: '#/components/schemas/UUID'
+        recordedAt:
+          $ref: '#/components/schemas/ISO8601'
+        updatedBy:
+          $ref: '#/components/schemas/UUID'
+          nullable: true
+        updatedAt:
+          $ref: '#/components/schemas/ISO8601'
+          nullable: true
 
     Guardian:
       type: object
@@ -316,15 +368,16 @@ components:
           type: string
         email:
           type: string
-          format: email
           nullable: true
         relationship:
           type: string
-          example: "Father"
+          nullable: true
         isPrimary:
           type: boolean
         canSubmitLeave:
           type: boolean
+          default: true
+          description: Defaults to true. Must be true for guardian to submit leave.
         userId:
           $ref: '#/components/schemas/UUID'
           nullable: true
@@ -354,11 +407,10 @@ components:
           $ref: '#/components/schemas/DateString'
         endDate:
           $ref: '#/components/schemas/DateString'
+        expectedReturnAt:
+          $ref: '#/components/schemas/ISO8601'
         reason:
           type: string
-        attachmentUrl:
-          type: string
-          nullable: true
         status:
           $ref: '#/components/schemas/LeaveStatus'
         reviewedBy:
@@ -373,37 +425,11 @@ components:
         departedAt:
           $ref: '#/components/schemas/ISO8601'
           nullable: true
-        expectedReturnAt:
-          $ref: '#/components/schemas/ISO8601'
         returnedAt:
           $ref: '#/components/schemas/ISO8601'
           nullable: true
         createdAt:
           $ref: '#/components/schemas/ISO8601'
-
-    AttendanceRecord:
-      type: object
-      properties:
-        id:
-          $ref: '#/components/schemas/UUID'
-        timeslotId:
-          $ref: '#/components/schemas/UUID'
-        studentId:
-          $ref: '#/components/schemas/UUID'
-        studentName:
-          type: string
-        classId:
-          $ref: '#/components/schemas/UUID'
-        date:
-          $ref: '#/components/schemas/DateString'
-        status:
-          $ref: '#/components/schemas/AttendanceStatus'
-        updatedBy:
-          $ref: '#/components/schemas/UUID'
-          nullable: true
-        updatedAt:
-          $ref: '#/components/schemas/ISO8601'
-          nullable: true
 
     Exam:
       type: object
@@ -416,6 +442,8 @@ components:
           $ref: '#/components/schemas/UUID'
         classId:
           $ref: '#/components/schemas/UUID'
+        className:
+          type: string
         name:
           type: string
         type:
@@ -425,7 +453,18 @@ components:
         gradeBoundaries:
           type: array
           items:
-            $ref: '#/components/schemas/GradeBoundary'
+            type: object
+            properties:
+              grade:
+                $ref: '#/components/schemas/GradeValue'
+              minPercentage:
+                type: number
+              maxPercentage:
+                type: number
+              label:
+                type: string
+        createdBy:
+          $ref: '#/components/schemas/UUID'
         publishedBy:
           $ref: '#/components/schemas/UUID'
           nullable: true
@@ -448,18 +487,8 @@ components:
           type: string
         teacherId:
           $ref: '#/components/schemas/UUID'
-        teacherName:
-          type: string
         examDate:
           $ref: '#/components/schemas/DateString'
-        startTime:
-          type: string
-          nullable: true
-          example: "09:00"
-        endTime:
-          type: string
-          nullable: true
-          example: "12:00"
         totalMarks:
           type: number
         passMarks:
@@ -470,21 +499,20 @@ components:
     ExamResult:
       type: object
       properties:
-        examSubjectId:
-          $ref: '#/components/schemas/UUID'
         studentId:
           $ref: '#/components/schemas/UUID'
         studentName:
           type: string
+        examSubjectId:
+          $ref: '#/components/schemas/UUID'
         marksObtained:
           type: number
           nullable: true
         isAbsent:
           type: boolean
         grade:
-          type: string
+          $ref: '#/components/schemas/GradeValue'
           nullable: true
-          example: "A+"
         isPass:
           type: boolean
           nullable: true
@@ -503,7 +531,7 @@ components:
         aggregatePercentage:
           type: number
         overallGrade:
-          type: string
+          $ref: '#/components/schemas/GradeValue'
         overallResult:
           type: string
           enum: [PASS, FAIL]
@@ -535,16 +563,14 @@ components:
           nullable: true
         totalPaid:
           type: number
-          description: Computed — sum of all payments
+          description: Sum of all fee_payments for this charge
         balance:
           type: number
-          description: Computed — amount minus totalPaid
-        notes:
-          type: string
-          nullable: true
+          description: amount - totalPaid
         createdAt:
           $ref: '#/components/schemas/ISO8601'
 
+    # [CORRECTED] recordPayment request uses amountPaid + paidAt
     FeePayment:
       type: object
       properties:
@@ -598,6 +624,8 @@ components:
         audienceBatchId:
           $ref: '#/components/schemas/UUID'
           nullable: true
+        createdBy:
+          $ref: '#/components/schemas/UUID'
         createdByRole:
           type: string
         publishAt:
@@ -605,6 +633,8 @@ components:
         expiresAt:
           $ref: '#/components/schemas/ISO8601'
           nullable: true
+        pushSent:
+          type: boolean
         createdAt:
           $ref: '#/components/schemas/ISO8601'
 
@@ -690,6 +720,7 @@ components:
         createdAt:
           $ref: '#/components/schemas/ISO8601'
 
+    # [CORRECTED] slug not subdomain
     SchoolProfile:
       type: object
       properties:
@@ -697,11 +728,15 @@ components:
           $ref: '#/components/schemas/UUID'
         name:
           type: string
-        subdomain:
+        slug:
           type: string
+          description: Tenant URL slug. Was 'subdomain' in v5.0 — CORRECTED.
         timezone:
           type: string
           example: "Asia/Kolkata"
+        status:
+          type: string
+          enum: [active, inactive]
         logoUrl:
           type: string
           nullable: true
@@ -732,6 +767,18 @@ components:
           items:
             $ref: '#/components/schemas/StudentLevel'
 
+    GradeBoundary:
+      type: object
+      properties:
+        grade:
+          $ref: '#/components/schemas/GradeValue'
+        label:
+          type: string
+        minPercentage:
+          type: number
+        maxPercentage:
+          type: number
+
     ImportJob:
       type: object
       properties:
@@ -740,20 +787,13 @@ components:
         entityType:
           $ref: '#/components/schemas/ImportEntityType'
         status:
-          type: string
-          enum: [PREVIEW, CONFIRMED, COMPLETED, CANCELLED, FAILED]
+          $ref: '#/components/schemas/ImportJobStatus'
         totalRows:
           type: integer
         validRows:
           type: integer
         errorRows:
           type: integer
-        previewData:
-          type: object
-          nullable: true
-        errorData:
-          type: object
-          nullable: true
         importedRows:
           type: integer
           nullable: true
@@ -762,45 +802,55 @@ components:
         createdAt:
           $ref: '#/components/schemas/ISO8601'
 
-  parameters:
-    pathId:
-      name: id
-      in: path
-      required: true
-      schema:
-        $ref: '#/components/schemas/UUID'
+    Timeslot:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        classId:
+          $ref: '#/components/schemas/UUID'
+        subjectId:
+          $ref: '#/components/schemas/UUID'
+          nullable: true
+        subjectName:
+          type: string
+          nullable: true
+        teacherId:
+          $ref: '#/components/schemas/UUID'
+          nullable: true
+        dayOfWeek:
+          type: string
+          enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+        periodNumber:
+          type: integer
 
-    pathStudentId:
-      name: studentId
-      in: path
-      required: true
-      schema:
-        $ref: '#/components/schemas/UUID'
+    PromotionPreview:
+      type: object
+      properties:
+        batchId:
+          $ref: '#/components/schemas/UUID'
+        batchName:
+          type: string
+        currentLevel:
+          $ref: '#/components/schemas/StudentLevel'
+        nextLevel:
+          $ref: '#/components/schemas/StudentLevel'
+          nullable: true
+        activeStudentCount:
+          type: integer
+        students:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                $ref: '#/components/schemas/UUID'
+              name:
+                type: string
+              admissionNumber:
+                type: string
 
-    pathSubjectId:
-      name: subjectId
-      in: path
-      required: true
-      schema:
-        $ref: '#/components/schemas/UUID'
-
-    queryLimit:
-      name: limit
-      in: query
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 200
-        default: 50
-
-    queryOffset:
-      name: offset
-      in: query
-      schema:
-        type: integer
-        minimum: 0
-        default: 0
-
+  # ─── Reusable responses ──────────────────────────────────────────
   responses:
     Unauthorized:
       description: Missing or invalid JWT
@@ -811,13 +861,13 @@ components:
           example:
             error:
               code: "UNAUTHORIZED"
-              message: "Missing or invalid token"
+              message: "Missing or invalid Authorization header"
               details: {}
             requestId: "550e8400-e29b-41d4-a716-446655440000"
-            timestamp: "2026-03-12T08:00:00.000Z"
+            timestamp: "2026-03-19T08:00:00.000Z"
 
     Forbidden:
-      description: Insufficient role or ownership
+      description: Insufficient role
       content:
         application/json:
           schema:
@@ -825,10 +875,10 @@ components:
           example:
             error:
               code: "FORBIDDEN"
-              message: "You do not have permission for this resource"
+              message: "Insufficient permissions"
               details: {}
             requestId: "550e8400-e29b-41d4-a716-446655440000"
-            timestamp: "2026-03-12T08:00:00.000Z"
+            timestamp: "2026-03-19T08:00:00.000Z"
 
     NotFound:
       description: Resource not found
@@ -842,10 +892,10 @@ components:
               message: "Resource not found"
               details: {}
             requestId: "550e8400-e29b-41d4-a716-446655440000"
-            timestamp: "2026-03-12T08:00:00.000Z"
+            timestamp: "2026-03-19T08:00:00.000Z"
 
     Conflict:
-      description: Conflict with current state
+      description: Business rule conflict
       content:
         application/json:
           schema:
@@ -866,7 +916,7 @@ components:
                   - field: "startDate"
                     message: "Required"
             requestId: "550e8400-e29b-41d4-a716-446655440000"
-            timestamp: "2026-03-12T08:00:00.000Z"
+            timestamp: "2026-03-19T08:00:00.000Z"
 
     TooManyRequests:
       description: Rate limit exceeded
@@ -880,7 +930,7 @@ components:
               message: "Too many requests"
               details: {}
             requestId: "550e8400-e29b-41d4-a716-446655440000"
-            timestamp: "2026-03-12T08:00:00.000Z"
+            timestamp: "2026-03-19T08:00:00.000Z"
 
 # ═══════════════════════════════════════════════
 # PATHS
@@ -892,7 +942,9 @@ paths:
     post:
       tags: [Auth]
       summary: Login
-      description: Returns JWT. Rate limited to 10 req/min.
+      description: |
+        Returns flat `{ token, user }` — NOT wrapped in `{ data: ... }`.
+        Rate limited to 10 req/min per IP.
       security: []
       requestBody:
         required: true
@@ -921,31 +973,22 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [token, user]
                 properties:
-                  data:
-                    type: object
-                    properties:
-                      token:
-                        type: string
-                      user:
-                        type: object
-                        properties:
-                          id:
-                            $ref: '#/components/schemas/UUID'
-                          name:
-                            type: string
-                          role:
-                            $ref: '#/components/schemas/UserRole'
-                          mustChangePassword:
-                            type: boolean
-              example:
-                data:
-                  token: "eyJhbGciOiJIUzI1NiJ9..."
+                  token:
+                    type: string
                   user:
-                    id: "550e8400-e29b-41d4-a716-446655440000"
-                    name: "Admin User"
-                    role: "Admin"
-                    mustChangePassword: false
+                    $ref: '#/components/schemas/User'
+              example:
+                token: "eyJhbGciOiJIUzI1NiJ9..."
+                user:
+                  id: "550e8400-e29b-41d4-a716-446655440000"
+                  name: "Admin User"
+                  roles: ["Admin"]
+                  activeRole: "Admin"
+                  mustChangePassword: false
+                  classTeacherOf: null
+                  studentId: null
         '401':
           description: Invalid credentials
           content:
@@ -958,7 +1001,7 @@ paths:
                   message: "Email or password is incorrect"
                   details: {}
                 requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
+                timestamp: "2026-03-19T08:00:00.000Z"
         '422':
           $ref: '#/components/responses/ValidationError'
         '429':
@@ -978,7 +1021,9 @@ paths:
     post:
       tags: [Auth]
       summary: Change own password
-      description: Sets must_change_password=false, increments token_version, returns new JWT.
+      description: |
+        Sets must_change_password=false, increments token_version, returns new JWT + full user.
+        Client MUST use `res.user` from this response to update auth context — do NOT reuse stale user object.
       requestBody:
         required: true
         content:
@@ -994,17 +1039,17 @@ paths:
                   minLength: 8
       responses:
         '200':
-          description: Password changed
+          description: Password changed — returns new token AND updated user
           content:
             application/json:
               schema:
                 type: object
+                required: [token, user]
                 properties:
-                  data:
-                    type: object
-                    properties:
-                      token:
-                        type: string
+                  token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
         '400':
           description: Current password incorrect
           content:
@@ -1017,20 +1062,184 @@ paths:
                   message: "Current password is incorrect"
                   details: {}
                 requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
+                timestamp: "2026-03-19T08:00:00.000Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /auth/switch-role:
+    post:
+      tags: [Auth]
+      summary: Switch active role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  $ref: '#/components/schemas/UserRole'
+      responses:
+        '200':
+          description: Role switched
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, user]
+                properties:
+                  token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   # ─── USERS ────────────────────────────────────────────────────────
+  /users:
+    get:
+      tags: [Users]
+      summary: List users
+      parameters:
+        - name: role
+          in: query
+          schema:
+            $ref: '#/components/schemas/UserRole'
+        - name: sessionId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Users list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Users]
+      summary: Create user (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, role]
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                role:
+                  $ref: '#/components/schemas/UserRole'
+                phone:
+                  type: string
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+                  temporaryPassword:
+                    type: string
+                    description: One-time plain-text password — store securely, never logged
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /users/{userId}:
+    get:
+      tags: [Users]
+      summary: Get user by ID
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Users]
+      summary: Update user (Admin)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                phone:
+                  type: string
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # [NEW] — was missing in v5.0; caused C-23
   /users/{userId}/reset-password:
     post:
       tags: [Users]
-      summary: Admin resets another user's password
+      summary: Force reset a user's password (Admin)
       description: |
-        Role hierarchy: SuperAdmin→Admin, Admin→Teacher/Student.
-        Returns temporary password once — not stored in plaintext.
+        Admin resets any tenant user's password. Returns one-time temporary password.
+        User will be required to change password on next login (must_change_password = true).
+        token_version is incremented — existing sessions are revoked.
       parameters:
         - name: userId
           in: path
@@ -1044,15 +1253,21 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [data, temporaryPassword]
                 properties:
                   data:
-                    type: object
-                    properties:
-                      temporaryPassword:
-                        type: string
-                      mustChangePassword:
-                        type: boolean
-                        example: true
+                    $ref: '#/components/schemas/User'
+                  temporaryPassword:
+                    type: string
+                    description: One-time plain-text password — share with user via secure channel
+              example:
+                data:
+                  id: "550e8400-e29b-41d4-a716-446655440000"
+                  name: "Ali Mohammed"
+                  roles: ["Teacher"]
+                  activeRole: "Teacher"
+                  mustChangePassword: true
+                temporaryPassword: "a3f9d1b2c8"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1062,9 +1277,28 @@ paths:
 
   # ─── ACADEMIC SESSIONS ────────────────────────────────────────────
   /academic-sessions:
+    get:
+      tags: [Academic Sessions]
+      summary: List sessions
+      responses:
+        '200':
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AcademicSession'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     post:
       tags: [Academic Sessions]
-      summary: Create academic session
+      summary: Create session (Admin)
       requestBody:
         required: true
         content:
@@ -1080,13 +1314,9 @@ paths:
                   $ref: '#/components/schemas/DateString'
                 endDate:
                   $ref: '#/components/schemas/DateString'
-            example:
-              name: "2025-26"
-              startDate: "2025-06-01"
-              endDate: "2026-03-31"
       responses:
         '201':
-          description: Session created
+          description: Created
           content:
             application/json:
               schema:
@@ -1096,48 +1326,16 @@ paths:
                     $ref: '#/components/schemas/AcademicSession'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '409':
-          description: Session name already exists
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "SESSION_NAME_EXISTS"
-                  message: "A session named '2025-26' already exists"
-                  details: {}
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
-        '422':
-          $ref: '#/components/responses/ValidationError'
-
-    get:
-      tags: [Academic Sessions]
-      summary: List academic sessions
-      responses:
-        '200':
-          description: Sessions list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/AcademicSession'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/Conflict'
 
   /academic-sessions/current:
     get:
       tags: [Academic Sessions]
       summary: Get current active session
+      description: |
+        Returns the session with status = ACTIVE. Returns 404 if no session is currently active.
+        Response is `{ data: AcademicSession }` — not `{ session }` (CORRECTED from v5.0).
       responses:
         '200':
           description: Current session
@@ -1145,35 +1343,36 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [data]
                 properties:
                   data:
                     $ref: '#/components/schemas/AcademicSession'
+              example:
+                data:
+                  id: "550e8400-e29b-41d4-a716-446655440000"
+                  name: "2025-26"
+                  status: "ACTIVE"
+                  isCurrent: true
+                  startDate: "2025-06-01"
+                  endDate: "2026-03-31"
+        '404':
+          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: No active session
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "NO_ACTIVE_SESSION"
-                  message: "No session is currently active"
-                  details: {}
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
 
-  /academic-sessions/{id}/activate:
-    put:
+  /academic-sessions/{sessionId}:
+    get:
       tags: [Academic Sessions]
-      summary: Activate session
-      description: Guard — 409 if any active batch has no class configured in this session.
+      summary: Get session by ID
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Session activated
+          description: Session
           content:
             application/json:
               schema:
@@ -1183,34 +1382,49 @@ paths:
                     $ref: '#/components/schemas/AcademicSession'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /academic-sessions/{sessionId}/activate:
+    put:
+      tags: [Academic Sessions]
+      summary: Activate session (Admin)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Activated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AcademicSession'
         '409':
-          description: Classes not configured for all batches
+          description: Another session already active, or batch has no class in this session
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "CLASSES_NOT_CONFIGURED"
-                  message: "Batch 'Verity' has no class in the new session"
-                  details:
-                    unconfiguredBatches: ["Verity", "Noor"]
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
 
-  /academic-sessions/{id}/close:
+  /academic-sessions/{sessionId}/close:
     put:
       tags: [Academic Sessions]
-      summary: Close session
+      summary: Close session (Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Session closed
+          description: Closed
           content:
             application/json:
               schema:
@@ -1218,19 +1432,20 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/AcademicSession'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
-  /academic-sessions/{id}/copy-timetable:
+  /academic-sessions/{sessionId}/copy-timetable:
     post:
       tags: [Academic Sessions]
-      summary: Copy timetable from previous session
+      summary: Copy timetable from another session (Admin)
+      description: |
+        Copies timeslots from the source session into this session.
+        Body uses `fromSessionId` — NOT `sourceSessionId` (CORRECTED from v5.0).
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
@@ -1241,6 +1456,9 @@ paths:
               properties:
                 fromSessionId:
                   $ref: '#/components/schemas/UUID'
+                  description: Source session UUID. Was sourceSessionId in v5.0 — CORRECTED.
+            example:
+              fromSessionId: "550e8400-e29b-41d4-a716-446655440000"
       responses:
         '200':
           description: Timetable copied
@@ -1248,26 +1466,28 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [copied]
                 properties:
-                  data:
-                    type: object
-                    properties:
-                      copiedTimeslots:
-                        type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                  copied:
+                    type: integer
+                    description: Number of timeslots copied
+              example:
+                copied: 42
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /academic-sessions/{id}/transition/preview:
+  /academic-sessions/{sessionId}/transition/preview:
     post:
       tags: [Academic Sessions]
-      summary: Preview batch promotion
-      description: Stores preview with 10-minute TTL. Returns promotionPreviewId.
+      summary: Preview batch promotion (Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
@@ -1280,7 +1500,7 @@ paths:
                   $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Preview generated
+          description: Preview created (TTL 10 minutes)
           content:
             application/json:
               schema:
@@ -1289,80 +1509,41 @@ paths:
                   data:
                     type: object
                     properties:
-                      promotionPreviewId:
+                      previewId:
                         $ref: '#/components/schemas/UUID'
                       expiresAt:
                         $ref: '#/components/schemas/ISO8601'
                       batches:
                         type: array
                         items:
-                          type: object
-                          properties:
-                            batchId:
-                              $ref: '#/components/schemas/UUID'
-                            batchName:
-                              type: string
-                            currentLevel:
-                              $ref: '#/components/schemas/StudentLevel'
-                            nextLevel:
-                              $ref: '#/components/schemas/StudentLevel'
-                            activeStudentCount:
-                              type: integer
-                            students:
-                              type: array
-                              items:
-                                type: object
-                                properties:
-                                  studentId:
-                                    $ref: '#/components/schemas/UUID'
-                                  name:
-                                    type: string
-                                  include:
-                                    type: boolean
-                                    default: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                          $ref: '#/components/schemas/PromotionPreview'
 
-  /academic-sessions/{id}/transition/commit:
+  /academic-sessions/{sessionId}/transition/commit:
     post:
       tags: [Academic Sessions]
-      summary: Commit promotion
-      description: |
-        Executes promotion based on preview. Guards:
-        - 410 if preview expired
-        - 409 if new session missing classes for any batch
+      summary: Commit batch promotion (Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [promotionPreviewId, batches]
+              required: [previewId, toSessionId]
               properties:
-                promotionPreviewId:
+                previewId:
                   $ref: '#/components/schemas/UUID'
-                batches:
+                toSessionId:
+                  $ref: '#/components/schemas/UUID'
+                skippedStudentIds:
                   type: array
                   items:
-                    type: object
-                    required: [batchId, promotedStudentIds, skippedStudentIds]
-                    properties:
-                      batchId:
-                        $ref: '#/components/schemas/UUID'
-                      promotedStudentIds:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/UUID'
-                      skippedStudentIds:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/UUID'
+                    $ref: '#/components/schemas/UUID'
       responses:
         '200':
           description: Promotion committed
@@ -1374,144 +1555,24 @@ paths:
                   data:
                     type: object
                     properties:
-                      promotionLogIds:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/UUID'
-                      totalPromoted:
+                      promotedCount:
                         type: integer
-                      totalSkipped:
+                      skippedCount:
                         type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
         '410':
           description: Preview expired
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "PREVIEW_EXPIRED"
-                  message: "Promotion preview has expired. Generate a new preview."
-                  details: {}
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
-
-  /promotions/{id}/rollback:
-    post:
-      tags: [Academic Sessions]
-      summary: Rollback promotion (one-time only)
-      parameters:
-        - $ref: '#/components/parameters/pathId'
-      responses:
-        '200':
-          description: Rollback complete
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      rolledBackStudents:
-                        type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          description: Already rolled back
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "ALREADY_ROLLED_BACK"
-                  message: "This promotion has already been rolled back"
-                  details: {}
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
-
-  # ─── TIMETABLE ────────────────────────────────────────────────────
-  /timetable:
-    get:
-      tags: [Timetable]
-      summary: Get timetable
-      description: Defaults to current session if sessionId not provided.
-      parameters:
-        - name: classId
-          in: query
-          required: true
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: sessionId
-          in: query
-          required: false
-          schema:
-            $ref: '#/components/schemas/UUID'
-      responses:
-        '200':
-          description: Timetable
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          $ref: '#/components/schemas/UUID'
-                        classId:
-                          $ref: '#/components/schemas/UUID'
-                        subjectId:
-                          $ref: '#/components/schemas/UUID'
-                        subjectName:
-                          type: string
-                        teacherId:
-                          $ref: '#/components/schemas/UUID'
-                        teacherName:
-                          type: string
-                        dayOfWeek:
-                          type: integer
-                          minimum: 0
-                          maximum: 6
-                        startTime:
-                          type: string
-                          example: "08:00"
-                        endTime:
-                          type: string
-                          example: "09:00"
-          headers:
-            Cache-Control:
-              schema:
-                type: string
-                example: "private, max-age=300"
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
   # ─── ATTENDANCE ───────────────────────────────────────────────────
   /attendance/record-class:
     post:
       tags: [Attendance]
-      summary: Record attendance for a timeslot
+      summary: Record attendance for a class period (Teacher/Admin)
       description: |
-        Teacher can only record for own timeslots. Cannot backdate (server-side guard).
-        students array: minItems 1, maxItems 200.
-        Uses UPSERT — safe to re-submit.
+        Teacher backdating guard: teacher cannot record attendance for a past date
+        (evaluated in tenant timezone, not UTC).
+        Max 200 students per request.
       requestBody:
         required: true
         content:
@@ -1535,17 +1596,7 @@ paths:
                       studentId:
                         $ref: '#/components/schemas/UUID'
                       status:
-                        type: string
-                        enum: [Present, Absent, Late]
-                        description: Teacher cannot set Excused — only Admin or leave approval
-            example:
-              timeslotId: "550e8400-e29b-41d4-a716-446655440001"
-              date: "2026-03-12"
-              students:
-                - studentId: "550e8400-e29b-41d4-a716-446655440002"
-                  status: "Present"
-                - studentId: "550e8400-e29b-41d4-a716-446655440003"
-                  status: "Absent"
+                        $ref: '#/components/schemas/AttendanceStatus'
       responses:
         '200':
           description: Attendance recorded
@@ -1554,13 +1605,18 @@ paths:
               schema:
                 type: object
                 properties:
-                  data:
-                    type: object
-                    properties:
-                      recorded:
-                        type: integer
+                  recorded:
+                    type: integer
+                  present:
+                    type: integer
+                  absent:
+                    type: integer
+                  late:
+                    type: integer
+                  excused:
+                    type: integer
         '400':
-          description: Backdating not allowed (Teacher only)
+          description: Backdating not allowed or validation error
           content:
             application/json:
               schema:
@@ -1571,18 +1627,12 @@ paths:
                   message: "Teachers cannot backdate attendance"
                   details: {}
                 requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
+                timestamp: "2026-03-19T08:00:00.000Z"
 
   /attendance/{recordId}:
     put:
       tags: [Attendance]
-      summary: Correct attendance record (Admin only)
+      summary: Correct attendance record (Admin)
       parameters:
         - name: recordId
           in: path
@@ -1601,7 +1651,7 @@ paths:
                   $ref: '#/components/schemas/AttendanceStatus'
       responses:
         '200':
-          description: Record updated
+          description: Corrected
           content:
             application/json:
               schema:
@@ -1609,81 +1659,38 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/AttendanceRecord'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
-  /attendance/daily-summary:
+  # ─── LEAVE ────────────────────────────────────────────────────────
+  /leave:
     get:
-      tags: [Attendance]
-      summary: Daily attendance summary
+      tags: [Leave]
+      summary: List leave requests
       parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/LeaveStatus'
+        - name: studentId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
         - name: classId
           in: query
-          required: true
           schema:
             $ref: '#/components/schemas/UUID'
-        - name: date
+        - name: limit
           in: query
-          required: true
           schema:
-            $ref: '#/components/schemas/DateString'
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
       responses:
         '200':
-          description: Daily summary
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      date:
-                        $ref: '#/components/schemas/DateString'
-                      classId:
-                        $ref: '#/components/schemas/UUID'
-                      totalStudents:
-                        type: integer
-                      present:
-                        type: integer
-                      absent:
-                        type: integer
-                      late:
-                        type: integer
-                      excused:
-                        type: integer
-                      records:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/AttendanceRecord'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /attendance/absentees/{timeslotId}:
-    get:
-      tags: [Attendance]
-      summary: Get absentees for a timeslot with today's absence context
-      description: Teacher can only access own timeslots.
-      parameters:
-        - name: timeslotId
-          in: path
-          required: true
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: date
-          in: query
-          required: true
-          schema:
-            $ref: '#/components/schemas/DateString'
-      responses:
-        '200':
-          description: Absentees list
+          description: Leave requests
           content:
             application/json:
               schema:
@@ -1692,107 +1699,23 @@ paths:
                   data:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        studentId:
-                          $ref: '#/components/schemas/UUID'
-                        studentName:
-                          type: string
-                        status:
-                          $ref: '#/components/schemas/AttendanceStatus'
-                        todayAbsences:
-                          type: object
-                          properties:
-                            totalPeriodsToday:
-                              type: integer
-                            absentCount:
-                              type: integer
-                            absentSubjects:
-                              type: array
-                              items:
-                                type: string
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /attendance/monthly-sheet:
-    get:
-      tags: [Attendance]
-      summary: Monthly attendance sheet
-      parameters:
-        - name: classId
-          in: query
-          required: true
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: month
-          in: query
-          required: true
-          schema:
-            type: string
-            pattern: '^\d{4}-\d{2}$'
-            example: "2026-03"
-      responses:
-        '200':
-          description: Monthly sheet
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      month:
-                        type: string
-                      classId:
-                        $ref: '#/components/schemas/UUID'
-                      workingDays:
-                        type: integer
-                      students:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            studentId:
-                              $ref: '#/components/schemas/UUID'
-                            studentName:
-                              type: string
-                            presentDays:
-                              type: integer
-                            absentDays:
-                              type: integer
-                            lateDays:
-                              type: integer
-                            excusedDays:
-                              type: integer
-                            attendancePercentage:
-                              type: number
-                              description: Excused days excluded from denominator
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  # ─── LEAVE ────────────────────────────────────────────────────────
-  /leave:
+                      $ref: '#/components/schemas/LeaveRequest'
+                  total:
+                    type: integer
     post:
       tags: [Leave]
-      summary: Submit leave request
-      description: |
-        Guardian: only for linked child, only if can_submit_leave=true.
-        Class Teacher: only for own class students.
-        Admin: any student.
+      summary: Submit leave request (Guardian/Admin/Teacher)
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [studentId, leaveType, durationType, startDate, endDate, reason, expectedReturnAt]
+              required: [studentId, sessionId, leaveType, durationType, startDate, endDate, reason, expectedReturnAt]
               properties:
                 studentId:
+                  $ref: '#/components/schemas/UUID'
+                sessionId:
                   $ref: '#/components/schemas/UUID'
                 leaveType:
                   $ref: '#/components/schemas/LeaveType'
@@ -1804,24 +1727,11 @@ paths:
                   $ref: '#/components/schemas/DateString'
                 reason:
                   type: string
-                  minLength: 1
                 expectedReturnAt:
                   $ref: '#/components/schemas/ISO8601'
-                proxyFor:
-                  type: string
-                  nullable: true
-                  description: Admin only — e.g. 'Parent' when entering on behalf of phone call
-            example:
-              studentId: "550e8400-e29b-41d4-a716-446655440002"
-              leaveType: "HomeVisit"
-              durationType: "MultiDay"
-              startDate: "2026-03-15"
-              endDate: "2026-03-17"
-              reason: "Family function"
-              expectedReturnAt: "2026-03-17T18:00:00.000Z"
       responses:
         '201':
-          description: Leave request submitted
+          description: Leave submitted
           content:
             application/json:
               schema:
@@ -1829,84 +1739,27 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/LeaveRequest'
-        '400':
-          description: Guardian cannot submit leave (can_submit_leave=false)
+        '403':
+          description: Guardian's can_submit_leave = false
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error:
-                  code: "LEAVE_SUBMISSION_NOT_ALLOWED"
-                  message: "This guardian is not permitted to submit leave requests"
+                  code: "SUBMIT_LEAVE_NOT_ALLOWED"
+                  message: "This guardian is not allowed to submit leave requests"
                   details: {}
                 requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-
-    get:
-      tags: [Leave]
-      summary: List leave requests
-      parameters:
-        - name: studentId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: classId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: status
-          in: query
-          schema:
-            $ref: '#/components/schemas/LeaveStatus'
-        - name: sessionId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - $ref: '#/components/parameters/queryLimit'
-        - $ref: '#/components/parameters/queryOffset'
-      responses:
-        '200':
-          description: Leave requests list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/LeaveRequest'
-                  meta:
-                    type: object
-                    properties:
-                      total:
-                        type: integer
-                      limit:
-                        type: integer
-                      offset:
-                        type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                timestamp: "2026-03-19T08:00:00.000Z"
 
   /leave/on-campus:
     get:
       tags: [Leave]
-      summary: Students currently off-campus (status=ACTIVE)
-      description: Class Teacher sees own class only. Admin sees all.
-      parameters:
-        - name: classId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
+      summary: Students currently off-campus (Admin/ClassTeacher)
+      description: |
+        Returns students with ACTIVE or OVERDUE leave.
+        Frontend should poll this endpoint every 30 seconds (refetchInterval: 30000).
       responses:
         '200':
           description: Off-campus students
@@ -1920,31 +1773,35 @@ paths:
                     items:
                       type: object
                       properties:
-                        leaveId:
+                        id:
                           $ref: '#/components/schemas/UUID'
                         studentId:
                           $ref: '#/components/schemas/UUID'
                         studentName:
                           type: string
-                        leaveType:
-                          $ref: '#/components/schemas/LeaveType'
+                        admissionNumber:
+                          type: string
+                        className:
+                          type: string
+                          nullable: true
+                        status:
+                          $ref: '#/components/schemas/LeaveStatus'
                         departedAt:
                           $ref: '#/components/schemas/ISO8601'
+                          nullable: true
                         expectedReturnAt:
                           $ref: '#/components/schemas/ISO8601'
-                        isOverdue:
-                          type: boolean
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
 
-  /leave/{id}:
+  /leave/{leaveId}:
     get:
       tags: [Leave]
-      summary: Get leave request detail
+      summary: Get leave request by ID
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: leaveId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
           description: Leave request
@@ -1955,23 +1812,21 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/LeaveRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
-  /leave/{id}/approve:
+  /leave/{leaveId}/approve:
     put:
       tags: [Leave]
-      summary: Approve leave request
-      description: First approval wins — 409 LEAVE_ALREADY_REVIEWED if status != PENDING.
+      summary: Approve leave (ClassTeacher own class / Admin)
+      description: SELECT FOR UPDATE — 409 if already reviewed.
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: leaveId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Approved — attendance auto-marked Excused
+          description: Approved
           content:
             application/json:
               schema:
@@ -1979,12 +1834,6 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/LeaveRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '409':
           description: Already reviewed
           content:
@@ -1995,17 +1844,20 @@ paths:
                 error:
                   code: "LEAVE_ALREADY_REVIEWED"
                   message: "This leave request has already been reviewed"
-                  details:
-                    currentStatus: "APPROVED"
+                  details: {}
                 requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
+                timestamp: "2026-03-19T08:00:00.000Z"
 
-  /leave/{id}/reject:
+  /leave/{leaveId}/reject:
     put:
       tags: [Leave]
-      summary: Reject leave request
+      summary: Reject leave (ClassTeacher own class / Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: leaveId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
@@ -2016,7 +1868,6 @@ paths:
               properties:
                 rejectionReason:
                   type: string
-                  minLength: 1
       responses:
         '200':
           description: Rejected
@@ -2027,21 +1878,19 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/LeaveRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
 
-  /leave/{id}/cancel:
+  /leave/{leaveId}/cancel:
     put:
       tags: [Leave]
-      summary: Cancel PENDING leave request
+      summary: Cancel PENDING leave (Guardian/Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: leaveId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
           description: Cancelled
@@ -2052,36 +1901,20 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/LeaveRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          description: Cannot cancel non-PENDING request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "INVALID_STATUS_TRANSITION"
-                  message: "Only PENDING requests can be cancelled"
-                  details:
-                    currentStatus: "APPROVED"
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
 
-  /leave/{id}/depart:
+  /leave/{leaveId}/depart:
     put:
       tags: [Leave]
-      summary: Mark student as departed
+      summary: Mark student departed (ClassTeacher own class / Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: leaveId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Departure recorded
+          description: Departed
           content:
             application/json:
               schema:
@@ -2089,22 +1922,20 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/LeaveRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
-  /leave/{id}/return:
+  /leave/{leaveId}/return:
     put:
       tags: [Leave]
-      summary: Mark student as returned
+      summary: Mark student returned (ClassTeacher own class / Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: leaveId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Return recorded — status set to COMPLETED
+          description: Returned
           content:
             application/json:
               schema:
@@ -2112,28 +1943,24 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/LeaveRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
   # ─── GUARDIANS ────────────────────────────────────────────────────
   /guardians:
     post:
       tags: [Guardians]
-      summary: Create guardian record
+      summary: Create guardian (Admin)
+      description: |
+        If createAccount=true, creates a Guardian user account.
+        Temp password generated with crypto.randomBytes — NOT Math.random.
+        can_submit_leave defaults to true.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [studentId, name, phone, relationship, isPrimary]
+              required: [name, phone, studentId]
               properties:
-                studentId:
-                  $ref: '#/components/schemas/UUID'
                 name:
                   type: string
                 phone:
@@ -2145,13 +1972,15 @@ paths:
                   type: string
                 isPrimary:
                   type: boolean
+                  default: false
                 canSubmitLeave:
                   type: boolean
                   default: true
-                createUserAccount:
+                studentId:
+                  $ref: '#/components/schemas/UUID'
+                createAccount:
                   type: boolean
                   default: false
-                  description: If true, creates a user account with temporary password
       responses:
         '201':
           description: Guardian created
@@ -2161,52 +1990,22 @@ paths:
                 type: object
                 properties:
                   data:
-                    allOf:
-                      - $ref: '#/components/schemas/Guardian'
-                      - type: object
-                        properties:
-                          temporaryPassword:
-                            type: string
-                            nullable: true
-                            description: Only present if createUserAccount=true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
+                    $ref: '#/components/schemas/Guardian'
+                  temporaryPassword:
+                    type: string
+                    nullable: true
+                    description: Only present when createAccount=true
 
-  /students/{studentId}/guardians:
-    get:
-      tags: [Guardians]
-      summary: List guardians for a student
-      parameters:
-        - $ref: '#/components/parameters/pathStudentId'
-      responses:
-        '200':
-          description: Guardians list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Guardian'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /guardians/{id}:
+  /guardians/{guardianId}:
     put:
       tags: [Guardians]
-      summary: Update guardian
+      summary: Update guardian (Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: guardianId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
@@ -2218,13 +2017,6 @@ paths:
                   type: string
                 phone:
                   type: string
-                email:
-                  type: string
-                  format: email
-                relationship:
-                  type: string
-                isPrimary:
-                  type: boolean
                 canSubmitLeave:
                   type: boolean
       responses:
@@ -2237,110 +2029,55 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Guardian'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  # ─── PUSH ─────────────────────────────────────────────────────────
-  /push/subscribe:
-    post:
-      tags: [Notifications]
-      summary: Save push subscription (VAPID)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [endpoint, p256dh, auth]
-              properties:
-                endpoint:
-                  type: string
-                p256dh:
-                  type: string
-                auth:
-                  type: string
-                deviceLabel:
-                  type: string
-      responses:
-        '201':
-          description: Subscription saved
-        '401':
-          $ref: '#/components/responses/Unauthorized'
     delete:
-      tags: [Notifications]
-      summary: Remove push subscription
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [endpoint]
-              properties:
-                endpoint:
-                  type: string
+      tags: [Guardians]
+      summary: Delete guardian (Admin)
+      description: Cascades student_guardians with tenant_id filter.
+      parameters:
+        - name: guardianId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '204':
-          description: Subscription removed
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+          description: Deleted
 
-  # ─── EXAMS ────────────────────────────────────────────────────────
-  /exams:
-    post:
-      tags: [Exams]
-      summary: Create exam
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [classId, sessionId, name, type]
-              properties:
-                classId:
-                  $ref: '#/components/schemas/UUID'
-                sessionId:
-                  $ref: '#/components/schemas/UUID'
-                name:
-                  type: string
-                type:
-                  $ref: '#/components/schemas/ExamType'
-                gradeBoundaries:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/GradeBoundary'
-                  description: Optional override. Defaults to system defaults if omitted.
+  /students/{studentId}/guardians:
+    get:
+      tags: [Guardians]
+      summary: List guardians for student (Admin)
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
-        '201':
-          description: Exam created
+        '200':
+          description: Guardians
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/Exam'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Guardian'
 
+  # ─── EXAMS ────────────────────────────────────────────────────────
+  /exams:
     get:
       tags: [Exams]
-      summary: List exams
+      summary: List exams (Admin/Teacher)
+      description: Returns `{ data: Exam[] }` — was `{ exams }` in v5.0 (CORRECTED).
       parameters:
-        - name: classId
+        - name: sessionId
           in: query
           schema:
             $ref: '#/components/schemas/UUID'
-        - name: sessionId
+        - name: classId
           in: query
           schema:
             $ref: '#/components/schemas/UUID'
@@ -2350,54 +2087,98 @@ paths:
             $ref: '#/components/schemas/ExamStatus'
       responses:
         '200':
-          description: Exams list
+          description: Exams
           content:
             application/json:
               schema:
                 type: object
+                required: [data, total]
                 properties:
                   data:
                     type: array
                     items:
                       $ref: '#/components/schemas/Exam'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /exams/{id}:
-    get:
+                  total:
+                    type: integer
+              example:
+                data:
+                  - id: "550e8400-e29b-41d4-a716-446655440000"
+                    name: "Term Exam 1"
+                    status: "DRAFT"
+                total: 1
+    post:
       tags: [Exams]
-      summary: Get exam detail with subjects
-      parameters:
-        - $ref: '#/components/parameters/pathId'
+      summary: Create exam (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, classId, name, type]
+              properties:
+                sessionId:
+                  $ref: '#/components/schemas/UUID'
+                classId:
+                  $ref: '#/components/schemas/UUID'
+                name:
+                  type: string
+                type:
+                  $ref: '#/components/schemas/ExamType'
+                gradeBoundaries:
+                  type: array
+                  description: If omitted, uses A+ 8-grade default
+                  items:
+                    $ref: '#/components/schemas/GradeBoundary'
       responses:
-        '200':
-          description: Exam detail
+        '201':
+          description: Created
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
-                    allOf:
-                      - $ref: '#/components/schemas/Exam'
-                      - type: object
-                        properties:
-                          subjects:
-                            type: array
-                            items:
-                              $ref: '#/components/schemas/ExamSubject'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                    $ref: '#/components/schemas/Exam'
+
+  /exams/{examId}:
+    get:
+      tags: [Exams]
+      summary: Get exam by ID
+      description: Returns `{ data: Exam }` — was `{ exam }` in v5.0 (CORRECTED).
+      parameters:
+        - name: examId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Exam
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Exam'
+              example:
+                data:
+                  id: "550e8400-e29b-41d4-a716-446655440000"
+                  name: "Term Exam 1"
+                  status: "DRAFT"
         '404':
           $ref: '#/components/responses/NotFound'
-
     put:
       tags: [Exams]
-      summary: Update exam (DRAFT status only)
+      summary: Update exam (Admin — DRAFT only)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: examId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
@@ -2407,10 +2188,8 @@ paths:
               properties:
                 name:
                   type: string
-                gradeBoundaries:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/GradeBoundary'
+                status:
+                  $ref: '#/components/schemas/ExamStatus'
       responses:
         '200':
           description: Updated
@@ -2421,53 +2200,36 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Exam'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          description: Cannot edit non-DRAFT exam
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "EXAM_NOT_EDITABLE"
-                  message: "Only DRAFT exams can be edited"
-                  details:
-                    currentStatus: "PUBLISHED"
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
-
     delete:
       tags: [Exams]
-      summary: Delete exam (DRAFT status only)
+      summary: Delete exam (Admin — DRAFT only)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: examId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '204':
           description: Deleted
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
 
-  /exams/{id}/publish:
+  /exams/{examId}/publish:
     put:
       tags: [Exams]
-      summary: Publish exam — computes grades and ranks atomically
+      summary: Publish exam — computes grades, ranks, sends push notifications (Admin)
+      description: |
+        SELECT FOR UPDATE on exams row — 409 if already PUBLISHED.
+        All exam_subjects must have marks_status = ENTERED.
+        Dispatches push notifications to all class students and their guardians (non-blocking).
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: examId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Published — grades and summaries computed
+          description: Published
           content:
             application/json:
               schema:
@@ -2475,14 +2237,8 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Exam'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '409':
-          description: All subject marks must be ENTERED before publish
+          description: Already published or marks not complete
           content:
             application/json:
               schema:
@@ -2490,21 +2246,25 @@ paths:
               example:
                 error:
                   code: "MARKS_NOT_COMPLETE"
-                  message: "Some subjects still have PENDING marks"
+                  message: "All subjects must have marks entered before publishing"
                   details:
-                    pendingSubjects: ["Mathematics", "English"]
+                    pendingSubjects: ["550e8400-e29b-41d4-a716-446655440000"]
                 requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
+                timestamp: "2026-03-19T08:00:00.000Z"
 
-  /exams/{id}/unpublish:
+  /exams/{examId}/unpublish:
     put:
       tags: [Exams]
-      summary: Unpublish exam for correction
+      summary: Unpublish exam (Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: examId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Unpublished — marks unlocked for editing
+          description: Unpublished
           content:
             application/json:
               schema:
@@ -2512,20 +2272,17 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Exam'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
-  /exams/{id}/subjects:
+  /exams/{examId}/subjects:
     post:
       tags: [Exams]
-      summary: Add subject to exam
-      description: On creation, existing Excused attendance on exam_date auto-sets is_absent=true.
+      summary: Add subject to exam (Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: examId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
@@ -2540,18 +2297,10 @@ paths:
                   $ref: '#/components/schemas/UUID'
                 examDate:
                   $ref: '#/components/schemas/DateString'
-                startTime:
-                  type: string
-                  example: "09:00"
-                endTime:
-                  type: string
-                  example: "12:00"
                 totalMarks:
                   type: number
-                  minimum: 1
                 passMarks:
                   type: number
-                  minimum: 1
       responses:
         '201':
           description: Subject added
@@ -2562,92 +2311,48 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/ExamSubject'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
 
-  /exams/{id}/subjects/{subjectId}:
-    put:
-      tags: [Exams]
-      summary: Update exam subject details
-      parameters:
-        - $ref: '#/components/parameters/pathId'
-        - $ref: '#/components/parameters/pathSubjectId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                examDate:
-                  $ref: '#/components/schemas/DateString'
-                startTime:
-                  type: string
-                endTime:
-                  type: string
-                totalMarks:
-                  type: number
-                passMarks:
-                  type: number
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/ExamSubject'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /exams/{id}/subjects/{subjectId}/marks:
+  /exams/{examId}/subjects/{subjectId}/marks:
     get:
       tags: [Exams]
-      summary: Get mark sheet for a subject
+      summary: Get marks sheet (Teacher/Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
-        - $ref: '#/components/parameters/pathSubjectId'
+        - name: examId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Mark sheet
+          description: Marks sheet
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
-                    type: object
-                    properties:
-                      examSubject:
-                        $ref: '#/components/schemas/ExamSubject'
-                      results:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/ExamResult'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExamResult'
     put:
       tags: [Exams]
-      summary: Bulk enter marks for all students
-      description: Subject Teacher can only enter for own subject. Locked after publish.
+      summary: Bulk enter marks (Teacher/Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
-        - $ref: '#/components/parameters/pathSubjectId'
+        - name: examId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
@@ -2669,189 +2374,93 @@ paths:
                         nullable: true
                       isAbsent:
                         type: boolean
-                        default: false
       responses:
         '200':
-          description: Marks saved — marksStatus set to ENTERED
+          description: Marks saved
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
-                    type: object
-                    properties:
-                      saved:
-                        type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          description: Exam published — unpublish first
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "MARKS_LOCKED"
-                  message: "Marks are locked. Unpublish the exam to make corrections."
-                  details: {}
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExamResult'
 
-  /exams/{id}/results:
+  /exams/{examId}/results:
     get:
       tags: [Exams]
-      summary: Get consolidated results for entire class
-      description: Only available when exam status=PUBLISHED.
+      summary: Consolidated results (Admin/ClassTeacher)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: examId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Consolidated results
+          description: Results
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
-                    type: object
-                    properties:
-                      exam:
-                        $ref: '#/components/schemas/Exam'
-                      summaries:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/ExamStudentSummary'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExamStudentSummary'
 
-  /exams/{id}/results/{studentId}:
+  /exams/{examId}/report-card/{studentId}:
     get:
       tags: [Exams]
-      summary: Get single student result
+      summary: PDF report card for student (Admin/Student/Guardian)
       parameters:
-        - $ref: '#/components/parameters/pathId'
-        - $ref: '#/components/parameters/pathStudentId'
+        - name: examId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Student result
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      summary:
-                        $ref: '#/components/schemas/ExamStudentSummary'
-                      subjectResults:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/ExamResult'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /exams/{id}/report-card/{studentId}:
-    get:
-      tags: [Exams]
-      summary: Download PDF report card for a student
-      parameters:
-        - $ref: '#/components/parameters/pathId'
-        - $ref: '#/components/parameters/pathStudentId'
-      responses:
-        '200':
-          description: PDF file
+          description: PDF document
           content:
             application/pdf:
               schema:
                 type: string
                 format: binary
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
-  /exams/{id}/report-cards:
+  /exams/{examId}/report-cards:
     get:
       tags: [Exams]
-      summary: Download ZIP of all student report cards (Admin only)
+      summary: ZIP of all report cards for exam (Admin)
+      description: |
+        Generates PDFs for all students. Uses a single shared Puppeteer browser instance.
+        One page per student — browser closes after all PDFs are generated.
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: examId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: ZIP archive
+          description: ZIP of PDFs
           content:
             application/zip:
               schema:
                 type: string
                 format: binary
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
-  /external-results:
-    post:
-      tags: [Exams]
-      summary: Record external exam result
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [studentId, sessionId, examName, conductedBy]
-              properties:
-                studentId:
-                  $ref: '#/components/schemas/UUID'
-                sessionId:
-                  $ref: '#/components/schemas/UUID'
-                examName:
-                  type: string
-                conductedBy:
-                  type: string
-                  example: "DHSE Kerala"
-                resultSummary:
-                  type: string
-                documentUrl:
-                  type: string
-      responses:
-        '201':
-          description: External result recorded
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      id:
-                        $ref: '#/components/schemas/UUID'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
+  # ─── FEES ─────────────────────────────────────────────────────────
+  /fees/charges:
     get:
-      tags: [Exams]
-      summary: List external results
+      tags: [Fees]
+      summary: List fee charges with balance
       parameters:
         - name: studentId
           in: query
@@ -2863,7 +2472,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: External results
+          description: Charges
           content:
             application/json:
               schema:
@@ -2872,36 +2481,12 @@ paths:
                   data:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        id:
-                          $ref: '#/components/schemas/UUID'
-                        studentId:
-                          $ref: '#/components/schemas/UUID'
-                        studentName:
-                          type: string
-                        sessionId:
-                          $ref: '#/components/schemas/UUID'
-                        examName:
-                          type: string
-                        conductedBy:
-                          type: string
-                        resultSummary:
-                          type: string
-                          nullable: true
-                        documentUrl:
-                          type: string
-                          nullable: true
-                        recordedAt:
-                          $ref: '#/components/schemas/ISO8601'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  # ─── FEES ─────────────────────────────────────────────────────────
-  /fees/charges:
+                      $ref: '#/components/schemas/FeeCharge'
+                  total:
+                    type: integer
     post:
       tags: [Fees]
-      summary: Raise single fee charge
+      summary: Raise fee charge (Admin)
       requestBody:
         required: true
         content:
@@ -2920,18 +2505,10 @@ paths:
                   $ref: '#/components/schemas/FeeCategory'
                 amount:
                   type: number
-                  minimum: 0.01
                 dueDate:
                   $ref: '#/components/schemas/DateString'
                 notes:
                   type: string
-            example:
-              studentId: "550e8400-e29b-41d4-a716-446655440002"
-              sessionId: "550e8400-e29b-41d4-a716-446655440003"
-              description: "DHSE Board Exam Fee 2026"
-              category: "BoardExamFee"
-              amount: 350.00
-              dueDate: "2026-01-31"
       responses:
         '201':
           description: Charge created
@@ -2942,131 +2519,23 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/FeeCharge'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
 
-    get:
-      tags: [Fees]
-      summary: List fee charges with computed balance
-      parameters:
-        - name: studentId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: classId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: sessionId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: hasBalance
-          in: query
-          description: true = outstanding only
-          schema:
-            type: boolean
-        - $ref: '#/components/parameters/queryLimit'
-        - $ref: '#/components/parameters/queryOffset'
-      responses:
-        '200':
-          description: Charges list with balance
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/FeeCharge'
-                  meta:
-                    type: object
-                    properties:
-                      total:
-                        type: integer
-                      totalOutstanding:
-                        type: number
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /fees/charges/bulk:
-    post:
-      tags: [Fees]
-      summary: Bulk raise fee charges
-      description: |
-        Target by studentIds[], classId, or level+sessionId.
-        Duplicate guard: same description+sessionId = skip silently.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [sessionId, description, category, amount]
-              properties:
-                sessionId:
-                  $ref: '#/components/schemas/UUID'
-                description:
-                  type: string
-                category:
-                  $ref: '#/components/schemas/FeeCategory'
-                amount:
-                  type: number
-                  minimum: 0.01
-                dueDate:
-                  $ref: '#/components/schemas/DateString'
-                notes:
-                  type: string
-                studentIds:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/UUID'
-                  description: Specify one of studentIds, classId, or level
-                classId:
-                  $ref: '#/components/schemas/UUID'
-                level:
-                  $ref: '#/components/schemas/StudentLevel'
-      responses:
-        '200':
-          description: Bulk charges created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      created:
-                        type: integer
-                      skipped:
-                        type: integer
-                        description: Already had same description+sessionId
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-
-  /fees/charges/{id}:
+  /fees/charges/{chargeId}:
     delete:
       tags: [Fees]
-      summary: Delete fee charge (zero payment only)
+      summary: Delete charge (Admin — zero payment only)
+      description: Uses withTransaction + SELECT FOR UPDATE. Blocked if any payment exists.
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: chargeId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '204':
           description: Deleted
         '400':
-          description: Charge has payments — cannot delete
+          description: Charge has payments
           content:
             application/json:
               schema:
@@ -3074,48 +2543,50 @@ paths:
               example:
                 error:
                   code: "CHARGE_HAS_PAYMENTS"
-                  message: "Cannot delete a charge with existing payments"
-                  details:
-                    totalPaid: 200.00
+                  message: "Cannot delete a charge with payments"
+                  details: {}
                 requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                timestamp: "2026-03-19T08:00:00.000Z"
 
-  /fees/charges/{id}/payments:
+  /fees/charges/{chargeId}/payments:
     post:
       tags: [Fees]
-      summary: Record payment against a charge
+      summary: Record payment (Admin)
+      description: |
+        Uses withTransaction + SELECT FOR UPDATE on fee_charges row.
+        Body uses `amountPaid` and `paidAt` — NOT `amount` (CORRECTED from v5.0).
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: chargeId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [amountPaid, paymentMode, paidAt]
+              required: [amountPaid, paidAt]
               properties:
                 amountPaid:
                   type: number
-                  minimum: 0.01
-                paymentMode:
-                  $ref: '#/components/schemas/PaymentMode'
+                  description: Was 'amount' in v5.0 — CORRECTED to amountPaid
                 paidAt:
                   $ref: '#/components/schemas/DateString'
+                  description: Required — was missing in v5.0
+                paymentMode:
+                  $ref: '#/components/schemas/PaymentMode'
+                  default: Cash
                 receiptNumber:
                   type: string
                 notes:
                   type: string
             example:
-              amountPaid: 350.00
+              amountPaid: 500.00
+              paidAt: "2026-03-19"
               paymentMode: "Cash"
-              paidAt: "2026-01-20"
-              receiptNumber: "RCT-2026-001"
+              receiptNumber: "RCT-001"
       responses:
         '201':
           description: Payment recorded
@@ -3127,138 +2598,12 @@ paths:
                   data:
                     $ref: '#/components/schemas/FeePayment'
         '400':
-          description: Overpayment — amount exceeds balance
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "OVERPAYMENT"
-                  message: "Payment exceeds outstanding balance"
-                  details:
-                    balance: 150.00
-                    attempted: 350.00
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ValidationError'
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /fees/summary:
-    get:
-      tags: [Fees]
-      summary: Outstanding dues summary
-      parameters:
-        - name: classId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: sessionId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-      responses:
-        '200':
-          description: Summary
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      totalCharged:
-                        type: number
-                      totalPaid:
-                        type: number
-                      totalOutstanding:
-                        type: number
-                      studentsWithBalance:
-                        type: integer
-                      breakdown:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            studentId:
-                              $ref: '#/components/schemas/UUID'
-                            studentName:
-                              type: string
-                            totalCharged:
-                              type: number
-                            totalPaid:
-                              type: number
-                            balance:
-                              type: number
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
   # ─── ANNOUNCEMENTS ────────────────────────────────────────────────
   /announcements:
-    post:
-      tags: [Announcements]
-      summary: Create announcement
-      description: |
-        Teacher can only target own class (audienceType=Class, audienceClassId=own class).
-        Admin can target any audience.
-        Scheduled publish via publish_at. Push sent by cron every 1 minute.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [sessionId, title, body, audienceType]
-              properties:
-                sessionId:
-                  $ref: '#/components/schemas/UUID'
-                title:
-                  type: string
-                  maxLength: 255
-                body:
-                  type: string
-                linkUrl:
-                  type: string
-                linkLabel:
-                  type: string
-                  maxLength: 100
-                audienceType:
-                  $ref: '#/components/schemas/AudienceType'
-                audienceClassId:
-                  $ref: '#/components/schemas/UUID'
-                  description: Required when audienceType=Class
-                audienceBatchId:
-                  $ref: '#/components/schemas/UUID'
-                  description: Required when audienceType=Batch
-                publishAt:
-                  $ref: '#/components/schemas/ISO8601'
-                  description: Defaults to NOW() if omitted
-                expiresAt:
-                  $ref: '#/components/schemas/ISO8601'
-      responses:
-        '201':
-          description: Announcement created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Announcement'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-
     get:
       tags: [Announcements]
       summary: List announcements visible to caller
@@ -3267,8 +2612,16 @@ paths:
           in: query
           schema:
             $ref: '#/components/schemas/UUID'
-        - $ref: '#/components/parameters/queryLimit'
-        - $ref: '#/components/parameters/queryOffset'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
       responses:
         '200':
           description: Announcements
@@ -3281,20 +2634,63 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Announcement'
-                  meta:
-                    type: object
-                    properties:
-                      total:
-                        type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+                  total:
+                    type: integer
+    post:
+      tags: [Announcements]
+      summary: Create announcement (Admin/Teacher)
+      description: |
+        Teacher restriction: audienceType must be 'Class' targeting teacher's own class.
+        When publish_at is rescheduled to future, push_sent is reset to false.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, title, body, audienceType]
+              properties:
+                sessionId:
+                  $ref: '#/components/schemas/UUID'
+                title:
+                  type: string
+                body:
+                  type: string
+                audienceType:
+                  $ref: '#/components/schemas/AudienceType'
+                audienceClassId:
+                  $ref: '#/components/schemas/UUID'
+                audienceBatchId:
+                  $ref: '#/components/schemas/UUID'
+                publishAt:
+                  $ref: '#/components/schemas/ISO8601'
+                expiresAt:
+                  $ref: '#/components/schemas/ISO8601'
+                linkUrl:
+                  type: string
+                linkLabel:
+                  type: string
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Announcement'
 
-  /announcements/{id}:
+  /announcements/{announcementId}:
     get:
       tags: [Announcements]
-      summary: Get single announcement
+      summary: Get announcement by ID
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: announcementId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
           description: Announcement
@@ -3305,16 +2701,18 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Announcement'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
     put:
       tags: [Announcements]
-      summary: Edit announcement (creator only, before publish_at)
+      summary: Edit announcement (creator before publish_at / Admin)
+      description: |
+        If publish_at is changed to a future time, push_sent is automatically reset to false
+        so the cron will re-dispatch push notifications at the new time.
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: announcementId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
@@ -3326,14 +2724,15 @@ paths:
                   type: string
                 body:
                   type: string
+                publishAt:
+                  $ref: '#/components/schemas/ISO8601'
+                  description: If rescheduled to future, push_sent resets to false
+                expiresAt:
+                  $ref: '#/components/schemas/ISO8601'
                 linkUrl:
                   type: string
                 linkLabel:
                   type: string
-                publishAt:
-                  $ref: '#/components/schemas/ISO8601'
-                expiresAt:
-                  $ref: '#/components/schemas/ISO8601'
       responses:
         '200':
           description: Updated
@@ -3344,34 +2743,55 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Announcement'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
     delete:
       tags: [Announcements]
-      summary: Delete announcement (creator or Admin)
+      summary: Delete announcement (creator/Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: announcementId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '204':
           description: Deleted
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
   # ─── ASSIGNMENTS ──────────────────────────────────────────────────
   /assignments:
+    get:
+      tags: [Assignments]
+      summary: List assignments
+      parameters:
+        - name: classId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: sessionId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/AssignmentStatus'
+      responses:
+        '200':
+          description: Assignments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Assignment'
+                  total:
+                    type: integer
     post:
       tags: [Assignments]
-      summary: Create assignment
-      description: Auto-creates submission records for all Active students in the class.
+      summary: Create assignment (Teacher/Admin)
+      description: Auto-creates assignment_submissions for all class students.
       requestBody:
         required: true
         content:
@@ -3388,7 +2808,6 @@ paths:
                   $ref: '#/components/schemas/UUID'
                 title:
                   type: string
-                  maxLength: 255
                 description:
                   type: string
                 type:
@@ -3400,77 +2819,27 @@ paths:
                   default: false
                 maxMarks:
                   type: number
-                  description: Required if isGraded=true
       responses:
         '201':
-          description: Assignment created with auto-generated submissions
+          description: Created
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
-                    allOf:
-                      - $ref: '#/components/schemas/Assignment'
-                      - type: object
-                        properties:
-                          submissionsCreated:
-                            type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
+                    $ref: '#/components/schemas/Assignment'
 
-    get:
-      tags: [Assignments]
-      summary: List assignments
-      parameters:
-        - name: classId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: sessionId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: subjectId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: status
-          in: query
-          schema:
-            $ref: '#/components/schemas/AssignmentStatus'
-        - $ref: '#/components/parameters/queryLimit'
-        - $ref: '#/components/parameters/queryOffset'
-      responses:
-        '200':
-          description: Assignments list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Assignment'
-                  meta:
-                    type: object
-                    properties:
-                      total:
-                        type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /assignments/{id}:
+  /assignments/{assignmentId}:
     get:
       tags: [Assignments]
       summary: Get assignment detail
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
           description: Assignment
@@ -3481,18 +2850,18 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Assignment'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
     put:
       tags: [Assignments]
-      summary: Edit assignment (creator only, before due_date)
+      summary: Edit assignment (creator before due_date in tenant TZ)
+      description: |
+        Due-date guard uses tenant timezone — NOT UTC.
+        Returns 400 PAST_DUE_DATE if assignment.due_date < today in tenant timezone.
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
@@ -3506,10 +2875,6 @@ paths:
                   type: string
                 dueDate:
                   $ref: '#/components/schemas/DateString'
-                isGraded:
-                  type: boolean
-                maxMarks:
-                  type: number
       responses:
         '200':
           description: Updated
@@ -3520,86 +2885,64 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/Assignment'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
+        '400':
+          description: Past due date
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "PAST_DUE_DATE"
+                  message: "Cannot edit an assignment past its due date"
+                  details: {}
+                requestId: "550e8400-e29b-41d4-a716-446655440000"
+                timestamp: "2026-03-19T08:00:00.000Z"
     delete:
       tags: [Assignments]
-      summary: Delete assignment (creator or Admin)
+      summary: Delete assignment (creator/Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '204':
           description: Deleted
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
-  /assignments/{id}/close:
-    put:
-      tags: [Assignments]
-      summary: Close assignment
-      parameters:
-        - $ref: '#/components/parameters/pathId'
-      responses:
-        '200':
-          description: Closed
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Assignment'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /assignments/{id}/submissions:
+  /assignments/{assignmentId}/submissions:
     get:
       tags: [Assignments]
-      summary: Get marking sheet
+      summary: Get marking sheet (Teacher/Admin)
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Marking sheet
+          description: Submissions
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  data:
-                    type: object
-                    properties:
-                      assignment:
-                        $ref: '#/components/schemas/Assignment'
-                      submissions:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/AssignmentSubmission'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
+                  submissions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssignmentSubmission'
     put:
       tags: [Assignments]
-      summary: Bulk mark all submissions
+      summary: Bulk mark submissions (Teacher/Admin)
+      description: Uses withTransaction — all submissions or none.
       parameters:
-        - $ref: '#/components/parameters/pathId'
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
       requestBody:
         required: true
         content:
@@ -3623,35 +2966,27 @@ paths:
                         nullable: true
                       remark:
                         type: string
-                        nullable: true
       responses:
         '200':
-          description: Submissions updated
+          description: Marked
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  data:
-                    type: object
-                    properties:
-                      updated:
-                        type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                  submissions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssignmentSubmission'
 
   # ─── SCHOOL PROFILE ───────────────────────────────────────────────
   /school-profile:
     get:
       tags: [School Profile]
-      summary: Get school profile and branding
+      summary: Get school profile (any role)
       responses:
         '200':
-          description: School profile
+          description: Profile
           content:
             application/json:
               schema:
@@ -3659,9 +2994,6 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/SchoolProfile'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
     put:
       tags: [School Profile]
       summary: Update school profile (Admin)
@@ -3674,29 +3006,29 @@ paths:
               properties:
                 name:
                   type: string
+                logoUrl:
+                  type: string
                 address:
                   type: string
                 phone:
                   type: string
                 email:
                   type: string
-                  format: email
                 website:
                   type: string
                 brandingColor:
                   type: string
-                  pattern: '^#[0-9A-Fa-f]{6}$'
-                  example: "#1A5276"
                 principalName:
+                  type: string
+                principalSignatureUrl:
                   type: string
                 activeLevels:
                   type: array
                   items:
                     $ref: '#/components/schemas/StudentLevel'
-                  minItems: 1
       responses:
         '200':
-          description: Profile updated
+          description: Updated
           content:
             application/json:
               schema:
@@ -3704,34 +3036,33 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/SchoolProfile'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
 
   /school-profile/upload:
     post:
       tags: [School Profile]
-      summary: Upload logo or principal signature to R2
+      summary: Upload logo or signature to R2 (Admin)
+      description: |
+        Multipart form-data. Both `file` and `type` fields are required.
+        The `type` field was missing in v5.0 — all uploads returned 400 (CORRECTED).
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [type, file]
+              required: [file, type]
               properties:
-                type:
-                  type: string
-                  enum: [logo, signature]
                 file:
                   type: string
                   format: binary
+                  description: Image file — PNG, JPG, SVG. Max 2MB.
+                type:
+                  type: string
+                  enum: [logo, signature]
+                  description: Required. Was missing in v5.0 implementation — CORRECTED.
       responses:
         '200':
-          description: File uploaded — URL saved to tenant
+          description: Uploaded
           content:
             application/json:
               schema:
@@ -3742,102 +3073,226 @@ paths:
                     properties:
                       url:
                         type: string
-                        description: Public CDN URL
+                        description: Public CDN URL of uploaded file
+              example:
+                data:
+                  url: "https://cdn.r2.example.com/tenant-id/logo.png"
         '400':
-          description: File too large or wrong type
+          description: Missing type field or invalid MIME type
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "FILE_TOO_LARGE"
-                  message: "Logo must be under 2MB"
-                  details:
-                    maxSizeBytes: 2097152
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
 
+  # ─── SETTINGS ─────────────────────────────────────────────────────
   /settings/grade-config:
     get:
-      tags: [School Profile]
-      summary: Get default grade boundaries
+      tags: [Settings]
+      summary: Get default grade boundaries (Admin)
+      description: |
+        Returns the 8-grade A+ scale used by exams.
+        Was returning 6-grade S/A/B/C/D/F scale in v5.0 — CORRECTED to match exam defaults.
       responses:
         '200':
-          description: Grade config
+          description: Grade boundaries
           content:
             application/json:
               schema:
                 type: object
+                required: [data]
                 properties:
                   data:
                     type: array
                     items:
                       $ref: '#/components/schemas/GradeBoundary'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+              example:
+                data:
+                  - grade: "A+"
+                    label: "Outstanding"
+                    minPercentage: 90
+                    maxPercentage: 100
+                  - grade: "A"
+                    label: "Excellent"
+                    minPercentage: 80
+                    maxPercentage: 89
+                  - grade: "B+"
+                    label: "Very Good"
+                    minPercentage: 70
+                    maxPercentage: 79
+                  - grade: "B"
+                    label: "Good"
+                    minPercentage: 60
+                    maxPercentage: 69
+                  - grade: "C+"
+                    label: "Above Average"
+                    minPercentage: 50
+                    maxPercentage: 59
+                  - grade: "C"
+                    label: "Average"
+                    minPercentage: 40
+                    maxPercentage: 49
+                  - grade: "D"
+                    label: "Below Average"
+                    minPercentage: 30
+                    maxPercentage: 39
+                  - grade: "F"
+                    label: "Fail"
+                    minPercentage: 0
+                    maxPercentage: 29
 
-  /admin/features:
+  # ─── NOTIFICATIONS ────────────────────────────────────────────────
+  /notifications:
     get:
-      tags: [School Profile]
-      summary: Read-only feature flags (Admin)
+      tags: [Notifications]
+      summary: List own notifications
+      description: |
+        Returns `{ data, total }` — was `{ notifications, unreadCount, total }` in v5.0 (CORRECTED).
+      parameters:
+        - name: unreadOnly
+          in: query
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
       responses:
         '200':
-          description: Feature flags
+          description: Notifications
           content:
             application/json:
               schema:
                 type: object
+                required: [data, total]
                 properties:
                   data:
-                    type: object
-                    additionalProperties:
-                      type: boolean
-                    example:
-                      leaveManagement: true
-                      examManagement: true
-                      feeManagement: true
-                      assignments: true
-                      announcements: true
-                      csvImport: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+                  total:
+                    type: integer
+              example:
+                data:
+                  - id: "550e8400-e29b-41d4-a716-446655440000"
+                    type: "LEAVE_APPROVED"
+                    title: "Leave Approved"
+                    body: "Ali's leave has been approved"
+                    readAt: null
+                    createdAt: "2026-03-19T08:00:00.000Z"
+                total: 1
+
+  /notifications/{notificationId}/read:
+    put:
+      tags: [Notifications]
+      summary: Mark notification as read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Notification updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notifications/read-all:
+    put:
+      tags: [Notifications]
+      summary: Mark all as read
+      description: |
+        Returns `{ updated: N }` — was `{ updatedCount }` in v5.0 (CORRECTED).
+      responses:
+        '200':
+          description: All marked read
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updated]
+                properties:
+                  updated:
+                    type: integer
+                    description: Number of notifications marked as read
+              example:
+                updated: 7
+
+  # ─── PUSH ─────────────────────────────────────────────────────────
+  /push/subscribe:
+    post:
+      tags: [Push]
+      summary: Save push subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, p256dh, auth]
+              properties:
+                endpoint:
+                  type: string
+                p256dh:
+                  type: string
+                auth:
+                  type: string
+                deviceLabel:
+                  type: string
+      responses:
+        '201':
+          description: Subscription saved
+    delete:
+      tags: [Push]
+      summary: Remove push subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint:
+                  type: string
+      responses:
+        '204':
+          description: Removed
 
   # ─── IMPORT ───────────────────────────────────────────────────────
   /import/preview:
     post:
       tags: [Import]
-      summary: Validate CSV — blocks if any row has errors
+      summary: Validate CSV and create preview job (Admin)
       description: |
-        Validates ALL rows first. If ANY error: returns all errors, nothing is imported.
-        On success (error_rows=0): stores preview_data for 30 minutes.
+        Supports entity types: Student and User only.
+        Classes and Subjects import is NOT supported (CORRECTED from v5.0 UI).
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [entityType, file]
+              required: [file, entity]
               properties:
-                entityType:
-                  $ref: '#/components/schemas/ImportEntityType'
-                sessionId:
-                  $ref: '#/components/schemas/UUID'
-                  description: Required for Student import
                 file:
                   type: string
                   format: binary
+                entity:
+                  $ref: '#/components/schemas/ImportEntityType'
       responses:
-        '200':
-          description: Preview result (check errorRows — must be 0 before confirm)
+        '201':
+          description: Preview job created
           content:
             application/json:
               schema:
@@ -3845,58 +3300,22 @@ paths:
                 properties:
                   data:
                     $ref: '#/components/schemas/ImportJob'
-              examples:
-                success:
-                  summary: All rows valid
-                  value:
-                    data:
-                      id: "550e8400-e29b-41d4-a716-446655440000"
-                      entityType: "Student"
-                      status: "PREVIEW"
-                      totalRows: 25
-                      validRows: 25
-                      errorRows: 0
-                      previewData:
-                        rows:
-                          - admissionNumber: "ADM001"
-                            name: "Ahmed Ali"
-                            gender: "Male"
-                      errorData: null
-                      expiresAt: "2026-03-12T08:30:00.000Z"
-                      createdAt: "2026-03-12T08:00:00.000Z"
-                withErrors:
-                  summary: Some rows have errors
-                  value:
-                    data:
-                      id: "550e8400-e29b-41d4-a716-446655440001"
-                      entityType: "Student"
-                      status: "PREVIEW"
-                      totalRows: 25
-                      validRows: 23
-                      errorRows: 2
-                      previewData: null
-                      errorData:
-                        errors:
-                          - row: 5
-                            field: "email"
-                            message: "ALREADY_EXISTS"
-                          - row: 12
-                            field: "admissionNumber"
-                            message: "ALREADY_EXISTS"
-                      expiresAt: "2026-03-12T08:30:00.000Z"
-                      createdAt: "2026-03-12T08:00:00.000Z"
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
-          $ref: '#/components/responses/ValidationError'
+        '400':
+          description: CSV validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /import/{jobId}/confirm:
     post:
       tags: [Import]
-      summary: Execute import
-      description: Blocked if error_rows > 0 or job expired.
+      summary: Execute import (Admin)
+      description: |
+        SELECT FOR UPDATE on import_jobs — prevents double-confirm race condition.
+        On transaction failure, sets status = FAILED.
+        For User imports, returns temporaryPassword (one-time, not stored).
+        All imported users have must_change_password = true.
       parameters:
         - name: jobId
           in: path
@@ -3905,37 +3324,36 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Import complete
+          description: Import completed
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
-                    type: object
-                    properties:
-                      imported:
-                        type: integer
+                    $ref: '#/components/schemas/ImportJob'
+                  temporaryPassword:
+                    type: string
+                    nullable: true
+                    description: Only present for User entity imports. Share via secure channel.
+              example:
+                data:
+                  id: "550e8400-e29b-41d4-a716-446655440000"
+                  status: "COMPLETED"
+                  importedRows: 23
+                temporaryPassword: "a3f9d1b2c8e4"
         '400':
-          description: Error rows exist or job not in PREVIEW status
+          description: Import has validation errors
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "IMPORT_HAS_ERRORS"
-                  message: "Cannot confirm import with error rows"
-                  details:
-                    errorRows: 2
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Job not in PREVIEW state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '410':
           description: Preview expired
           content:
@@ -3945,15 +3363,15 @@ paths:
               example:
                 error:
                   code: "IMPORT_EXPIRED"
-                  message: "Import preview has expired. Upload CSV again."
+                  message: "Import preview has expired"
                   details: {}
                 requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
+                timestamp: "2026-03-19T08:00:00.000Z"
 
   /import/{jobId}:
     delete:
       tags: [Import]
-      summary: Cancel import preview
+      summary: Cancel import preview (Admin)
       parameters:
         - name: jobId
           in: path
@@ -3963,44 +3381,11 @@ paths:
       responses:
         '204':
           description: Cancelled
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /import/template/{entity}:
-    get:
-      tags: [Import]
-      summary: Download CSV template
-      security: []
-      parameters:
-        - name: entity
-          in: path
-          required: true
-          schema:
-            $ref: '#/components/schemas/ImportEntityType'
-      responses:
-        '200':
-          description: CSV template file
-          content:
-            text/csv:
-              schema:
-                type: string
-                format: binary
 
   /import/history:
     get:
       tags: [Import]
-      summary: List past import jobs
-      parameters:
-        - name: entityType
-          in: query
-          schema:
-            $ref: '#/components/schemas/ImportEntityType'
-        - $ref: '#/components/parameters/queryLimit'
-        - $ref: '#/components/parameters/queryOffset'
+      summary: List past import jobs (Admin)
       responses:
         '200':
           description: Import history
@@ -4013,26 +3398,17 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ImportJob'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                  total:
+                    type: integer
 
-  # ─── NOTIFICATIONS ────────────────────────────────────────────────
-  /notifications:
+  # ─── GUARDIAN PORTAL ─────────────────────────────────────────────
+  /guardian/children:
     get:
-      tags: [Notifications]
-      summary: List own notifications
-      parameters:
-        - name: unreadOnly
-          in: query
-          schema:
-            type: boolean
-        - $ref: '#/components/parameters/queryLimit'
-        - $ref: '#/components/parameters/queryOffset'
+      tags: [Guardian Portal]
+      summary: List guardian's linked children (Guardian)
       responses:
         '200':
-          description: Notifications list
+          description: Children
           content:
             application/json:
               schema:
@@ -4041,66 +3417,313 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Notification'
-                  meta:
-                    type: object
-                    properties:
-                      total:
-                        type: integer
-                      unreadCount:
-                        type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+                      $ref: '#/components/schemas/Student'
 
-  /notifications/{id}/read:
-    put:
-      tags: [Notifications]
-      summary: Mark notification as read
-      parameters:
-        - $ref: '#/components/parameters/pathId'
-      responses:
-        '200':
-          description: Marked as read
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Notification'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /notifications/read-all:
-    put:
-      tags: [Notifications]
-      summary: Mark all notifications as read
-      responses:
-        '200':
-          description: All marked as read
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      updated:
-                        type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  # ─── GUARDIAN PORTAL ─────────────────────────────────────────────
-  /guardian/children:
+  /guardian/children/{studentId}/attendance:
     get:
       tags: [Guardian Portal]
-      summary: List linked children
+      summary: Child attendance (Guardian)
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+            example: "2026-03"
       responses:
         '200':
-          description: Children list
+          description: Attendance records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AttendanceRecord'
+                  lateDays:
+                    type: integer
+                  absentDays:
+                    type: integer
+
+  /guardian/children/{studentId}/results:
+    get:
+      tags: [Guardian Portal]
+      summary: Child exam results (Guardian)
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExamStudentSummary'
+
+  /guardian/children/{studentId}/fees:
+    get:
+      tags: [Guardian Portal]
+      summary: Child fee charges (Guardian)
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Fee charges
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FeeCharge'
+
+  /guardian/children/{studentId}/assignments:
+    get:
+      tags: [Guardian Portal]
+      summary: Child assignments (Guardian)
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Assignments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Assignment'
+
+  /guardian/children/{studentId}/leave:
+    get:
+      tags: [Guardian Portal]
+      summary: Child leave history (Guardian)
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Leave requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LeaveRequest'
+
+  # ─── SUPER ADMIN ─────────────────────────────────────────────────
+  /super-admin/auth/login:
+    post:
+      tags: [SuperAdmin]
+      summary: SuperAdmin login
+      description: |
+        Rate limited to 10 req/min per IP — was unprotected in v5.0 (CORRECTED).
+        Returns flat `{ token }` — no user object in SuperAdmin JWT.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /super-admin/auth/logout:
+    post:
+      tags: [SuperAdmin]
+      summary: SuperAdmin logout
+      responses:
+        '204':
+          description: Logged out
+
+  /super-admin/tenants:
+    get:
+      tags: [SuperAdmin]
+      summary: List all tenants
+      responses:
+        '200':
+          description: Tenants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SchoolProfile'
+                  total:
+                    type: integer
+    post:
+      tags: [SuperAdmin]
+      summary: Create tenant
+      description: |
+        Seeds all 10 v5.0 feature flags in tenant_features on creation.
+        Was only seeding timetable+attendance in v5.0 (CORRECTED).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug, timezone]
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                timezone:
+                  type: string
+                  example: "Asia/Kolkata"
+                adminEmail:
+                  type: string
+                  format: email
+                adminName:
+                  type: string
+      responses:
+        '201':
+          description: Tenant created with all 10 feature flags seeded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SchoolProfile'
+                  adminTemporaryPassword:
+                    type: string
+                    nullable: true
+
+  /super-admin/tenants/{tenantId}:
+    get:
+      tags: [SuperAdmin]
+      summary: Get tenant by ID
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Tenant
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SchoolProfile'
+
+  /super-admin/tenants/{tenantId}/deactivate:
+    put:
+      tags: [SuperAdmin]
+      summary: Deactivate tenant
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Deactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SchoolProfile'
+
+  /super-admin/tenants/{tenantId}/activate:
+    put:
+      tags: [SuperAdmin]
+      summary: Activate tenant
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Activated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SchoolProfile'
+
+  /super-admin/tenants/{tenantId}/features:
+    get:
+      tags: [SuperAdmin]
+      summary: Get tenant feature flags
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Feature flags
           content:
             application/json:
               schema:
@@ -4111,340 +3734,45 @@ paths:
                     items:
                       type: object
                       properties:
-                        studentId:
-                          $ref: '#/components/schemas/UUID'
-                        name:
+                        featureKey:
                           type: string
-                        admissionNumber:
-                          type: string
-                        className:
-                          type: string
-                        level:
-                          $ref: '#/components/schemas/StudentLevel'
-                        status:
-                          type: string
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /guardian/children/{studentId}/attendance:
-    get:
-      tags: [Guardian Portal]
-      summary: View child's attendance with per-day records
-      description: |
-        Returns monthly attendance summary and a per-day records array for calendar rendering.
-        `month` is required. Days with no attendance records are omitted from `records` —
-        frontend renders those as grey (not-yet-marked / holiday).
-        **Changed in v5.0.1 (CR-43):** added `records[]`, `lateDays`, `month` echo;
-        `month` param is now required.
+                        enabled:
+                          type: boolean
+                        enabledAt:
+                          $ref: '#/components/schemas/ISO8601'
+                          nullable: true
+    put:
+      tags: [SuperAdmin]
+      summary: Update feature flag (enable/disable)
       parameters:
-        - $ref: '#/components/parameters/pathStudentId'
-        - name: month
-          in: query
+        - name: tenantId
+          in: path
           required: true
           schema:
-            type: string
-            pattern: '^\d{4}-\d{2}$'
-            example: "2026-03"
-      responses:
-        '200':
-          description: Attendance summary with per-day records
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    required:
-                      - attendancePercentage
-                      - consecutiveAbsentStreak
-                      - presentDays
-                      - lateDays
-                      - absentDays
-                      - excusedDays
-                      - month
-                      - records
-                    properties:
-                      attendancePercentage:
-                        type: number
-                        example: 87.5
-                        description: Excused days excluded from denominator
-                      consecutiveAbsentStreak:
-                        type: integer
-                        example: 2
-                        description: Computed from raw records — Excused days skipped in streak
-                      presentDays:
-                        type: integer
-                        example: 21
-                      lateDays:
-                        type: integer
-                        example: 2
-                      absentDays:
-                        type: integer
-                        example: 3
-                      excusedDays:
-                        type: integer
-                        example: 1
-                      month:
-                        type: string
-                        pattern: '^\d{4}-\d{2}$'
-                        example: "2026-03"
-                        description: Echoes the requested month
-                      records:
-                        type: array
-                        description: |
-                          One entry per calendar day that has at least one attendance record.
-                          Days with no records are absent from this array (not-yet-marked or holiday).
-                          Statuses ordered by timeslot.start_time ASC within each day.
-                        items:
-                          type: object
-                          required: [date, statuses]
-                          properties:
-                            date:
-                              type: string
-                              format: date
-                              example: "2026-03-12"
-                            statuses:
-                              type: array
-                              description: One status per timeslot, ordered by start_time ASC
-                              items:
-                                $ref: '#/components/schemas/AttendanceStatus'
-                              example: ["Present", "Absent", "Present"]
-              examples:
-                typicalMonth:
-                  summary: Month with mixed attendance
-                  value:
-                    data:
-                      attendancePercentage: 87.5
-                      consecutiveAbsentStreak: 0
-                      presentDays: 21
-                      lateDays: 2
-                      absentDays: 3
-                      excusedDays: 1
-                      month: "2026-03"
-                      records:
-                        - date: "2026-03-02"
-                          statuses: ["Present", "Present", "Present", "Present"]
-                        - date: "2026-03-03"
-                          statuses: ["Present", "Present", "Absent", "Absent"]
-                        - date: "2026-03-04"
-                          statuses: ["Absent", "Absent", "Absent", "Absent"]
-                        - date: "2026-03-09"
-                          statuses: ["Late", "Present", "Present", "Present"]
-                        - date: "2026-03-10"
-                          statuses: ["Excused", "Excused", "Excused", "Excused"]
-                emptyMonth:
-                  summary: Month with no records yet
-                  value:
-                    data:
-                      attendancePercentage: 0
-                      consecutiveAbsentStreak: 0
-                      presentDays: 0
-                      lateDays: 0
-                      absentDays: 0
-                      excusedDays: 0
-                      month: "2026-04"
-                      records: []
-        '400':
-          description: month param missing or invalid format
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: "VALIDATION_ERROR"
-                  message: "month query parameter is required (format: YYYY-MM)"
-                  details:
-                    fields:
-                      - field: "month"
-                        message: "Required"
-                requestId: "550e8400-e29b-41d4-a716-446655440000"
-                timestamp: "2026-03-12T08:00:00.000Z"
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /guardian/children/{studentId}/timetable:
-    get:
-      tags: [Guardian Portal]
-      summary: View child's timetable
-      parameters:
-        - $ref: '#/components/parameters/pathStudentId'
-      responses:
-        '200':
-          description: Timetable
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      type: object
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /guardian/children/{studentId}/results:
-    get:
-      tags: [Guardian Portal]
-      summary: View child's exam results (published only)
-      parameters:
-        - $ref: '#/components/parameters/pathStudentId'
-        - name: sessionId
-          in: query
-          schema:
             $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [featureKey, enabled]
+              properties:
+                featureKey:
+                  type: string
+                  enum:
+                    - timetable
+                    - attendance
+                    - leave
+                    - exams
+                    - fees
+                    - announcements
+                    - assignments
+                    - import
+                    - guardian
+                    - notifications
+                enabled:
+                  type: boolean
       responses:
         '200':
-          description: Results list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ExamStudentSummary'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /guardian/children/{studentId}/fees:
-    get:
-      tags: [Guardian Portal]
-      summary: View child's fee charges and balance
-      parameters:
-        - $ref: '#/components/parameters/pathStudentId'
-        - name: sessionId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-      responses:
-        '200':
-          description: Fee summary
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      totalCharged:
-                        type: number
-                      totalPaid:
-                        type: number
-                      balance:
-                        type: number
-                      charges:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/FeeCharge'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /guardian/children/{studentId}/assignments:
-    get:
-      tags: [Guardian Portal]
-      summary: View child's assignments and submission status
-      parameters:
-        - $ref: '#/components/parameters/pathStudentId'
-        - name: sessionId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-      responses:
-        '200':
-          description: Assignments list with submission status
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      allOf:
-                        - $ref: '#/components/schemas/Assignment'
-                        - type: object
-                          properties:
-                            submissionStatus:
-                              $ref: '#/components/schemas/SubmissionStatus'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /guardian/children/{studentId}/leave:
-    get:
-      tags: [Guardian Portal]
-      summary: View child's leave history
-      parameters:
-        - $ref: '#/components/parameters/pathStudentId'
-        - name: sessionId
-          in: query
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: status
-          in: query
-          schema:
-            $ref: '#/components/schemas/LeaveStatus'
-      responses:
-        '200':
-          description: Leave history
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/LeaveRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-tags:
-  - name: Auth
-    description: Authentication and password management
-  - name: Users
-    description: User management
-  - name: Academic Sessions
-    description: Academic year configuration and batch promotion
-  - name: Timetable
-    description: Class timetable
-  - name: Attendance
-    description: Attendance recording and reporting
-  - name: Leave
-    description: Leave request lifecycle management
-  - name: Guardians
-    description: Guardian records and student linkage
-  - name: Exams
-    description: Exam management, marks entry, results and report cards
-  - name: Fees
-    description: Fee charge and payment management
-  - name: Announcements
-    description: Targeted institutional announcements
-  - name: Assignments
-    description: Homework and assignment tracking
-  - name: School Profile
-    description: Tenant branding and configuration
-  - name: Import
-    description: Bulk CSV import with validation preview
-  - name: Notifications
-    description: In-app notification management
-  - name: Guardian Portal
-    description: Guardian self-service endpoints for child data
+          description: Updated

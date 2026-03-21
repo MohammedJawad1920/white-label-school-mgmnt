@@ -11,7 +11,7 @@
 
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
-import { pool } from "../../db/pool";
+import { pool, withTransaction } from "../../db/pool";
 import { send400, send404 } from "../../utils/errors";
 import { logger } from "../../utils/logger";
 import {
@@ -458,32 +458,46 @@ export async function deleteCharge(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;
   const { id } = req.params as { id: string };
 
-  const chargeResult = await pool.query<FeeChargeRow>(
-    "SELECT * FROM fee_charges WHERE id = $1 AND tenant_id = $2",
-    [id, tenantId],
-  );
-  if ((chargeResult.rowCount ?? 0) === 0) {
+  const result = await withTransaction(async (client) => {
+    // Lock the charge row to prevent concurrent modifications
+    const chargeResult = await client.query<FeeChargeRow>(
+      "SELECT * FROM fee_charges WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+      [id, tenantId],
+    );
+    if ((chargeResult.rowCount ?? 0) === 0) {
+      return { notFound: true };
+    }
+
+    // Check if any payments have been made
+    const paidResult = await client.query<{ total_paid: string }>(
+      "SELECT COALESCE(SUM(amount_paid), 0) AS total_paid FROM fee_payments WHERE charge_id = $1 AND tenant_id = $2",
+      [id, tenantId],
+    );
+    const totalPaid = parseFloat(paidResult.rows[0]?.total_paid ?? "0");
+
+    if (totalPaid > 0) {
+      return { hasPayments: true };
+    }
+
+    // Hard delete — no audit trail needed for unrecorded charge
+    await client.query("DELETE FROM fee_charges WHERE id = $1 AND tenant_id = $2", [
+      id,
+      tenantId,
+    ]);
+
+    return { success: true };
+  });
+
+  if ("notFound" in result) {
     send404(res, "Fee charge not found");
     return;
   }
 
-  // Check if any payments have been made
-  const paidResult = await pool.query<{ total_paid: string }>(
-    "SELECT COALESCE(SUM(amount_paid), 0) AS total_paid FROM fee_payments WHERE charge_id = $1 AND tenant_id = $2",
-    [id, tenantId],
-  );
-  const totalPaid = parseFloat(paidResult.rows[0]?.total_paid ?? "0");
-
-  if (totalPaid > 0) {
+  if ("hasPayments" in result) {
     send400(res, "Cannot delete a charge with payments", "CHARGE_HAS_PAYMENTS");
     return;
   }
 
-  // Hard delete — no audit trail needed for unrecorded charge
-  await pool.query("DELETE FROM fee_charges WHERE id = $1 AND tenant_id = $2", [
-    id,
-    tenantId,
-  ]);
   res.status(204).send();
 }
 

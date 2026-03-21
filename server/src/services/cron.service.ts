@@ -64,9 +64,9 @@ async function detectOverdueLeaves(): Promise<void> {
       const { rows: admins } = await pool.query<{ id: string }>(
         `SELECT id FROM users
          WHERE tenant_id = $1
-           AND $2 = ANY(roles)
+           AND roles @> '["Admin"]'::jsonb
            AND deleted_at IS NULL`,
-        [leave.tenant_id, "Admin"],
+        [leave.tenant_id],
       );
 
       const pushPromises = admins.map((admin) =>
@@ -80,23 +80,29 @@ async function detectOverdueLeaves(): Promise<void> {
 
       await Promise.allSettled(pushPromises);
 
-      // Insert in-app notification for admins
+      // Insert in-app notification for admins (parameterized to prevent SQL injection)
       if (admins.length > 0) {
-        const values = admins
-          .map(
-            (_, i) =>
-              `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4}, 'LEAVE_OVERDUE', 'Student Overdue', '${leave.student_name} has not returned from leave.')`,
-          )
-          .join(", ");
-        const params = admins.flatMap((admin) => [
-          crypto.randomUUID(),
-          leave.tenant_id,
-          admin.id,
-          JSON.stringify({ leaveId: leave.id }),
-        ]);
+        const values: string[] = [];
+        const params: unknown[] = [];
+        let paramIdx = 1;
+
+        for (const admin of admins) {
+          values.push(
+            `($${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++})`,
+          );
+          params.push(
+            crypto.randomUUID(),
+            leave.tenant_id,
+            admin.id,
+            JSON.stringify({ leaveId: leave.id }),
+            "LEAVE_OVERDUE",
+            "Student Overdue",
+            `${leave.student_name} has not returned from leave.`,
+          );
+        }
 
         await pool.query(
-          `INSERT INTO notifications (id, tenant_id, user_id, data, type, title, body) VALUES ${values}`,
+          `INSERT INTO notifications (id, tenant_id, user_id, data, type, title, body) VALUES ${values.join(", ")}`,
           params,
         );
       }
@@ -146,13 +152,13 @@ async function dispatchAnnouncementPush(): Promise<void> {
         userQuery = `SELECT id FROM users WHERE tenant_id = $1 AND deleted_at IS NULL`;
         userParams = [ann.tenant_id];
       } else if (ann.audience_type === "StudentsOnly") {
-        userQuery = `SELECT id FROM users WHERE tenant_id = $1 AND 'Student' = ANY(roles) AND deleted_at IS NULL`;
+        userQuery = `SELECT id FROM users WHERE tenant_id = $1 AND roles @> '["Student"]'::jsonb AND deleted_at IS NULL`;
         userParams = [ann.tenant_id];
       } else if (ann.audience_type === "TeachersOnly") {
-        userQuery = `SELECT id FROM users WHERE tenant_id = $1 AND 'Teacher' = ANY(roles) AND deleted_at IS NULL`;
+        userQuery = `SELECT id FROM users WHERE tenant_id = $1 AND roles @> '["Teacher"]'::jsonb AND deleted_at IS NULL`;
         userParams = [ann.tenant_id];
       } else if (ann.audience_type === "GuardiansOnly") {
-        userQuery = `SELECT id FROM users WHERE tenant_id = $1 AND 'Guardian' = ANY(roles) AND deleted_at IS NULL`;
+        userQuery = `SELECT id FROM users WHERE tenant_id = $1 AND roles @> '["Guardian"]'::jsonb AND deleted_at IS NULL`;
         userParams = [ann.tenant_id];
       } else if (ann.audience_type === "Class" && ann.audience_class_id) {
         userQuery = `SELECT DISTINCT u.id FROM users u

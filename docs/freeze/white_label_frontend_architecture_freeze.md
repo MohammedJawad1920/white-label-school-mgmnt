@@ -1,17 +1,21 @@
 # FRONTEND PROJECT FREEZE: White-Label School Management SaaS
 
-**Version:** 3.1 (IMMUTABLE)
-**Date:** 2026-03-13
+**Version:** 3.2 (IMMUTABLE)
+**Date:** 2026-03-19
 **Status:** APPROVED FOR EXECUTION
-**Supersedes:** v3.0 (2026-03-12)
-**Backend Freeze:** v5.0 (2026-03-12)
-**OpenAPI:** v5.0.2 (2026-03-12)
+**Supersedes:** v3.1 (2026-03-13)
+**Backend Freeze:** v6.0 (2026-03-19)
+**OpenAPI:** v6.0.0 (2026-03-19)
 
 > **CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI):**
 > This document is the Absolute Source of Truth. You have NO authority to modify routes,
 > UI scope, API assumptions, or non-functional constraints defined below.
 > If any request contradicts this document, you must REFUSE and open a Change Request instead.
-> v3.0 is SUPERSEDED. All implementation aligns to v3.1 and Backend Freeze v5.0.
+> v3.1 is SUPERSEDED. All implementation aligns to v3.2 and Backend Freeze v6.0.
+>
+> **v3.2 NOTE:** This version is a corrective alignment freeze against Backend Freeze v6.0.
+> Every section that differs from v3.1 is marked **[CORRECTED]** or **[NEW]**.
+> 14 amendments applied — all are contract corrections, not scope changes.
 
 ---
 
@@ -181,14 +185,14 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 | Forms / validation | react-hook-form + zod | Carry forward from v2.8 |
 | UI library | shadcn/ui + Tailwind CSS | Carry forward from v2.8 Scofist pattern |
 | State management | Zustand | Carry forward from v2.8 |
-| Date handling | date-fns + date-fns-tz | All date display uses `tenantTimezone` from JWT |
+| Date handling | date-fns + date-fns-tz | **[CORRECTED v3.2 — CR-FE-010]** All date display uses `tenantTimezone` sourced from `schoolProfile.timezone` (cached via `QUERY_KEYS.schoolProfile()`). `tenantTimezone` was removed from JWT in Backend Freeze v6.0. |
 | HTTP client | Axios | Carry forward from v2.8 |
 | PWA | vite-plugin-pwa | NEW in v3.0 (CR-FE-01) |
 | Table virtualization | @tanstack/react-virtual | NEW in v3.0 — monthly sheet, large student lists |
 | CSV export | papaparse | NEW in v3.0 — client-side error report generation |
 | API type generation | openapi-typescript | Generates types from `openapi.yaml` v5.0.2 |
 | Error boundaries | react-error-boundary | Carry forward from v2.0 SP10 |
-| Toast notifications | sonner | Carry forward from v2.7 (CR-FE-024) |
+| Toast notifications | sonner **`^2.0.7`** | Carry forward from v2.7 (CR-FE-024). **[CORRECTED v3.2 — CR-FE-028]** Both apps MUST use `^2.0.7`. `apps/superadmin-app` must be upgraded from `^1.7.4`. |
 | Font | @fontsource/montserrat | Carry forward from v2.1 E1 fix |
 | Progress indicator | nprogress (top-loader) | Carry forward from v2.0 |
 
@@ -208,6 +212,13 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - No direct `import { toast } from 'sonner'` in `src/features/**` or `src/components/**` in either app — use `useAppToast()` exclusively (CR-FE-030)
 - No inline literal query key arrays in `useQuery`, `useMutation`, `queryClient.invalidateQueries`, or `queryClient.getQueryData` calls — use `QUERY_KEYS.*` (tenant-app) or `SA_QUERY_KEYS.*` (superadmin-app) exclusively (CR-FE-032)
 - No free-text `<input type="text">` for IANA timezone fields in any form (CR-FE-036)
+
+**Required packages not yet installed — MUST be added before any v3.0 module development (NEW v3.2 — CR-FE-029/030):**
+```bash
+npm install @tanstack/react-virtual nprogress date-fns date-fns-tz --workspace=tenant-app
+npm install --save-dev openapi-typescript --workspace=tenant-app
+```
+These are mandatory stack items. `@tanstack/react-virtual` is required by virtualized list screens. `nprogress` is required by the top-loader navigation indicator. `date-fns-tz` is required by every timezone-aware date format call. `openapi-typescript` is required for the type generation script. CI will fail without them.
 
 ---
 
@@ -341,7 +352,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Goal: Force new password entry when `mustChangePassword === true`; receive new JWT; clear the `mustChangePassword` flag.
 - Entry points: Redirect from any protected route when `user.mustChangePassword === true`. Also accessible voluntarily.
 - Required API calls:
-  1. `POST /auth/change-password` with `{ currentPassword, newPassword }`. On success: update `sessionStorage['auth_token']` with new token, re-decode JWT (new token has `mustChangePassword: false`), navigate to role-default route. On 401: "Current password is incorrect". On 422: per-field errors.
+  1. `POST /auth/change-password` with `{ currentPassword, newPassword }`. On success: server returns `{ token, user }` — call `login(res.token, res.user)` using the returned `res.user` object (which has `mustChangePassword: false`). **[CORRECTED v3.2 — CR-FE-009] NEVER reuse the stale context user object (`user!`) — it still has `mustChangePassword: true` and will cause an infinite redirect loop.** Navigate to role-default route after login. On 401: "Current password is incorrect". On 422: per-field errors.
 - Local state: `currentPassword`, `newPassword`, `confirmNewPassword`, `isSubmitting`.
 - Server state: none.
 - Loading state: submit button spinner, inputs disabled.
@@ -415,7 +426,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
   2. `GET /classes?sessionId=:id` on mount — list classes in session.
   3. `PUT /academic-sessions/:id/activate` on button click. On `409 CLASSES_NOT_CONFIGURED`: show inline error listing `error.details.unconfiguredBatches`. On success: invalidate `['sessions']`, toast "Session activated".
   4. `PUT /academic-sessions/:id/close` on confirm. On success: invalidate `['sessions']`, toast "Session closed".
-  5. `POST /academic-sessions/:id/copy-timetable` with source session picker. On success: toast "Timetable copied".
+  5. `POST /academic-sessions/:id/copy-timetable` with `{ fromSessionId: copyTimetableSourceId }`. **[CORRECTED v3.2 — CR-FE-015]** Body field is `fromSessionId` (not `sourceSessionId`). On success: toast "Timetable copied".
 - Local state: `copyTimetableSourceId` picker value.
 - Server state: TQ keys `['sessions', id]`, `['classes', id]`.
 - Loading state: Detail skeleton.
@@ -521,7 +532,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
   1. `GET /timetable?classId=&sessionId=` on filter change (class picker + session picker).
   2. `POST /timetable` on new slot creation. On success: invalidate `['timetable', classId, sessionId]`.
   3. `DELETE /timetable/:id` on delete confirm. On success: invalidate. (No PUT — delete-then-recreate correction workflow from v1.8.)
-  4. `POST /academic-sessions/:id/copy-timetable` — copy from previous session picker.
+  4. `POST /academic-sessions/:id/copy-timetable` with `{ fromSessionId }` — copy from previous session picker. **[CORRECTED v3.2 — CR-FE-015]** Body field is `fromSessionId`.
 - Local state: `filterClassId`, `filterSessionId` (defaults to `currentSession.id`), `activeCell` for `CreateSlotDrawer`.
 - Server state: TQ key `['timetable', classId, sessionId]`, stale time 300s (`Cache-Control: private, max-age=300` respected).
 - Loading state: Grid skeleton.
@@ -629,7 +640,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Loading state: Leave card skeletons (3).
 - Empty state: "No pending leave requests for your class."
 - Error states: `409 LEAVE_ALREADY_REVIEWED` shown as toast; list auto-refetches. 
-- Off-campus panel: OVERDUE students (expected return past current time) highlighted red. Off-campus list shows `expectedReturnAt` formatted in `tenantTimezone`.
+- Off-campus panel: OVERDUE students (expected return past current time) highlighted red. Off-campus list shows `expectedReturnAt` formatted in `schoolProfile.timezone`. **[CORRECTED v3.2 — CR-FE-010]** Timezone sourced from `QUERY_KEYS.schoolProfile()` → `profile.timezone`, not JWT.
 - Status timeline: Shown on `<LeaveDetail>` component — PENDING → APPROVED → ACTIVE → COMPLETED/OVERDUE sequential badge row.
 - Permissions: `isClassTeacher` guard at route level. Non-ClassTeacher Teacher is redirected to `/teacher/dashboard`.
 - Accessibility: Off-campus panel has `aria-live="polite"` to announce new off-campus entries during polling. OVERDUE badge has `role="alert"`.
@@ -703,14 +714,15 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Entry points: Exam list row click.
 - Required API calls:
   1. `GET /exams/:id` on mount (includes `subjects[]`).
-  2. `POST /exams/:id/subjects` — add subject. On success: invalidate `['exams', id]`.
+  2. `POST /exams/:id/subjects` — add subject. On success: invalidate `QUERY_KEYS.exam(id)`.
   3. `PUT /exams/:id/subjects/:subjectId` — edit. On success: invalidate.
   4. `DELETE /exams/:id/subjects/:subjectId` — delete. On confirm: invalidate.
   5. `PUT /exams/:id/publish` — publish. Guard: all subjects must have `marksStatus === 'ENTERED'`. On `409 MARKS_NOT_COMPLETE`: show inline error listing `error.details.pendingSubjects`. Confirm dialog: "This will compute grades and notify all students and guardians." On success: invalidate, toast "Exam published."
   6. `PUT /exams/:id/unpublish` — warning dialog: "Marks will be unlocked for correction." On success: invalidate, toast "Exam unpublished."
   7. `DELETE /exams/:id` — only when `status === 'DRAFT'`, confirm dialog.
+- **Session name display (CR-FE-018) [CORRECTED v3.2]:** `exam.sessionName` does NOT exist in the API contract (OpenAPI v6.0 `Exam` schema has `sessionId` only, no `sessionName`). The session name MUST be derived by looking up the sessions cache: if `exam.sessionId === currentSession.id` use `currentSession.name`; otherwise look up `QUERY_KEYS.sessionsList()`. Do NOT add `sessionName` to the `Exam` type — it is not in OpenAPI v6.0. Do NOT call a separate API for this — the sessions list is always cached at app boot.
 - Local state: add/edit subject drawer open state.
-- Server state: TQ key `['exams', id]`.
+- Server state: TQ key `QUERY_KEYS.exam(id)`.
 - Permissions: Admin only. Publish button hidden when any subject `marksStatus !== 'ENTERED'`. Delete button hidden when `status !== 'DRAFT'`. Unpublish button hidden when `status !== 'PUBLISHED'`.
 - **Publish button state (CR-FE-042):** The publish button MUST always be rendered. When any subject has `marksStatus !== 'ENTERED'`: button is `disabled` (not hidden), with `title` attribute listing pending subjects: "Marks pending for: [subject names]". An `aria-describedby` paragraph below the button renders the same text visibly. When all subjects are entered: button is enabled, description paragraph removed. The `409 MARKS_NOT_COMPLETE` server error is a secondary guard — the frontend prevents the call via this client-side check but must still handle the 409 for race conditions.
 - Accessibility: `marksStatus` badges have text. Publish confirm dialog traps focus.
@@ -773,7 +785,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Entry points: Admin sidebar → Fees → Charges.
 - Required API calls:
   1. `GET /fees/charges?sessionId=currentSession.id` with optional filters: `studentId`, `classId`, `hasBalance=true`.
-  2. `POST /fees/charges/:id/payments` — record payment modal. On `400 OVERPAYMENT`: inline error in modal: "Payment exceeds balance of ₹[balance]." Client-side pre-validation: `amount ≤ charge.balance` using zod `.max(charge.balance)`. On success: invalidate `['fees', 'charges', ...]`, close modal, toast "Payment recorded."
+  2. `POST /fees/charges/:id/payments` — record payment modal. **[CORRECTED v3.2 — CR-FE-006]** Request body: `{ amountPaid, paidAt, paymentMode }` — field is `amountPaid` (not `amount`); `paidAt` is required (ISO date, defaults to today in tenant timezone from `schoolProfile.timezone`). On `400 OVERPAYMENT`: inline error in modal: "Payment exceeds balance of ₹[balance]." Client-side pre-validation: `amountPaid ≤ charge.balance` using zod `.max(charge.balance)`. On success: invalidate `QUERY_KEYS.feeCharges(...)`, close modal, toast "Payment recorded."
   3. `DELETE /fees/charges/:id` — only when `totalPaid === 0`. On `400 CHARGE_HAS_PAYMENTS`: toast "Cannot delete — charge has recorded payments." On success: invalidate.
 - Local state: payment modal open state, selected charge for modal, filter values.
 - Server state: TQ key `['fees', 'charges', filters]`.
@@ -861,7 +873,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Goal: Read-only assignment list with own/child's submission status.
 - Routes: `/student/assignments`, `/guardian/assignments`
 - Required API calls:
-  1. Student: `GET /assignments?classId=jwtPayload.classId&sessionId=currentSession.id`.
+  1. Student: `GET /assignments?classId={student.classId}&sessionId=currentSession.id`. **[CORRECTED v3.2 — CR-FE-010]** `student.classId` is fetched from `GET /students/:studentId` on student portal boot — NOT from JWT (`classId` was removed from JWT in Backend Freeze v6.0).
   2. Guardian: `GET /guardian/children/:studentId/assignments?sessionId=currentSession.id`.
 - Status badges: PENDING=orange, COMPLETED=green, INCOMPLETE=red, NOT_SUBMITTED=grey.
 - Permissions: Read-only. No marking capability.
@@ -896,7 +908,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Form validation: `title` required. `body` required. `audienceType` required. If `audienceType === 'Class'`: `audienceClassId` required. If `audienceType === 'Batch'`: `audienceBatchId` required. `publishAt` defaults to now. `expiresAt` optional, must be > `publishAt` if set.
 - Teacher constraint: `audienceType` locked to `Class`, `audienceClassId` auto-populated from JWT `classId`, picker hidden.
 - Edit availability: Edit button hidden when `publishAt < now` (already published).
-- Scheduled publish indicator: "Scheduled for [datetime in tenantTimezone]" badge shown when `publishAt > now`.
+- Scheduled publish indicator: "Scheduled for [datetime in `schoolProfile.timezone`]" badge shown when `publishAt > now`. **[CORRECTED v3.2 — CR-FE-010]** Timezone from `QUERY_KEYS.schoolProfile()`, not JWT.
 - Permissions: Admin and Teacher for create. Teacher can only edit/delete own announcements.
 - **Unsaved changes guard (CR Finding 14):** `useBlocker` (react-router-dom v6) MUST activate when `isDirty === true` (react-hook-form). Block condition: `isDirty && currentLocation.pathname !== nextLocation.pathname`. On block: render `<ConfirmDialog>` with title "Leave without saving?" and description "Your announcement draft will be lost." Confirm: `blocker.proceed()`. Cancel: `blocker.reset()`. Blocker is cleared on successful form submission.
 - Accessibility: Datetime pickers labelled with timezone context. Draft preview before submit is optional (not in scope — CR-FE-10 spec does not require it).
@@ -910,8 +922,8 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Required API calls:
   1. `GET /school-profile` on mount.
   2. `PUT /school-profile` on save. On success: invalidate `['school-profile']`, toast. Apply `brandingColor` as CSS variable `--brand-color` on the document root immediately (no full reload).
-  3. `POST /school-profile/upload?type=logo` — file upload. Client-side validation: max 2MB, PNG/JPG/SVG only. On `400 FILE_TOO_LARGE`: inline error. On `400` wrong type: inline error. On success: invalidate `['school-profile']`, update preview.
-  4. `POST /school-profile/upload?type=signature` — max 1MB, PNG/JPG only. Same flow as logo.
+  3. `POST /school-profile/upload` — file upload with `type` as a **FormData field** (`form.append("type", "logo")`). **[CORRECTED v3.2 — CR-FE-003]** `type` MUST be sent as a multipart FormData field, NOT as a URL query parameter (`?type=logo`). The server reads `req.body.type`, not `req.query.type`. Client-side validation: max 2MB, PNG/JPG/SVG only. On `400 FILE_TOO_LARGE`: inline error. On `400` wrong type: inline error. On success: invalidate `QUERY_KEYS.schoolProfile()`, update preview.
+  4. `POST /school-profile/upload` with `type` FormData field `"signature"` — max 1MB, PNG/JPG only. Same flow as logo. **[CORRECTED v3.2 — CR-FE-003]** Same FormData body rule applies.
 - Local state: logo preview blob URL, signature preview blob URL, `hexColorInput` (controlled), file input refs.
 - Server state: TQ key `['school-profile']`.
 - Loading state: Profile form skeleton.
@@ -980,11 +992,11 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 - Goal: In-app notification centre accessible from global nav for all roles.
 - Entry points: Bell icon in top nav (all roles). `/notifications` full page link.
 - Required API calls:
-  1. Bell dropdown: `GET /notifications?limit=20` on dropdown open.
-  2. Unread count badge: `GET /notifications?unreadOnly=true&limit=1` polled every 60 seconds.
+  1. Bell dropdown: `GET /notifications?limit=20` on dropdown open. **[CORRECTED v3.2 — CR-FE-004]** Response shape: `{ data: Notification[], total: number }`. Read `.data` not `.notifications`.
+  2. Unread count badge: `GET /notifications?unreadOnly=true&limit=1` polled every 60 seconds. Response: `{ data: Notification[], total: number }` — unread count = `total`.
   3. Single read: `PUT /notifications/:id/read` on notification click. On success: invalidate unread count key.
-  4. Mark all read: `PUT /notifications/read-all`. On success: invalidate notifications key.
-  5. Full page: `GET /notifications?limit=20&offset=0` with infinite scroll.
+  4. Mark all read: `PUT /notifications/read-all`. **[CORRECTED v3.2 — CR-FE-005]** Response: `{ updated: number }` (not `{ updatedCount: number }`). On success: invalidate notifications key.
+  5. Full page: `GET /notifications?limit=20&offset=0` with infinite scroll. Response: `{ data: Notification[], total: number }`.
 - Server state: TQ keys `['notifications', filters]`, `['notifications', 'unread-count']`. Unread count: `refetchInterval: 60000`.
 - Navigation routing on click (locked map):
 
@@ -1034,7 +1046,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
   3. `GET /guardian/children/:studentId/leave?status=PENDING` — pending count.
   4. `GET /guardian/children/:studentId/assignments` — pending assignments count.
 - Server state: TQ keys `['guardian', 'children']`, `['guardian', studentId, 'attendance', month]`, etc.
-- Child switcher: shown in top nav when `linkedStudentIds.length > 1`. `selectedChildId` persists in `useGuardianStore` (Zustand, not sessionStorage) for the session duration.
+- Child switcher: shown in top nav when `guardianChildren.length > 1` (where `guardianChildren` is the response array from `GET /guardian/children`). **[CORRECTED v3.2 — CR-FE-010]** `linkedStudentIds` was removed from JWT in Backend Freeze v6.0 — child count is derived from the `GET /guardian/children` response stored in `useGuardianStore`. `selectedChildId` persists in `useGuardianStore` per CR-FE-041 sessionStorage pattern.
 - Loading state: Skeleton summary cards.
 - Empty state: (Unlikely — Guardian always has at least 1 child linked.) "No linked students."
 - Permissions: Guardian role. All `/guardian/children/:studentId/*` calls validated server-side — `403` on unlinked child (URL manipulation). Frontend handles `403` with toast "Access denied" + redirect to `/guardian/dashboard`.
@@ -1061,10 +1073,11 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 
 **Screen:** Student Dashboard (`/student/dashboard`)
 - Goal: Show Student today's periods, current attendance %, pending assignments, latest announcement.
+- **[CORRECTED v3.2 — CR-FE-010]** Student portal boot sequence: after auth, call `GET /students/:studentId` (using `user.studentId` from JWT) to resolve `student.classId` and `student.batchId`. Store result in `useStudentStore`. All subsequent student portal queries use `student.classId` from this store — NOT from JWT (removed in Backend Freeze v6.0).
 - Required API calls:
-  1. `GET /timetable?classId=jwtPayload.classId&sessionId=currentSession.id` — today's periods.
-  2. `GET /attendance/monthly-sheet?classId=jwtPayload.classId&month=currentMonth` — server filters to own row.
-  3. `GET /assignments?classId=jwtPayload.classId&sessionId=currentSession.id` — pending count.
+  1. `GET /timetable?classId={student.classId}&sessionId=currentSession.id` — today's periods.
+  2. `GET /attendance/monthly-sheet?classId={student.classId}&month=currentMonth` — server filters to own row.
+  3. `GET /assignments?classId={student.classId}&sessionId=currentSession.id` — pending count.
   4. `GET /announcements?limit=1` — latest card.
 - Server state: Respective TQ keys.
 - Loading state: Card skeletons.
@@ -1077,7 +1090,7 @@ VITE_THEME_COLOR="#1A5276"           # Overridden at runtime by brandingColor fr
 **Screen:** Student Attendance View (`/student/attendance`)
 - Goal: Monthly attendance sheet for the authenticated student (own row only).
 - Required API calls:
-  1. `GET /attendance/monthly-sheet?classId=jwtPayload.classId&month=YYYY-MM` — server filters to own row.
+  1. `GET /attendance/monthly-sheet?classId={student.classId}&month=YYYY-MM` — server filters to own row. `student.classId` from `useStudentStore` (resolved at portal boot — see Student Dashboard boot sequence). **[CORRECTED v3.2 — CR-FE-010]**
 - Displays: calendar-style month view with status per day. Summary: attendance %, consecutive absent streak (shown prominently if > 0).
 - Server state: TQ key `QUERY_KEYS.attendanceMonthlySheet(classId, subjectId, year, month)`.
 - Permissions: Student. Own data only — enforced server-side.
@@ -1159,31 +1172,49 @@ type NotificationType =
   | 'ANNOUNCEMENT' | 'FEE_CHARGED';
 
 // ─── JWT Payload (decoded from token at login — never re-fetched) ──
+// ─── JWT Payload (decoded from token at login — never re-fetched) ──
+// [CORRECTED v3.2 — CR-FE-010/011] Backend Freeze v6.0 removed tenantTimezone,
+// classId, batchId, linkedStudentIds from JWT. roles array added.
 interface JWTPayload {
   userId: string;
   tenantId: string;
   activeRole: UserRole;
+  roles: UserRole[];              // [NEW v3.2] array — was singular role in v5.0
   tokenVersion: number;
   mustChangePassword: boolean;
-  tenantTimezone: string;        // IANA e.g. "Asia/Kolkata"
-  classTeacherOf: string | null; // classId; null if not a class teacher
+  classTeacherOf: string | null; // classId; null if not a class teacher (Teacher role only)
   studentId: string | null;      // Student role only
-  classId: string | null;        // Student role only
-  batchId: string | null;        // Student role only
-  linkedStudentIds: string[];    // Guardian role only
+  // REMOVED: tenantTimezone — read from QUERY_KEYS.schoolProfile() → profile.timezone
+  // REMOVED: classId        — Student: from GET /students/:studentId → student.classId
+  // REMOVED: batchId        — Student: from GET /students/:studentId → student.batchId
+  // REMOVED: linkedStudentIds — Guardian: from GET /guardian/children response
 }
 
 // ─── isClassTeacher derived guard (locked) ─────────────────────────
 // const isClassTeacher = user.activeRole === 'Teacher' && user.classTeacherOf !== null;
+// NOTE [v3.2]: user.classTeacherOf is still in JWT. user.classId/batchId/linkedStudentIds are NOT.
+// Timezone: use schoolProfile.timezone from QUERY_KEYS.schoolProfile() — NOT from JWT.
 
 // ─── Shared API wrapper ────────────────────────────────────────────
 type ApiResult<T> = { data: T; meta?: Record<string, unknown> };
 
 // ─── Auth ──────────────────────────────────────────────────────────
 interface LoginRequest { email: string; password: string; tenantId: string; }
-interface LoginResponse { token: string; user: { id: string; name: string; role: UserRole; mustChangePassword: boolean; }; }
+// [CORRECTED v3.2 — CR-FE-011] roles is now array; singular role removed from user object
+interface TenantUser {
+  id: string;
+  name: string;
+  roles: UserRole[];              // [CORRECTED] was role: UserRole (singular)
+  activeRole: UserRole;
+  mustChangePassword: boolean;
+  classTeacherOf: string | null;
+  studentId: string | null;
+  isActive: boolean;
+}
+interface LoginResponse { token: string; user: TenantUser; }
 interface ChangePasswordRequest { currentPassword: string; newPassword: string; }
-interface ChangePasswordResponse { token: string; }
+// [CORRECTED v3.2 — CR-FE-009] response now includes full user object — client MUST use res.user
+interface ChangePasswordResponse { token: string; user: TenantUser; }
 
 // ─── Academic Sessions ────────────────────────────────────────────
 interface AcademicSession { id: string; tenantId: string; name: string; startDate: string; endDate: string; isCurrent: boolean; status: SessionStatus; createdAt: string; }
@@ -1229,7 +1260,12 @@ interface RejectLeaveRequest { rejectionReason: string; }
 
 // ─── Exams ───────────────────────────────────────────────────────
 interface GradeBoundary { grade: string; minPercentage: number; maxPercentage: number; label: string; }
-interface Exam { id: string; tenantId: string; sessionId: string; classId: string; name: string; type: ExamType; status: ExamStatus; gradeBoundaries: GradeBoundary[]; publishedBy: string | null; publishedAt: string | null; createdAt: string; }
+// [CORRECTED v3.2 — CR-FE-008] Detail response: { data: Exam } — key was 'exam', now 'data'
+// [CORRECTED v3.2 — CR-FE-007] List response: { data: Exam[], total: number } — key was 'exams', now 'data'
+// [CORRECTED v3.2] Exam.className added per OpenAPI v6.0 schema
+interface ListExamsResponse { data: Exam[]; total: number; }
+interface GetExamResponse { data: Exam; }
+interface Exam { id: string; tenantId: string; sessionId: string; classId: string; className: string; name: string; type: ExamType; status: ExamStatus; gradeBoundaries: GradeBoundary[]; publishedBy: string | null; publishedAt: string | null; createdAt: string; }
 interface ExamSubject { id: string; examId: string; subjectId: string; subjectName: string; teacherId: string; teacherName: string; examDate: string | null; startTime: string | null; endTime: string | null; totalMarks: number; passMarks: number; marksStatus: MarksStatus; }
 interface ExamResult { examSubjectId: string; studentId: string; studentName: string; marksObtained: number | null; isAbsent: boolean; grade: string | null; isPass: boolean | null; }
 interface ExamStudentSummary { studentId: string; studentName: string; totalMarksObtained: number; totalMarksPossible: number; aggregatePercentage: number; overallGrade: string; overallResult: 'PASS' | 'FAIL'; classRank: number | null; }
@@ -1239,7 +1275,8 @@ interface FeeCharge { id: string; tenantId: string; studentId: string; studentNa
 interface FeePayment { id: string; chargeId: string; studentId: string; amountPaid: number; paymentMode: PaymentMode; paidAt: string; receiptNumber: string | null; recordedBy: string; notes: string | null; recordedAt: string; }
 interface CreateChargeRequest { studentId: string; sessionId: string; description: string; category: FeeCategory; amount: number; dueDate?: string; notes?: string; }
 interface BulkChargeRequest { targetType: 'students' | 'class' | 'level'; studentIds?: string[]; classId?: string; level?: StudentLevel; sessionId: string; description: string; category: FeeCategory; amount: number; dueDate?: string; }
-interface RecordPaymentRequest { amount: number; paymentMode: PaymentMode; paidAt: string; receiptNumber?: string; notes?: string; }
+// [CORRECTED v3.2 — CR-FE-006] amountPaid (not amount); paidAt is required
+interface RecordPaymentRequest { amountPaid: number; paidAt: string; paymentMode: PaymentMode; receiptNumber?: string; notes?: string; }
 interface FeeSummary { totalCharged: number; totalPaid: number; totalOutstanding: number; studentsWithBalance: number; students: FeeStudentSummary[]; }
 interface FeeStudentSummary { studentId: string; studentName: string; totalCharged: number; totalPaid: number; balance: number; }
 
@@ -1259,6 +1296,16 @@ interface ImportPreviewResponse { jobId: string; entityType: ImportEntityType; t
 
 // ─── Notifications ───────────────────────────────────────────────
 interface Notification { id: string; type: NotificationType; title: string; body: string; data: Record<string, unknown> | null; readAt: string | null; createdAt: string; }
+// [CORRECTED v3.2 — CR-FE-004] List response shape: { data: Notification[], total: number }
+// Previous spec had { notifications: Notification[] } — key 'notifications' does not exist on server
+interface ListNotificationsResponse { data: Notification[]; total: number; }
+// [CORRECTED v3.2 — CR-FE-005] Mark-all-read response: { updated: number }
+// Previous spec had { updatedCount: number } — key 'updatedCount' does not exist on server
+interface MarkAllReadResponse { updated: number; }
+
+// ─── Users (additions) ───────────────────────────────────────────
+// [NEW v3.2 — CR-FE-016] POST /users/:id/reset-password response
+interface ResetPasswordResponse { user: TenantUser; temporaryPassword: string; }
 
 // ─── School Profile ──────────────────────────────────────────────
 interface SchoolProfile { id: string; name: string; subdomain: string; timezone: string; logoUrl: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; brandingColor: string | null; principalName: string | null; principalSignatureUrl: string | null; activeLevels: StudentLevel[]; }
@@ -1409,12 +1456,25 @@ export const SA_QUERY_KEYS = {
 | Server state | TanStack Query v5 | All API data — no duplication in Zustand |
 | Auth state | Zustand `useAuthStore` | Token + decoded JWT payload |
 | Current session | Zustand `useSessionStore` | `currentSession` fetched on app boot, shared globally |
-| Guardian selected child | Zustand `useGuardianStore` | `selectedChildId` — in-memory, cleared on logout |
+| Guardian selected child | Zustand `useGuardianStore` | `selectedChildId` — persisted to `sessionStorage['guardian-selected-child']` (CR-FE-041) |
+| Student class context | Zustand `useStudentStore` | **[NEW v3.2 — CR-FE-010]** `student.classId` + `student.batchId` fetched from `GET /students/:studentId` on student portal boot. These were removed from JWT in Backend Freeze v6.0. Cleared on logout. |
 | Promotion wizard state | Local `useState` | `currentStep`, `promotionPreviewId`, `expiresAt`, `batches` |
 | Import wizard state | Local `useState` | `currentStep`, `jobId`, `expiresAt`, etc. |
 | Form state | react-hook-form | Per form component |
 | UI state (modals, drawers, pickers) | Local `useState` | Per component |
 | Persistent auth token | `sessionStorage['auth_token']` | Survives tab refresh; cleared on tab close |
+
+**`useStudentStore` (NEW — v3.2 CR-FE-010):**
+```typescript
+// src/stores/student.store.ts
+const useStudentStore = create<StudentState>((set) => ({
+  classId: null,
+  batchId: null,
+  setStudentContext: (classId: string, batchId: string) => set({ classId, batchId }),
+  clearStudentContext: () => set({ classId: null, batchId: null }),
+}));
+```
+Populated on Student portal boot by `GET /students/:studentId` (using `user.studentId` from JWT). All student portal screens read `classId` and `batchId` from this store — never from JWT. Cleared on logout alongside other stores.
 
 **Auth store implementation (locked pattern):**
 
@@ -1510,7 +1570,7 @@ const useGuardianStore = create<GuardianState>((set) => ({
 | Token expiry (30 days) | Next API call returns `401 TOKEN_REVOKED` → Axios interceptor clears store + redirects to `/login` |
 | `token_version` bump (admin revocation) | Same as above — `401 TOKEN_REVOKED` |
 | `must_change_password` set | On next app load from sessionStorage, all protected routes redirect to `/change-password` |
-| Logout | `POST /auth/logout`, `sessionStorage.removeItem('auth_token')`, Zustand `logout()`, `queryClient.clear()`, navigate to `/login` |
+| Logout | `POST /auth/logout`, `sessionStorage.removeItem('auth_token')`, Zustand `logout()`, `useStudentStore.getState().clearStudentContext()`, `queryClient.clear()`, navigate to `/login` |
 | Multi-tab sync | Not supported. Each tab maintains independent session. |
 
 ---
@@ -1912,7 +1972,8 @@ The "inherited unchanged from v2.8" clause does not constitute a security exempt
 │   ├── /stores
 │   │   ├── auth.store.ts               (locked pattern — see §4)
 │   │   ├── session.store.ts            (currentSession global)
-│   │   └── guardian.store.ts           (selectedChildId + children list)
+│   │   ├── guardian.store.ts           (selectedChildId + children list)
+│   │   └── student.store.ts            (classId + batchId — NEW v3.2, replaces JWT fields removed in Backend Freeze v6.0)
 │   ├── /lib
 │   │   ├── timezone.ts                 (date-fns-tz helpers — formatInTz, parseInTz, toTenantTz)
 │   │   ├── queryKeys.ts                (QUERY_KEYS factory — locked from §3)
@@ -2069,6 +2130,22 @@ If requested → create Change Request → re-price → approve/reject.
   - **Screen spec amendments (9):** Temp password modal guard (Finding 1). Guardian `canSubmitLeave` contact info block (Finding 3). Report card download timeout + re-click guard (Finding 4). TTL countdown `aria-live="assertive"` at 5min + persistent banner at 2min (Finding 6). Marks locked state info banner (Finding 9). Date picker locked helper text (Finding 11). Live brand color CSS variable preview + 300ms debounce (Finding 13). CSV file type client-side validation (Finding 15).
   - **Architecture note:** Auth migration status documented — `AuthContext.tsx` remains source of truth until `useAuthStore` migration completes; migration is a hard prerequisite for CR-FE-01 (§4).
 
+- **v3.2** (2026-03-19): Corrective alignment against Backend Freeze v6.0 / OpenAPI v6.0.0. 14 amendments applied — all contract corrections, no scope changes.
+  - **Auth contract (CR-FE-009):** `ChangePasswordResponse` now includes `user: TenantUser` (§3). Client MUST call `login(res.token, res.user)` — reusing stale context `user!` causes infinite `mustChangePassword` redirect loop.
+  - **JWT payload (CR-FE-010):** `tenantTimezone`, `classId`, `batchId`, `linkedStudentIds` removed from `JWTPayload` per Backend Freeze v6.0 (§3). Timezone sourced exclusively from `QUERY_KEYS.schoolProfile() → profile.timezone` (§1.6, §2 screens). `useStudentStore` added to §4 State Management — holds `student.classId` + `student.batchId` fetched from `GET /students/:studentId` on student portal boot. Guardian child count derived from `GET /guardian/children` response length, not JWT.
+  - **User type (CR-FE-011):** `TenantUser` interface corrected — `roles: UserRole[]` array replaces singular `role: UserRole` (§3). `activeRole: UserRole` unchanged — still the correct field for all UI role decisions.
+  - **API response shapes (CR-FE-004):** Notifications list response corrected to `{ data: Notification[], total: number }` — was `{ notifications: Notification[] }` (§3, §2 Notification Bell).
+  - **API response shapes (CR-FE-005):** Mark-all-read response corrected to `{ updated: number }` — was `{ updatedCount: number }` (§3, §2 Notification Bell).
+  - **API response shapes (CR-FE-007):** Exams list response corrected to `{ data: Exam[], total: number }` — was `{ exams: Exam[] }` (§3).
+  - **API response shapes (CR-FE-008):** Exam detail response corrected to `{ data: Exam }` — was `{ exam: Exam }` (§3). `Exam.className` added per OpenAPI v6.0 schema.
+  - **Fee payment (CR-FE-006):** `RecordPaymentRequest.amount` → `amountPaid`; `paidAt` confirmed required. Fee Charge List screen spec updated (§2, §3).
+  - **Upload type field (CR-FE-003):** `POST /school-profile/upload` — `type` MUST be sent as a FormData field, not a URL query parameter. School Profile screen spec corrected (§2).
+  - **Copy timetable (CR-FE-015):** Body field corrected to `fromSessionId` (was `sourceSessionId`). Session Detail and Timetable Builder screen specs updated (§2).
+  - **Exam session name (CR-FE-018):** `exam.sessionName` does not exist in OpenAPI v6.0 contract. Exam Detail screen spec corrected — session name derived from sessions cache (§2).
+  - **New type (CR-FE-016):** `ResetPasswordResponse { user: TenantUser; temporaryPassword: string }` added to §3 typed API surface.
+  - **Dependencies (CR-FE-028):** `sonner` locked to `^2.0.7` in both apps — superadmin-app upgrade from `^1.7.4` required (§1.6).
+  - **Dependencies (CR-FE-029/030):** Missing required packages documented with install commands: `@tanstack/react-virtual`, `nprogress`, `date-fns`, `date-fns-tz`, `openapi-typescript` (§1.6).
+
 ---
 
-**END OF FRONTEND FREEZE v3.0**
+**END OF FRONTEND FREEZE v3.2**

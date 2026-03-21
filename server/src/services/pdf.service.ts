@@ -256,19 +256,42 @@ export async function generateAllReportCards(
   );
 
   const results: { filename: string; buffer: Buffer }[] = [];
-  for (const student of students) {
+
+  try {
+    const puppeteer = await import("puppeteer");
+    const browser = await puppeteer.default.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
+
     try {
-      const buffer = await generateReportCard(examId, student.id, tenantId);
-      results.push({
-        filename: `${student.admission_number}_${student.name.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`,
-        buffer,
-      });
-    } catch (err) {
-      logger.error(
-        { err, examId, studentId: student.id },
-        "Failed to generate individual report card",
-      );
+      for (const student of students) {
+        try {
+          const html = await renderReportCardHtml(examId, student.id, tenantId);
+          const page = await browser.newPage();
+          try {
+            await page.setContent(html, { waitUntil: "networkidle0" });
+            const pdf = await page.pdf({ format: "A4", printBackground: true });
+            results.push({
+              filename: `${student.admission_number}_${student.name.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`,
+              buffer: Buffer.from(pdf),
+            });
+          } finally {
+            await page.close();
+          }
+        } catch (err) {
+          logger.error(
+            { err, examId, studentId: student.id },
+            "Failed to generate individual report card",
+          );
+        }
+      }
+    } finally {
+      await browser.close();
     }
+  } catch (err) {
+    logger.error({ err, examId }, "Puppeteer not available or failed to launch");
   }
+
   return results;
 }
