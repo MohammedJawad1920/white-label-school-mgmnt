@@ -17,9 +17,10 @@ export const schoolProfileApi = {
       .put<UpdateSchoolProfileResponse>("/school-profile", payload)
       .then((r) => r.data),
 
-  uploadFile: (file: File) => {
+  uploadFile: (file: File, type: "logo" | "signature") => {
     const form = new FormData();
     form.append("file", file);
+    form.append("type", type);
     return apiClient
       .post<UploadProfileFileResponse>("/school-profile/upload", form, {
         headers: { "Content-Type": "multipart/form-data" },

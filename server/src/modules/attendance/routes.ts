@@ -82,11 +82,11 @@ router.get(
   asyncHandler(getAttendanceMonthlySheet),
 );
 
-// GET /api/attendance/absentees/{timeslotId} — absent student names + streak for a timeslot+date
+// GET /api/attendance/absentees?timeSlotId=...&date=... — absent student names + streak for a timeslot+date
 // Admin: any non-deleted timeslot; Teacher: any non-deleted timeslot (CR-41)
 // Student + SuperAdmin blocked by requireRole
 router.get(
-  "/absentees/:timeslotId",
+  "/absentees",
   requireRole("Admin", "Teacher"),
   asyncHandler(getAbsentees),
 );

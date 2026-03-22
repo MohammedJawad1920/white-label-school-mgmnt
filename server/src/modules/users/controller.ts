@@ -379,3 +379,48 @@ export async function bulkDeleteUsers(
 
   res.status(200).json({ deletedCount: result.deleted.length });
 }
+
+// POST /api/v1/users/:id/reset-password
+export async function resetUserPassword(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const tenantId = req.tenantId!;
+  const { id } = req.params as { id: string };
+
+  const result = await pool.query<UserRow>(
+    `SELECT id, tenant_id, name, email, password_hash, roles, deleted_at, created_at, updated_at,
+            token_version, must_change_password
+     FROM users
+     WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+    [id, tenantId],
+  );
+  const user = result.rows[0];
+  if (!user) {
+    send404(res, "User not found");
+    return;
+  }
+
+  const temporaryPassword = crypto.randomBytes(8).toString("hex").slice(0, 12);
+  const passwordHash = await bcrypt.hash(
+    temporaryPassword,
+    config.BCRYPT_ROUNDS,
+  );
+
+  const updated = await pool.query<UserRow>(
+    `UPDATE users
+     SET password_hash = $1,
+         must_change_password = true,
+         token_version = token_version + 1,
+         updated_at = NOW()
+     WHERE id = $2 AND tenant_id = $3
+     RETURNING id, tenant_id, name, email, password_hash, roles, deleted_at, created_at, updated_at,
+               token_version, must_change_password`,
+    [passwordHash, id, tenantId],
+  );
+
+  res.status(200).json({
+    user: formatUser(updated.rows[0]!),
+    temporaryPassword,
+  });
+}

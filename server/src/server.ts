@@ -23,7 +23,7 @@ const server = app.listen(config.PORT, () => {
       event: "server_started",
       port: config.PORT,
       nodeEnv: config.NODE_ENV,
-      version: "3.5.0",
+      version: "6.0.0",
     },
     "Server started",
   );

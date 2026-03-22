@@ -26,15 +26,8 @@ function requireEnv(key: string): string {
 }
 
 function validateJwtExpiresIn(value: string): void {
-  const match = /^(\d+)d$/.exec(value);
-  if (!match) {
-    throw new Error(
-      `JWT_EXPIRES_IN must be in format "Nd" (e.g. "7d", "365d"). Got: ${value}`,
-    );
-  }
-  const days = parseInt(match[1] ?? "0", 10);
-  if (days < 7) {
-    throw new Error(`JWT_EXPIRES_IN must be at least 7d. Got: ${value}`);
+  if (value !== "30d") {
+    throw new Error(`JWT_EXPIRES_IN must be exactly 30d. Got: ${value}`);
   }
 }
 
@@ -97,6 +90,10 @@ function buildConfig() {
     process.env["DATABASE_POOL_MAX"] ?? "10",
     10,
   );
+  const DB_STATEMENT_TIMEOUT_MS = parseInt(
+    process.env["DB_STATEMENT_TIMEOUT_MS"] ?? "30000",
+    10,
+  );
   const ALLOWED_ORIGINS = (process.env["ALLOWED_ORIGINS"] ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -137,6 +134,7 @@ function buildConfig() {
     DATABASE_URL,
     DATABASE_POOL_MIN,
     DATABASE_POOL_MAX,
+    DB_STATEMENT_TIMEOUT_MS,
     JWT_SECRET,
     JWT_EXPIRES_IN,
     BCRYPT_ROUNDS,

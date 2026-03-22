@@ -123,7 +123,7 @@ export default function BulkChargeWizardPage() {
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ["fees", "charges"] });
       toast.success(
-        `${data.created} charge${data.created !== 1 ? "s" : ""} created.`,
+        `${data.charged} charge${data.charged !== 1 ? "s" : ""} created${data.skipped > 0 ? `, ${data.skipped} skipped` : ""}.`,
       );
       navigate("/admin/fees");
     },

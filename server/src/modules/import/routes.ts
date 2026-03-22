@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { tenantContextMiddleware } from "../../middleware/tenantContext";
+import { featureGuard } from "../../middleware/featureGuard";
 import { requireRole } from "../../middleware/requireRole";
 import { asyncHandler } from "../../utils/asyncHandler";
 import * as controller from "./controller";
@@ -19,6 +20,7 @@ const upload = multer({
 
 const router = Router();
 router.use(tenantContextMiddleware);
+router.use(featureGuard("import"));
 
 // /template/:entity must come before /:jobId
 router.get(

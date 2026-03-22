@@ -2,11 +2,11 @@
  * Integration tests: Students endpoints (v3.5 CR-13)
  *
  * Covers:
- *   GET  /api/students                  — lists students with v3.5 fields
- *   POST /api/students                  — atomic user+student creation
- *   PUT  /api/students/:id              — update; dob/admissionNumber change re-hashes password
- *   DELETE /api/students/:id            — soft delete (204)
- *   DELETE /api/students/bulk           — bulk soft delete (200)
+ *   GET  /api/v1/students                  — lists students with v3.5 fields
+ *   POST /api/v1/students                  — atomic user+student creation
+ *   PUT  /api/v1/students/:id              — update; dob/admissionNumber change re-hashes password
+ *   DELETE /api/v1/students/:id            — soft delete (204)
+ *   DELETE /api/v1/students/bulk           — bulk soft delete (200)
  *
  * BUSINESS RULES (v3.5 CR-13):
  *   - loginId = {admissionNumber.toLowerCase()}@{tenantSlug}.local
@@ -30,10 +30,10 @@ import {
 const SKIP = skipIfNoDb();
 
 async function loginAsAdmin(tenant: TestTenant): Promise<string> {
-  const res = await makeAgent().post("/api/auth/login").send({
+  const res = await makeAgent().post("/api/v1/auth/login").send({
     email: tenant.adminEmail,
     password: tenant.adminPassword,
-    tenantSlug: tenant.tenantSlug,
+    tenantId: tenant.tenantId,
   });
   return res.body.token as string;
 }
@@ -44,21 +44,21 @@ async function seedBatchAndClass(
   label: string,
 ): Promise<{ batchId: string; classId: string }> {
   const bRes = await makeAgent()
-    .post("/api/batches")
+    .post("/api/v1/batches")
     .set("Authorization", `Bearer ${token}`)
     .send({ name: `Batch-${label}`, startYear: 2024, endYear: 2025 });
 
   const batchId = bRes.body.batch.id as string;
 
   const cRes = await makeAgent()
-    .post("/api/classes")
+    .post("/api/v1/classes")
     .set("Authorization", `Bearer ${token}`)
     .send({ name: `Class-${label}`, batchId });
 
   return { batchId, classId: cRes.body.class.id as string };
 }
 
-describe("POST /api/students", () => {
+describe("POST /api/v1/students", () => {
   let tenant: TestTenant;
   let token: string;
   let batchId: string;
@@ -84,7 +84,7 @@ describe("POST /api/students", () => {
     const admissionNumber = `ADM-${Date.now()}`;
     const dob = "2010-05-15";
     const res = await makeAgent()
-      .post("/api/students")
+      .post("/api/v1/students")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Alice Test", classId, batchId, admissionNumber, dob });
 
@@ -106,18 +106,18 @@ describe("POST /api/students", () => {
     const admissionNumber = `LOGIN-${Date.now()}`;
     const dob = "2011-03-22";
     await makeAgent()
-      .post("/api/students")
+      .post("/api/v1/students")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Bob Login", classId, batchId, admissionNumber, dob });
 
     // DDMMYYYY of 2011-03-22 → 22032011
     const derivedPassword = `${admissionNumber}22032011`;
     const loginRes = await makeAgent()
-      .post("/api/auth/login")
+      .post("/api/v1/auth/login")
       .send({
         email: `${admissionNumber.toLowerCase()}@${tenant.tenantSlug}.local`,
         password: derivedPassword,
-        tenantSlug: tenant.tenantSlug,
+        tenantId: tenant.tenantId,
       });
     expect(loginRes.status).toBe(200);
     expect(loginRes.body).toHaveProperty("token");
@@ -128,12 +128,12 @@ describe("POST /api/students", () => {
     const admissionNumber = `DUP-${Date.now()}`;
     const dob = "2010-01-01";
     await makeAgent()
-      .post("/api/students")
+      .post("/api/v1/students")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "First", classId, batchId, admissionNumber, dob });
 
     const res = await makeAgent()
-      .post("/api/students")
+      .post("/api/v1/students")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Second", classId, batchId, admissionNumber, dob });
     expect(res.status).toBe(409);
@@ -143,7 +143,7 @@ describe("POST /api/students", () => {
   it("returns 400 when required fields are missing", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/students")
+      .post("/api/v1/students")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Incomplete" });
     expect(res.status).toBe(400);
@@ -155,7 +155,7 @@ describe("POST /api/students", () => {
       await seedBatchAndClass(token, `other-${Date.now()}`);
     // Use classId from original batch but otherBatch id
     const res = await makeAgent()
-      .post("/api/students")
+      .post("/api/v1/students")
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: "Mismatch",
@@ -169,7 +169,7 @@ describe("POST /api/students", () => {
   });
 });
 
-describe("GET /api/students", () => {
+describe("GET /api/v1/students", () => {
   let tenant: TestTenant;
   let token: string;
   let studentId: string;
@@ -183,7 +183,7 @@ describe("GET /api/students", () => {
       Date.now().toString(),
     );
     const res = await makeAgent()
-      .post("/api/students")
+      .post("/api/v1/students")
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: "List Student",
@@ -203,7 +203,7 @@ describe("GET /api/students", () => {
   it("returns 200 + students array including all v3.5 fields", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/students")
+      .get("/api/v1/students")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.students)).toBe(true);
@@ -219,7 +219,7 @@ describe("GET /api/students", () => {
   });
 });
 
-describe("PUT /api/students/:id", () => {
+describe("PUT /api/v1/students/:id", () => {
   let tenant: TestTenant;
   let token: string;
   let studentId: string;
@@ -238,7 +238,7 @@ describe("PUT /api/students/:id", () => {
     admissionNumber = `PUT-${Date.now()}`;
     const dob = "2008-12-05";
     const res = await makeAgent()
-      .post("/api/students")
+      .post("/api/v1/students")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Put Student", classId, batchId, admissionNumber, dob });
     studentId = res.body.student.id as string;
@@ -252,7 +252,7 @@ describe("PUT /api/students/:id", () => {
   it("updates name — 200", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .put(`/api/students/${studentId}`)
+      .put(`/api/v1/students/${studentId}`)
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "Updated Name" });
     expect(res.status).toBe(200);
@@ -263,7 +263,7 @@ describe("PUT /api/students/:id", () => {
     if (SKIP) return;
     const newDob = "2008-11-20"; // DDMMYYYY → 20112008
     const res = await makeAgent()
-      .put(`/api/students/${studentId}`)
+      .put(`/api/v1/students/${studentId}`)
       .set("Authorization", `Bearer ${token}`)
       .send({ dob: newDob });
     expect(res.status).toBe(200);
@@ -271,17 +271,17 @@ describe("PUT /api/students/:id", () => {
     // Login with new derived password
     const newPassword = `${admissionNumber}20112008`;
     const loginRes = await makeAgent()
-      .post("/api/auth/login")
+      .post("/api/v1/auth/login")
       .send({
         email: `${admissionNumber.toLowerCase()}@${tenant.tenantSlug}.local`,
         password: newPassword,
-        tenantSlug: tenant.tenantSlug,
+        tenantId: tenant.tenantId,
       });
     expect(loginRes.status).toBe(200);
   });
 });
 
-describe("DELETE /api/students/:id and bulk", () => {
+describe("DELETE /api/v1/students/:id and bulk", () => {
   let tenant: TestTenant;
   let token: string;
   let batchId: string;
@@ -305,7 +305,7 @@ describe("DELETE /api/students/:id and bulk", () => {
   it("soft-deletes a student — 204", async () => {
     if (SKIP) return;
     const res1 = await makeAgent()
-      .post("/api/students")
+      .post("/api/v1/students")
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: "ToDelete",
@@ -316,7 +316,7 @@ describe("DELETE /api/students/:id and bulk", () => {
       });
     const sid = res1.body.student.id as string;
     const res = await makeAgent()
-      .delete(`/api/students/${sid}`)
+      .delete(`/api/v1/students/${sid}`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(204);
   });
@@ -325,7 +325,7 @@ describe("DELETE /api/students/:id and bulk", () => {
     if (SKIP) return;
     const [r1, r2] = await Promise.all([
       makeAgent()
-        .post("/api/students")
+        .post("/api/v1/students")
         .set("Authorization", `Bearer ${token}`)
         .send({
           name: "Bulk1",
@@ -335,7 +335,7 @@ describe("DELETE /api/students/:id and bulk", () => {
           dob: "2010-02-02",
         }),
       makeAgent()
-        .post("/api/students")
+        .post("/api/v1/students")
         .set("Authorization", `Bearer ${token}`)
         .send({
           name: "Bulk2",
@@ -347,7 +347,7 @@ describe("DELETE /api/students/:id and bulk", () => {
     ]);
     const ids = [r1.body.student.id as string, r2.body.student.id as string];
     const res = await makeAgent()
-      .post("/api/students/bulk")
+      .post("/api/v1/students/bulk")
       .set("Authorization", `Bearer ${token}`)
       .send({ studentIds: ids });
     expect(res.status).toBe(200);

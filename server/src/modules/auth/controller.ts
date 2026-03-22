@@ -13,6 +13,7 @@
 import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { pool } from "../../db/pool";
 import { config } from "../../config/env";
 import { send400, send401, send404, send422 } from "../../utils/errors";
@@ -401,4 +402,47 @@ export async function changePassword(
     token,
     user: formatUser(freshUser, activeRole, studentId, classTeacherOf),
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// POST /api/v1/users/:id/reset-password
+// ═══════════════════════════════════════════════════════════════════
+
+export async function resetPassword(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const tenantId = req.tenantId!;
+  const { id } = req.params as { id: string };
+
+  // Fetch the target user
+  const userResult = await pool.query<UserRow>(
+    `SELECT id, tenant_id, name, email, roles, token_version
+     FROM users
+     WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+    [id, tenantId],
+  );
+  const user = userResult.rows[0];
+
+  if (!user) {
+    send404(res, "User not found");
+    return;
+  }
+
+  // Generate cryptographically secure temporary password
+  const temporaryPassword = crypto.randomBytes(8).toString("hex").slice(0, 12);
+  const newHash = await bcrypt.hash(temporaryPassword, config.BCRYPT_ROUNDS);
+
+  // Update user: reset password, set must_change_password=true, increment token_version
+  await pool.query(
+    `UPDATE users
+     SET password_hash = $1,
+         must_change_password = true,
+         token_version = token_version + 1,
+         updated_at = NOW()
+     WHERE id = $2 AND tenant_id = $3`,
+    [newHash, id, tenantId],
+  );
+
+  res.status(200).json({ temporaryPassword });
 }

@@ -3,14 +3,15 @@
  * Freeze §7 Phase 2 acceptance criteria + §3.5 User Management contract
  *
  * Covers:
- *   GET  /api/users               — excludes Student-role users (CR-13)
- *   POST /api/users               — rejects Student role (INVALIDROLE) (CR-13)
- *   PUT  /api/users/:id/roles     — self-edit allowed (CR-12); LASTADMIN guard
- *   DELETE /api/users/:id         — soft delete + 409 HASREFERENCES
- *   DELETE /api/users/bulk        — bulk soft delete
+ *   GET  /api/v1/users               — excludes Student-role users (CR-13)
+ *   POST /api/v1/users               — rejects Student role (INVALIDROLE) (CR-13)
+ *   PUT  /api/v1/users/:id/roles     — self-edit allowed (CR-12); LASTADMIN guard
+ *   DELETE /api/v1/users/:id         — soft delete + 409 HASREFERENCES
+ *   DELETE /api/v1/users/bulk        — bulk soft delete
  */
 import dotenv from "dotenv";
 import path from "path";
+import { randomUUID } from "crypto";
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 import {
@@ -25,15 +26,15 @@ import {
 const SKIP = skipIfNoDb();
 
 async function loginAsAdmin(tenant: TestTenant): Promise<string> {
-  const res = await makeAgent().post("/api/auth/login").send({
+  const res = await makeAgent().post("/api/v1/auth/login").send({
     email: tenant.adminEmail,
     password: tenant.adminPassword,
-    tenantSlug: tenant.tenantSlug,
+    tenantId: tenant.tenantId,
   });
   return res.body.token as string;
 }
 
-describe("GET /api/users", () => {
+describe("GET /api/v1/users", () => {
   let tenant: TestTenant;
   let token: string;
   let studentUserId: string;
@@ -45,7 +46,7 @@ describe("GET /api/users", () => {
 
     // Seed a Student-role user directly — should be excluded from /users
     const bcrypt = (await import("bcryptjs")).default;
-    studentUserId = `U-STU-${Date.now()}`;
+    studentUserId = randomUUID();
     await testPool.query(
       `INSERT INTO users (id, tenant_id, name, email, password_hash, roles, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, '["Student"]'::jsonb, NOW(), NOW())`,
@@ -67,7 +68,7 @@ describe("GET /api/users", () => {
   it("returns 200 with users list (no Student-role users — CR-13)", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/users")
+      .get("/api/v1/users")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("users");
@@ -81,7 +82,7 @@ describe("GET /api/users", () => {
   it("filters by role=Teacher", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/users?role=Teacher")
+      .get("/api/v1/users?role=Teacher")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     const roles = (res.body.users as { roles: string[] }[]).flatMap(
@@ -93,12 +94,12 @@ describe("GET /api/users", () => {
 
   it("returns 401 without token", async () => {
     if (SKIP) return;
-    const res = await makeAgent().get("/api/users");
+    const res = await makeAgent().get("/api/v1/users");
     expect(res.status).toBe(401);
   });
 });
 
-describe("POST /api/users", () => {
+describe("POST /api/v1/users", () => {
   let tenant: TestTenant;
   let token: string;
 
@@ -116,7 +117,7 @@ describe("POST /api/users", () => {
   it("creates a Teacher user and returns 201", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/users")
+      .post("/api/v1/users")
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: "New Teacher",
@@ -131,7 +132,7 @@ describe("POST /api/users", () => {
   it("returns 400 INVALIDROLE when Student is passed in roles (CR-13)", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/users")
+      .post("/api/v1/users")
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: "Should Fail",
@@ -147,7 +148,7 @@ describe("POST /api/users", () => {
     if (SKIP) return;
     const email = `dup-${Date.now()}@test.local`;
     await makeAgent()
-      .post("/api/users")
+      .post("/api/v1/users")
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: "First",
@@ -156,7 +157,7 @@ describe("POST /api/users", () => {
         roles: ["Teacher"],
       });
     const res = await makeAgent()
-      .post("/api/users")
+      .post("/api/v1/users")
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: "Second",
@@ -168,7 +169,7 @@ describe("POST /api/users", () => {
   });
 });
 
-describe("PUT /api/users/:id/roles", () => {
+describe("PUT /api/v1/users/:id/roles", () => {
   let tenant: TestTenant;
   let token: string;
   let teacherId: string;
@@ -180,7 +181,7 @@ describe("PUT /api/users/:id/roles", () => {
 
     // Create a Teacher user to update
     const res = await makeAgent()
-      .post("/api/users")
+      .post("/api/v1/users")
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: "Target Teacher",
@@ -199,7 +200,7 @@ describe("PUT /api/users/:id/roles", () => {
   it("updates another user roles — 200", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .put(`/api/users/${teacherId}/roles`)
+      .put(`/api/v1/users/${teacherId}/roles`)
       .set("Authorization", `Bearer ${token}`)
       .send({ roles: ["Teacher", "Admin"] });
     expect(res.status).toBe(200);
@@ -210,7 +211,7 @@ describe("PUT /api/users/:id/roles", () => {
   it("allows self role edit (CR-12 — isSelf guard removed)", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .put(`/api/users/${tenant.adminId}/roles`)
+      .put(`/api/v1/users/${tenant.adminId}/roles`)
       .set("Authorization", `Bearer ${token}`)
       .send({ roles: ["Admin", "Teacher"] });
     // Should succeed — self-edit is now allowed
@@ -222,12 +223,12 @@ describe("PUT /api/users/:id/roles", () => {
     if (SKIP) return;
     // Set the target teacher back to Teacher-only so adminId remains sole admin
     await makeAgent()
-      .put(`/api/users/${teacherId}/roles`)
+      .put(`/api/v1/users/${teacherId}/roles`)
       .set("Authorization", `Bearer ${token}`)
       .send({ roles: ["Teacher"] });
 
     const res = await makeAgent()
-      .put(`/api/users/${tenant.adminId}/roles`)
+      .put(`/api/v1/users/${tenant.adminId}/roles`)
       .set("Authorization", `Bearer ${token}`)
       .send({ roles: ["Teacher"] }); // Remove Admin from self
     expect(res.status).toBe(409);
@@ -235,7 +236,7 @@ describe("PUT /api/users/:id/roles", () => {
   });
 });
 
-describe("DELETE /api/users/:id and bulk", () => {
+describe("DELETE /api/v1/users/:id and bulk", () => {
   let tenant: TestTenant;
   let token: string;
 
@@ -253,7 +254,7 @@ describe("DELETE /api/users/:id and bulk", () => {
   it("soft-deletes a user — 204", async () => {
     if (SKIP) return;
     const createRes = await makeAgent()
-      .post("/api/users")
+      .post("/api/v1/users")
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: "ToDelete",
@@ -263,13 +264,13 @@ describe("DELETE /api/users/:id and bulk", () => {
       });
     const uid = createRes.body.user.id as string;
     const res = await makeAgent()
-      .delete(`/api/users/${uid}`)
+      .delete(`/api/v1/users/${uid}`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(204);
 
     // Soft-deleted user should not appear in GET /users
     const listRes = await makeAgent()
-      .get("/api/users")
+      .get("/api/v1/users")
       .set("Authorization", `Bearer ${token}`);
     const ids = (listRes.body.users as { id: string }[]).map((u) => u.id);
     expect(ids).not.toContain(uid);
@@ -279,7 +280,7 @@ describe("DELETE /api/users/:id and bulk", () => {
     if (SKIP) return;
     const [r1, r2] = await Promise.all([
       makeAgent()
-        .post("/api/users")
+        .post("/api/v1/users")
         .set("Authorization", `Bearer ${token}`)
         .send({
           name: "Bulk1",
@@ -288,7 +289,7 @@ describe("DELETE /api/users/:id and bulk", () => {
           roles: ["Teacher"],
         }),
       makeAgent()
-        .post("/api/users")
+        .post("/api/v1/users")
         .set("Authorization", `Bearer ${token}`)
         .send({
           name: "Bulk2",
@@ -299,7 +300,7 @@ describe("DELETE /api/users/:id and bulk", () => {
     ]);
     const ids = [r1.body.user.id as string, r2.body.user.id as string];
     const res = await makeAgent()
-      .post("/api/users/bulk")
+      .post("/api/v1/users/bulk")
       .set("Authorization", `Bearer ${token}`)
       .send({ userIds: ids });
     expect(res.status).toBe(200);

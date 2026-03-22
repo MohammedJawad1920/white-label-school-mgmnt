@@ -60,7 +60,7 @@ function formatSession(r: AcademicSessionRow): ApiAcademicSession {
     endDate: String(r.end_date).slice(0, 10),
     // H-05: is_current is optional on the type (computed column not in DB schema);
     // fall back to deriving from status when the query does not include it.
-    isCurrent: r.is_current ?? (r.status === "ACTIVE"),
+    isCurrent: r.is_current ?? r.status === "ACTIVE",
     createdAt:
       r.created_at instanceof Date
         ? r.created_at.toISOString()
@@ -125,7 +125,7 @@ export async function listSessions(req: Request, res: Response): Promise<void> {
     [tenantId],
   );
 
-  res.json({
+  res.status(200).json({
     sessions: result.rows.map(formatSession),
     total: result.rowCount ?? 0,
   });
@@ -156,7 +156,7 @@ export async function getCurrentSession(
     return;
   }
 
-  res.json({ session: formatSession(result.rows[0]) });
+  res.status(200).json({ data: formatSession(result.rows[0]) });
 }
 
 // ─── PUT /academic-sessions/:id/activate ────────────────────────────────────
@@ -208,7 +208,7 @@ export async function activateSession(
     [id, tenantId],
   );
 
-  res.json({ session: formatSession(updated.rows[0]!) });
+  res.status(200).json({ session: formatSession(updated.rows[0]!) });
 }
 
 // ─── PUT /academic-sessions/:id/close ───────────────────────────────────────
@@ -239,7 +239,7 @@ export async function closeSession(req: Request, res: Response): Promise<void> {
     [id, tenantId],
   );
 
-  res.json({ session: formatSession(updated.rows[0]!) });
+  res.status(200).json({ session: formatSession(updated.rows[0]!) });
 }
 
 // ─── POST /academic-sessions/:id/copy-timetable ─────────────────────────────
@@ -267,7 +267,7 @@ export async function copyTimetable(
   // Verify both sessions belong to this tenant
   const sessionsResult = await pool.query<AcademicSessionRow>(
     `SELECT id, status FROM academic_sessions
-     WHERE id = ANY($1::text[]) AND tenant_id = $2 AND deleted_at IS NULL`,
+     WHERE id = ANY($1::uuid[]) AND tenant_id = $2 AND deleted_at IS NULL`,
     [[fromSessionId, targetSessionId], tenantId],
   );
   const sessions = sessionsResult.rows;
@@ -322,7 +322,7 @@ export async function copyTimetable(
   );
 
   const copied = parseInt(String(result.rows[0]?.copied ?? 0), 10);
-  res.json({ copied });
+  res.status(200).json({ copied });
 }
 
 // ─── POST /academic-sessions/:id/transition/preview ─────────────────────────

@@ -2,14 +2,14 @@
  * Integration tests: Attendance endpoints
  *
  * Covers:
- *   POST /api/attendance/record-class         — bulk record; 409 on duplicate
- *   GET  /api/students/:studentId/attendance  — paginated history (admin access)
- *   GET  /api/attendance/summary              — aggregate stats
+ *   POST /api/v1/attendance/record-class         — bulk record; UPSERT on duplicate
+ *   GET  /api/v1/students/:studentId/attendance  — paginated history (admin access)
+ *   GET  /api/v1/attendance/summary              — aggregate stats
  *
  * FREEZE INVARIANTS:
  *   - Feature guard: requires attendance (+ timetable) enabled
- *   - defaultStatus + exceptions pattern
- *   - UNIQUE(student_id, timeslot_id, date) → 409 ATTENDANCE_ALREADY_RECORDED
+ *   - students array payload pattern
+ *   - UNIQUE(student_id, timeslot_id, date) with UPSERT updates existing records
  *   - TIMESLOT_ENDED: cannot record for ended timeslot
  *   - NO_STUDENTS: 400 when class has no students
  */
@@ -28,10 +28,10 @@ import {
 const SKIP = skipIfNoDb();
 
 async function loginAsAdmin(tenant: TestTenant): Promise<string> {
-  const res = await makeAgent().post("/api/auth/login").send({
+  const res = await makeAgent().post("/api/v1/auth/login").send({
     email: tenant.adminEmail,
     password: tenant.adminPassword,
-    tenantSlug: tenant.tenantSlug,
+    tenantId: tenant.tenantId,
   });
   return res.body.token as string;
 }
@@ -48,14 +48,14 @@ async function scaffoldAttendanceData(
 
   // Create subject
   const subjectRes = await makeAgent()
-    .post("/api/subjects")
+    .post("/api/v1/subjects")
     .set("Authorization", `Bearer ${token}`)
     .send({ name: `ATT-Subj-${suffix}` });
   const subjectId = subjectRes.body.subject.id as string;
 
   // Create teacher user
   const teacherRes = await makeAgent()
-    .post("/api/users")
+    .post("/api/v1/users")
     .set("Authorization", `Bearer ${token}`)
     .send({
       name: `ATT-Teacher-${suffix}`,
@@ -67,13 +67,13 @@ async function scaffoldAttendanceData(
 
   // Create batch + class
   const batchRes = await makeAgent()
-    .post("/api/batches")
+    .post("/api/v1/batches")
     .set("Authorization", `Bearer ${token}`)
     .send({ name: `ATT-Batch-${suffix}`, startYear: 2024, endYear: 2025 });
   const batchId = batchRes.body.batch.id as string;
 
   const classRes = await makeAgent()
-    .post("/api/classes")
+    .post("/api/v1/classes")
     .set("Authorization", `Bearer ${token}`)
     .send({ name: `ATT-Class-${suffix}`, batchId });
   const classId = classRes.body.class.id as string;
@@ -81,7 +81,7 @@ async function scaffoldAttendanceData(
   // Create student (required — NO_STUDENTS would block attendance recording)
   const admissionNumber = `ATT-${suffix}`;
   const studentRes = await makeAgent()
-    .post("/api/students")
+    .post("/api/v1/students")
     .set("Authorization", `Bearer ${token}`)
     .send({
       name: `ATT-Student-${suffix}`,
@@ -94,7 +94,7 @@ async function scaffoldAttendanceData(
 
   // Create timeslot using the seeded period
   const tsRes = await makeAgent()
-    .post("/api/timetable")
+    .post("/api/v1/timetable")
     .set("Authorization", `Bearer ${token}`)
     .send({
       classId,
@@ -109,7 +109,7 @@ async function scaffoldAttendanceData(
   return { timeslotId, studentId, classId };
 }
 
-describe("POST /api/attendance/record-class", () => {
+describe("POST /api/v1/attendance/record-class", () => {
   let tenant: TestTenant;
   let token: string;
   let timeslotId: string;
@@ -128,68 +128,66 @@ describe("POST /api/attendance/record-class", () => {
     await cleanupTenant(tenant.tenantId);
   });
 
-  it("records attendance for class — 201 with counters", async () => {
+  it("records attendance for class — 200 with counters", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        timeSlotId: timeslotId,
+        timeslotId,
         date: testDate,
-        defaultStatus: "Present",
-        exceptions: [{ studentId, status: "Late" }],
+        students: [{ studentId, status: "Late" }],
       });
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(res.body.recorded).toBeGreaterThanOrEqual(1);
     expect(res.body.late).toBe(1); // the one student was set to Late via exception
     expect(res.body.present).toBe(0);
-    expect(res.body).toHaveProperty("date", testDate);
   });
 
-  it("returns 409 ATTENDANCE_ALREADY_RECORDED on duplicate date+timeslot", async () => {
+  it("upserts on duplicate date+timeslot", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        timeSlotId: timeslotId,
+        timeslotId,
         date: testDate, // same date as above
-        defaultStatus: "Absent",
+        students: [{ studentId, status: "Absent" }],
       });
-    expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe("ATTENDANCE_ALREADY_RECORDED");
+    expect(res.status).toBe(200);
+    expect(res.body.absent).toBe(1);
   });
 
   it("returns 400 when required fields missing", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${token}`)
-      .send({ timeSlotId: timeslotId });
-    expect(res.status).toBe(400);
+      .send({ timeslotId });
+    expect(res.status).toBe(422);
   });
 
   it("returns 404 when timeslot has been deleted (CR-31: effectiveTo removed)", async () => {
     if (SKIP) return;
     // Soft-delete the timeslot (PUT /end removed in CR-31; deletion replaces it)
     await makeAgent()
-      .delete(`/api/timetable/${timeslotId}`)
+      .delete(`/api/v1/timetable/${timeslotId}`)
       .set("Authorization", `Bearer ${token}`);
 
     const anotherDate = "2024-09-05";
     const res = await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        timeSlotId: timeslotId,
+        timeslotId,
         date: anotherDate,
-        defaultStatus: "Present",
+        students: [{ studentId, status: "Present" }],
       });
     expect(res.status).toBe(404);
   });
 });
 
-describe("GET /api/students/:studentId/attendance", () => {
+describe("GET /api/v1/students/:studentId/attendance", () => {
   let tenant: TestTenant;
   let token: string;
   let studentId: string;
@@ -203,12 +201,12 @@ describe("GET /api/students/:studentId/attendance", () => {
 
     // Seed attendance records for the student
     await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        timeSlotId: timeslotId,
+        timeslotId,
         date: "2024-10-01",
-        defaultStatus: "Present",
+        students: [{ studentId, status: "Present" }],
       });
   });
 
@@ -220,7 +218,7 @@ describe("GET /api/students/:studentId/attendance", () => {
   it("returns 200 with paginated records for admin", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get(`/api/students/${studentId}/attendance`)
+      .get(`/api/v1/students/${studentId}/attendance`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.records)).toBe(true);
@@ -231,13 +229,13 @@ describe("GET /api/students/:studentId/attendance", () => {
   it("returns 404 for unknown studentId", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/students/STU-no-such-id/attendance")
+      .get("/api/v1/students/00000000-0000-0000-0000-000000000020/attendance")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
 });
 
-describe("GET /api/attendance/summary", () => {
+describe("GET /api/v1/attendance/summary", () => {
   let tenant: TestTenant;
   let token: string;
   let classId: string;
@@ -246,20 +244,21 @@ describe("GET /api/attendance/summary", () => {
     if (SKIP) return;
     tenant = await createTestTenant();
     token = await loginAsAdmin(tenant);
-    const { timeslotId, classId: cid } = await scaffoldAttendanceData(
-      token,
-      tenant,
-    );
+    const {
+      timeslotId,
+      classId: cid,
+      studentId,
+    } = await scaffoldAttendanceData(token, tenant);
     classId = cid;
 
     // Seed one attendance session
     await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        timeSlotId: timeslotId,
+        timeslotId,
         date: "2024-11-01",
-        defaultStatus: "Absent",
+        students: [{ studentId, status: "Absent" }],
       });
   });
 
@@ -272,7 +271,7 @@ describe("GET /api/attendance/summary", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/summary?classId=${classId}&from=2024-11-01&to=2024-11-30`,
+        `/api/v1/attendance/summary?classId=${classId}&from=2024-11-01&to=2024-11-30`,
       )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
@@ -282,8 +281,8 @@ describe("GET /api/attendance/summary", () => {
   });
 });
 
-// ── GET /api/attendance/absentees (CR-39 / CR-41) ──────────────────────────────
-describe("GET /api/attendance/absentees", () => {
+// ── GET /api/v1/attendance/absentees (CR-39 / CR-41) ──────────────────────────────
+describe("GET /api/v1/attendance/absentees", () => {
   let tenant: TestTenant;
   let adminToken: string;
   let teacherToken: string;
@@ -298,19 +297,25 @@ describe("GET /api/attendance/absentees", () => {
   async function scaffoldWithTeacher(
     tkn: string,
     tn: TestTenant,
-  ): Promise<{ timeslotId: string; teacherEmail: string }> {
+  ): Promise<{
+    timeslotId: string;
+    teacherEmail: string;
+    studentId: string;
+    studentAdmissionNumber: string;
+    studentDob: string;
+  }> {
     const suffix = Date.now();
     const teacherPassword = "Teacher@Abs1";
     const teacherEmail = `abs-teacher-${suffix}@test.local`;
 
     const subjectRes = await makeAgent()
-      .post("/api/subjects")
+      .post("/api/v1/subjects")
       .set("Authorization", `Bearer ${tkn}`)
       .send({ name: `ABS-Subj-${suffix}` });
     const subjectId = subjectRes.body.subject.id as string;
 
     const teacherRes = await makeAgent()
-      .post("/api/users")
+      .post("/api/v1/users")
       .set("Authorization", `Bearer ${tkn}`)
       .send({
         name: `ABS-Teacher-${suffix}`,
@@ -321,30 +326,33 @@ describe("GET /api/attendance/absentees", () => {
     const teacherId = teacherRes.body.user.id as string;
 
     const batchRes = await makeAgent()
-      .post("/api/batches")
+      .post("/api/v1/batches")
       .set("Authorization", `Bearer ${tkn}`)
       .send({ name: `ABS-Batch-${suffix}`, startYear: 2024, endYear: 2025 });
     const batchId = batchRes.body.batch.id as string;
 
     const classRes = await makeAgent()
-      .post("/api/classes")
+      .post("/api/v1/classes")
       .set("Authorization", `Bearer ${tkn}`)
       .send({ name: `ABS-Class-${suffix}`, batchId });
     const classId = classRes.body.class.id as string;
 
-    await makeAgent()
-      .post("/api/students")
+    const studentAdmissionNumber = `ABS-${suffix}`;
+    const studentDob = "2010-06-15";
+    const studentRes = await makeAgent()
+      .post("/api/v1/students")
       .set("Authorization", `Bearer ${tkn}`)
       .send({
         name: `ABS-Student-${suffix}`,
         classId,
         batchId,
-        admissionNumber: `ABS-${suffix}`,
-        dob: "2010-06-15",
+        admissionNumber: studentAdmissionNumber,
+        dob: studentDob,
       });
+    const studentId = studentRes.body.student.id as string;
 
     const tsRes = await makeAgent()
-      .post("/api/timetable")
+      .post("/api/v1/timetable")
       .set("Authorization", `Bearer ${tkn}`)
       .send({
         classId,
@@ -356,7 +364,13 @@ describe("GET /api/attendance/absentees", () => {
       });
     const tsId = tsRes.body.timeSlot.id as string;
 
-    return { timeslotId: tsId, teacherEmail };
+    return {
+      timeslotId: tsId,
+      teacherEmail,
+      studentId,
+      studentAdmissionNumber,
+      studentDob,
+    };
   }
 
   beforeAll(async () => {
@@ -364,47 +378,45 @@ describe("GET /api/attendance/absentees", () => {
     tenant = await createTestTenant();
     adminToken = await loginAsAdmin(tenant);
 
-    const { timeslotId: tsId, teacherEmail } = await scaffoldWithTeacher(
-      adminToken,
-      tenant,
-    );
+    const {
+      timeslotId: tsId,
+      teacherEmail,
+      studentId,
+      studentAdmissionNumber,
+      studentDob,
+    } = await scaffoldWithTeacher(adminToken, tenant);
     timeslotId = tsId;
 
     // Teacher login
-    const teacherLoginRes = await makeAgent().post("/api/auth/login").send({
+    const teacherLoginRes = await makeAgent().post("/api/v1/auth/login").send({
       email: teacherEmail,
       password: "Teacher@Abs1",
-      tenantSlug: tenant.tenantSlug,
+      tenantId: tenant.tenantId,
     });
     teacherToken = teacherLoginRes.body.token as string;
 
-    // Create a Student-role user for 403 test
-    const suffix = Date.now();
-    const studentEmail = `abs-student-user-${suffix}@test.local`;
-    await makeAgent()
-      .post("/api/users")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({
-        name: `ABS-StudentUser-${suffix}`,
-        email: studentEmail,
-        password: "Student@Abs1",
-        roles: ["Student"],
-      });
-    const studentLoginRes = await makeAgent().post("/api/auth/login").send({
-      email: studentEmail,
-      password: "Student@Abs1",
-      tenantSlug: tenant.tenantSlug,
+    // Student login (created via POST /students with auto-generated credentials)
+    // loginId: {admissionNumber.toLowerCase()}@{tenantSlug}.local
+    // password: {admissionNumber}{ddMMYYYY(dob)}
+    const studentLoginId = `${studentAdmissionNumber.toLowerCase()}@${tenant.tenantSlug}.local`;
+    // dob 2010-06-15 → ddMMYYYY → 15062010
+    const dobParts = studentDob.split("-");
+    const studentPassword = `${studentAdmissionNumber}${dobParts[2]}${dobParts[1]}${dobParts[0]}`;
+    const studentLoginRes = await makeAgent().post("/api/v1/auth/login").send({
+      email: studentLoginId,
+      password: studentPassword,
+      tenantId: tenant.tenantId,
     });
     studentRoleToken = studentLoginRes.body.token as string;
 
     // Record attendance (all absent) so absentees endpoint has data
     await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${adminToken}`)
       .send({
-        timeSlotId: timeslotId,
+        timeslotId,
         date: testDate,
-        defaultStatus: "Absent",
+        students: [{ studentId, status: "Absent" }],
       });
   });
 
@@ -417,7 +429,7 @@ describe("GET /api/attendance/absentees", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/absentees?timeSlotId=${timeslotId}&date=${testDate}`,
+        `/api/v1/attendance/absentees?timeSlotId=${timeslotId}&date=${testDate}`,
       )
       .set("Authorization", `Bearer ${adminToken}`);
     expect(res.status).toBe(200);
@@ -438,7 +450,7 @@ describe("GET /api/attendance/absentees", () => {
     // CR-41: Teacher can access absentees for any class (not just own timeslots)
     const res = await makeAgent()
       .get(
-        `/api/attendance/absentees?timeSlotId=${timeslotId}&date=${testDate}`,
+        `/api/v1/attendance/absentees?timeSlotId=${timeslotId}&date=${testDate}`,
       )
       .set("Authorization", `Bearer ${teacherToken}`);
     expect(res.status).toBe(200);
@@ -449,7 +461,7 @@ describe("GET /api/attendance/absentees", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/absentees?timeSlotId=${timeslotId}&date=${testDate}`,
+        `/api/v1/attendance/absentees?timeSlotId=${timeslotId}&date=${testDate}`,
       )
       .set("Authorization", `Bearer ${studentRoleToken}`);
     expect(res.status).toBe(403);
@@ -461,7 +473,7 @@ describe("GET /api/attendance/absentees", () => {
     const unmarkedDate = "2024-12-20";
     const res = await makeAgent()
       .get(
-        `/api/attendance/absentees?timeSlotId=${timeslotId}&date=${unmarkedDate}`,
+        `/api/v1/attendance/absentees?timeSlotId=${timeslotId}&date=${unmarkedDate}`,
       )
       .set("Authorization", `Bearer ${adminToken}`);
     expect(res.status).toBe(200);
@@ -472,12 +484,12 @@ describe("GET /api/attendance/absentees", () => {
     if (SKIP) return;
     // Soft-delete the timeslot
     await makeAgent()
-      .delete(`/api/timetable/${timeslotId}`)
+      .delete(`/api/v1/timetable/${timeslotId}`)
       .set("Authorization", `Bearer ${adminToken}`);
 
     const res = await makeAgent()
       .get(
-        `/api/attendance/absentees?timeSlotId=${timeslotId}&date=${testDate}`,
+        `/api/v1/attendance/absentees?timeSlotId=${timeslotId}&date=${testDate}`,
       )
       .set("Authorization", `Bearer ${adminToken}`);
     expect(res.status).toBe(404);
@@ -487,7 +499,7 @@ describe("GET /api/attendance/absentees", () => {
   it("returns 400 when required query params are missing", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/attendance/absentees")
+      .get("/api/v1/attendance/absentees")
       .set("Authorization", `Bearer ${adminToken}`);
     expect(res.status).toBe(400);
   });
@@ -495,7 +507,7 @@ describe("GET /api/attendance/absentees", () => {
   it("returns 401 for unauthenticated request", async () => {
     if (SKIP) return;
     const res = await makeAgent().get(
-      `/api/attendance/absentees?timeSlotId=${timeslotId}&date=${testDate}`,
+      `/api/v1/attendance/absentees?timeSlotId=${timeslotId}&date=${testDate}`,
     );
     expect(res.status).toBe(401);
   });

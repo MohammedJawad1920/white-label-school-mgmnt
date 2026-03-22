@@ -25,6 +25,12 @@ export const studentsApi = {
     apiClient
       .post<CreateStudentResponse>("/students", data)
       .then((r) => r.data),
+  getById: (id: string) =>
+    apiClient
+      .get<{
+        student: { id: string; classId: string | null; batchId: string };
+      }>(`/students/${id}`)
+      .then((r) => r.data),
   // v3.5 CR-13: update student (dob/admissionNumber change resets login credentials)
   update: (id: string, data: UpdateStudentRequest) =>
     apiClient

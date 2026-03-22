@@ -16,6 +16,7 @@
 
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
+import { formatInTimeZone } from "date-fns-tz";
 import { pool, withTransaction } from "../../db/pool";
 import { send400, send403, send404 } from "../../utils/errors";
 import { logger } from "../../utils/logger";
@@ -425,7 +426,7 @@ export async function listAssignments(
       return;
     }
     if (!classIdFilter) {
-      conditions.push(`a.class_id = ANY($${paramIdx++}::text[])`);
+      conditions.push(`a.class_id = ANY($${paramIdx++}::uuid[])`);
       params.push(childClassIds);
     }
   }
@@ -492,8 +493,15 @@ export async function updateAssignment(
   }
 
   // Cannot edit past-due assignments
+  // Fetch tenant timezone for accurate date comparison
+  const { rows: tenantRows } = await pool.query<{ timezone: string }>(
+    "SELECT timezone FROM tenants WHERE id = $1",
+    [tenantId],
+  );
+  const tenantTimezone = tenantRows[0]?.timezone ?? "UTC";
+
   const dueDate = String(existing.due_date).slice(0, 10);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = formatInTimeZone(new Date(), tenantTimezone, "yyyy-MM-dd");
   if (dueDate < today) {
     send400(
       res,

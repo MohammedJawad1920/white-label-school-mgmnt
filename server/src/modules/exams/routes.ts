@@ -9,6 +9,7 @@
 
 import { Router } from "express";
 import { tenantContextMiddleware } from "../../middleware/tenantContext";
+import { featureGuard } from "../../middleware/featureGuard";
 import { requireRole } from "../../middleware/requireRole";
 import { asyncHandler } from "../../utils/asyncHandler";
 import {
@@ -34,6 +35,7 @@ import {
 // ── Main exams router ────────────────────────────────────────────────────────
 const router = Router();
 router.use(tenantContextMiddleware);
+router.use(featureGuard("exams"));
 
 // CRUD
 router.post("/", requireRole("Admin"), asyncHandler(createExam));
@@ -97,6 +99,7 @@ export default router;
 // Mounted at /api/v1/external-results
 export const externalResultsRouter = Router();
 externalResultsRouter.use(tenantContextMiddleware);
+externalResultsRouter.use(featureGuard("exams"));
 
 externalResultsRouter.post(
   "/",

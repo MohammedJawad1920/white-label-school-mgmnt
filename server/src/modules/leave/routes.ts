@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { tenantContextMiddleware } from "../../middleware/tenantContext";
+import { featureGuard } from "../../middleware/featureGuard";
 import { requireRole } from "../../middleware/requireRole";
 import { asyncHandler } from "../../utils/asyncHandler";
 import * as controller from "./controller";
 
 const router = Router();
 router.use(tenantContextMiddleware);
+router.use(featureGuard("leave"));
 
 // IMPORTANT: /on-campus must come before /:id to avoid path conflict
 router.get(

@@ -165,7 +165,12 @@ export interface TenantFeatureRow {
 
 // ─── Domain Enums / Unions ───────────────────────────────────────────────────
 
-export type UserRole = "Teacher" | "Admin" | "Student" | "Guardian" | "SuperAdmin"; // v5.0: Guardian added; SuperAdmin added for OpenAPI completeness (I-02)
+export type UserRole =
+  | "Teacher"
+  | "Admin"
+  | "Student"
+  | "Guardian"
+  | "SuperAdmin"; // v5.0: Guardian added; SuperAdmin added for OpenAPI completeness (I-02)
 
 export type DayOfWeek =
   | "Monday"
@@ -178,7 +183,17 @@ export type DayOfWeek =
 
 export type AttendanceStatus = "Present" | "Absent" | "Late" | "Excused"; // v5.0 M-012: Excused added
 
-export type FeatureKey = "timetable" | "attendance";
+export type FeatureKey =
+  | "timetable"
+  | "attendance"
+  | "leave"
+  | "exams"
+  | "fees"
+  | "announcements"
+  | "assignments"
+  | "import"
+  | "guardian"
+  | "notifications";
 
 export type TenantStatus = "active" | "inactive";
 

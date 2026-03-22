@@ -9,12 +9,14 @@
  */
 import { Router } from "express";
 import { tenantContextMiddleware } from "../../middleware/tenantContext";
+import { featureGuard } from "../../middleware/featureGuard";
 import { requireRole } from "../../middleware/requireRole";
 import { asyncHandler } from "../../utils/asyncHandler";
 import * as controller from "./controller";
 
 const router = Router();
 router.use(tenantContextMiddleware);
+router.use(featureGuard("notifications"));
 
 // /read-all MUST be registered before /:id/read to avoid Express treating
 // "read-all" as a :id param value.

@@ -165,7 +165,7 @@ async function buildAudienceFilter(
     if (classIds.length > 0 || batchIds.length > 0) {
       extraParams.push(classIds, batchIds);
       return {
-        fragment: `AND (a.audience_type IN ('All', 'GuardiansOnly') OR (a.audience_type = 'Class' AND a.audience_class_id = ANY($${idx}::text[])) OR (a.audience_type = 'Batch' AND a.audience_batch_id = ANY($${idx + 1}::text[])))`,
+        fragment: `AND (a.audience_type IN ('All', 'GuardiansOnly') OR (a.audience_type = 'Class' AND a.audience_class_id = ANY($${idx}::uuid[])) OR (a.audience_type = 'Batch' AND a.audience_batch_id = ANY($${idx + 1}::uuid[])))`,
         extraParams,
       };
     }
@@ -489,10 +489,25 @@ export async function updateAnnouncement(
     expiresAt?: string | null;
   };
 
+  // Detect if publish_at is being rescheduled → reset push_sent
+  const oldPublishAt =
+    existing.publish_at instanceof Date
+      ? existing.publish_at
+      : new Date(String(existing.publish_at));
+  const oldPublishAtIso = oldPublishAt.toISOString();
+  const nextPublishAt =
+    newPublishAt !== undefined ? new Date(newPublishAt) : oldPublishAt;
+  const isRescheduledToFuture =
+    newPublishAt !== undefined &&
+    newPublishAt !== oldPublishAtIso &&
+    nextPublishAt > new Date();
+
   await pool.query(
     `UPDATE announcements
      SET title = $1, body = $2, link_url = $3, link_label = $4,
-         publish_at = $5, expires_at = $6, updated_at = NOW()
+         publish_at = $5, expires_at = $6,
+         push_sent = CASE WHEN $9 THEN false ELSE push_sent END,
+         updated_at = NOW()
      WHERE id = $7 AND tenant_id = $8`,
     [
       title !== undefined ? title.trim() : existing.title,
@@ -503,6 +518,7 @@ export async function updateAnnouncement(
       expiresAt !== undefined ? expiresAt : existing.expires_at,
       id,
       tenantId,
+      isRescheduledToFuture,
     ],
   );
 

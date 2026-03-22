@@ -22,26 +22,33 @@ export const examsApi = {
     classId: string;
     sessionId: string;
     gradeBoundaries?: GradeBoundary[];
-  }) => apiClient.post<Exam>("/exams", data).then((r) => r.data),
+  }) => apiClient.post<{ exam: Exam }>("/exams", data).then((r) => r.data.exam),
 
   list: (filters?: ExamFilters) =>
     apiClient
-      .get<{ exams: Exam[] }>("/exams", { params: filters })
-      .then((r) => r.data),
+      .get<{ data: Exam[]; total: number }>("/exams", { params: filters })
+      .then((r) => ({ exams: r.data.data, total: r.data.total })),
 
-  get: (id: string) => apiClient.get<Exam>(`/exams/${id}`).then((r) => r.data),
+  get: (id: string) =>
+    apiClient.get<{ data: Exam }>(`/exams/${id}`).then((r) => r.data.data),
 
   update: (id: string, data: Partial<{ name: string; type: string }>) =>
-    apiClient.put<Exam>(`/exams/${id}`, data).then((r) => r.data),
+    apiClient
+      .put<{ exam: Exam }>(`/exams/${id}`, data)
+      .then((r) => r.data.exam),
 
   delete: (id: string) =>
     apiClient.delete<{ message: string }>(`/exams/${id}`).then((r) => r.data),
 
   publish: (id: string) =>
-    apiClient.put<Exam>(`/exams/${id}/publish`).then((r) => r.data),
+    apiClient
+      .put<{ exam: Exam }>(`/exams/${id}/publish`)
+      .then((r) => r.data.exam),
 
   unpublish: (id: string) =>
-    apiClient.put<Exam>(`/exams/${id}/unpublish`).then((r) => r.data),
+    apiClient
+      .put<{ exam: Exam }>(`/exams/${id}/unpublish`)
+      .then((r) => r.data.exam),
 
   addSubject: (
     examId: string,

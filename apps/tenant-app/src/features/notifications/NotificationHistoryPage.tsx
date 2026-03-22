@@ -66,14 +66,14 @@ export default function NotificationHistoryPage() {
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ["notifications"] });
       toast.success(
-        `${data.updatedCount} notification${data.updatedCount !== 1 ? "s" : ""} marked as read.`,
+        `${data.updated} notification${data.updated !== 1 ? "s" : ""} marked as read.`,
       );
     },
     onError: (err) => toast.mutationError(parseApiError(err).message),
   });
 
-  const notifications = notificationsQuery.data?.notifications ?? [];
-  const unreadCount = notificationsQuery.data?.unreadCount ?? 0;
+  const notifications = notificationsQuery.data?.data ?? [];
+  const unreadCount = notifications.filter((n) => !n.readAt).length;
   const total = notificationsQuery.data?.total ?? 0;
 
   return (

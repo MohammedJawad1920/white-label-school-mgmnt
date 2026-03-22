@@ -3,13 +3,13 @@
  * Freeze §8 SuperAdmin acceptance criteria
  *
  * Covers:
- *   POST /api/super-admin/auth/login         — success, 401
- *   GET  /api/super-admin/tenants            — list, filter by status
- *   POST /api/super-admin/tenants            — create (atomic: tenant+8periods+features+admin), 409
- *   PUT  /api/super-admin/tenants/:id/deactivate   — 200, 409 ALREADYINACTIVE
- *   PUT  /api/super-admin/tenants/:id/reactivate   — 200, 409 ALREADYACTIVE
- *   GET  /api/super-admin/tenants/:id/features     — 200, 404
- *   PUT  /api/super-admin/tenants/:id/features/:key — 200, 400 FEATURE_DEPENDENCY
+ *   POST /api/v1/super-admin/auth/login         — success, 401
+ *   GET  /api/v1/super-admin/tenants            — list, filter by status
+ *   POST /api/v1/super-admin/tenants            — create (atomic: tenant+8periods+features+admin), 409
+ *   PUT  /api/v1/super-admin/tenants/:id/deactivate   — 200, 409 ALREADYINACTIVE
+ *   PUT  /api/v1/super-admin/tenants/:id/reactivate   — 200, 409 ALREADYACTIVE
+ *   GET  /api/v1/super-admin/tenants/:id/features     — 200, 404
+ *   PUT  /api/v1/super-admin/tenants/:id/features/:key — 200, 400 FEATURE_DEPENDENCY
  */
 import dotenv from "dotenv";
 import path from "path";
@@ -33,12 +33,12 @@ const SKIP = skipIfNoDb();
 
 async function saLogin(): Promise<string> {
   const res = await makeAgent()
-    .post("/api/super-admin/auth/login")
+    .post("/api/v1/super-admin/auth/login")
     .send({ email: SA_EMAIL, password: SA_PASSWORD });
   return res.body.token as string;
 }
 
-describe("POST /api/super-admin/auth/login", () => {
+describe("POST /api/v1/super-admin/auth/login", () => {
   beforeAll(async () => {
     if (SKIP) return;
     await seedSuperAdmin();
@@ -52,7 +52,7 @@ describe("POST /api/super-admin/auth/login", () => {
   it("returns 200 + JWT on valid credentials", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/super-admin/auth/login")
+      .post("/api/v1/super-admin/auth/login")
       .send({ email: SA_EMAIL, password: SA_PASSWORD });
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("token");
@@ -62,7 +62,7 @@ describe("POST /api/super-admin/auth/login", () => {
   it("returns 401 on wrong password", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/super-admin/auth/login")
+      .post("/api/v1/super-admin/auth/login")
       .send({ email: SA_EMAIL, password: "WrongPass1" });
     expect(res.status).toBe(401);
   });
@@ -70,13 +70,13 @@ describe("POST /api/super-admin/auth/login", () => {
   it("returns 400 when email/password absent", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/super-admin/auth/login")
+      .post("/api/v1/super-admin/auth/login")
       .send({ email: SA_EMAIL });
     expect(res.status).toBe(400);
   });
 });
 
-describe("GET /api/super-admin/tenants", () => {
+describe("GET /api/v1/super-admin/tenants", () => {
   let token: string;
   let tenant: TestTenant;
 
@@ -96,7 +96,7 @@ describe("GET /api/super-admin/tenants", () => {
   it("returns 200 + tenants array", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/super-admin/tenants")
+      .get("/api/v1/super-admin/tenants")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.tenants)).toBe(true);
@@ -107,7 +107,7 @@ describe("GET /api/super-admin/tenants", () => {
   it("filters by status=active", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/super-admin/tenants?status=active")
+      .get("/api/v1/super-admin/tenants?status=active")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     const statuses = (res.body.tenants as { status: string }[]).map(
@@ -118,12 +118,12 @@ describe("GET /api/super-admin/tenants", () => {
 
   it("returns 401 without token", async () => {
     if (SKIP) return;
-    const res = await makeAgent().get("/api/super-admin/tenants");
+    const res = await makeAgent().get("/api/v1/super-admin/tenants");
     expect(res.status).toBe(401);
   });
 });
 
-describe("POST /api/super-admin/tenants", () => {
+describe("POST /api/v1/super-admin/tenants", () => {
   let token: string;
   const createdIds: string[] = [];
 
@@ -143,10 +143,10 @@ describe("POST /api/super-admin/tenants", () => {
 
   it("creates tenant atomically — 201 with tenant + admin + 8 periods", async () => {
     if (SKIP) return;
-    const tid = `t-int-${uuidv4().slice(0, 8)}`;
+    const tid = uuidv4();
     const slug = `slug-${Date.now()}`;
     const res = await makeAgent()
-      .post("/api/super-admin/tenants")
+      .post("/api/v1/super-admin/tenants")
       .set("Authorization", `Bearer ${token}`)
       .send({
         id: tid,
@@ -173,7 +173,7 @@ describe("POST /api/super-admin/tenants", () => {
 
   it("returns 409 DUPLICATE_TENANT on duplicate id/slug", async () => {
     if (SKIP) return;
-    const tid = `t-dup-${uuidv4().slice(0, 8)}`;
+    const tid = uuidv4();
     const slug = `slug-dup-${Date.now()}`;
     const body = {
       id: tid,
@@ -186,14 +186,14 @@ describe("POST /api/super-admin/tenants", () => {
       },
     };
     await makeAgent()
-      .post("/api/super-admin/tenants")
+      .post("/api/v1/super-admin/tenants")
       .set("Authorization", `Bearer ${token}`)
       .send(body);
     createdIds.push(tid);
 
     // Same ID again
     const res = await makeAgent()
-      .post("/api/super-admin/tenants")
+      .post("/api/v1/super-admin/tenants")
       .set("Authorization", `Bearer ${token}`)
       .send({
         ...body,
@@ -206,11 +206,11 @@ describe("POST /api/super-admin/tenants", () => {
   it("returns 409 ADMIN_EMAIL_TAKEN when admin email already registered", async () => {
     if (SKIP) return;
     const fixedEmail = `admin-dup-${Date.now()}@school.local`;
-    const tid1 = `t-ae1-${uuidv4().slice(0, 8)}`;
-    const tid2 = `t-ae2-${uuidv4().slice(0, 8)}`;
+    const tid1 = uuidv4();
+    const tid2 = uuidv4();
 
     await makeAgent()
-      .post("/api/super-admin/tenants")
+      .post("/api/v1/super-admin/tenants")
       .set("Authorization", `Bearer ${token}`)
       .send({
         id: tid1,
@@ -221,7 +221,7 @@ describe("POST /api/super-admin/tenants", () => {
     createdIds.push(tid1);
 
     const res = await makeAgent()
-      .post("/api/super-admin/tenants")
+      .post("/api/v1/super-admin/tenants")
       .set("Authorization", `Bearer ${token}`)
       .send({
         id: tid2,
@@ -239,7 +239,7 @@ describe("POST /api/super-admin/tenants", () => {
   });
 });
 
-describe("PUT /api/super-admin/tenants/:id/deactivate + reactivate", () => {
+describe("PUT /api/v1/super-admin/tenants/:id/deactivate + reactivate", () => {
   let token: string;
   let tenant: TestTenant;
 
@@ -259,7 +259,7 @@ describe("PUT /api/super-admin/tenants/:id/deactivate + reactivate", () => {
   it("deactivates an active tenant — 200", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .put(`/api/super-admin/tenants/${tenant.tenantId}/deactivate`)
+      .put(`/api/v1/super-admin/tenants/${tenant.tenantId}/deactivate`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.tenant.status).toBe("inactive");
@@ -268,7 +268,7 @@ describe("PUT /api/super-admin/tenants/:id/deactivate + reactivate", () => {
   it("deactivating again returns 409 ALREADY_INACTIVE", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .put(`/api/super-admin/tenants/${tenant.tenantId}/deactivate`)
+      .put(`/api/v1/super-admin/tenants/${tenant.tenantId}/deactivate`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("ALREADY_INACTIVE");
@@ -277,7 +277,7 @@ describe("PUT /api/super-admin/tenants/:id/deactivate + reactivate", () => {
   it("reactivates an inactive tenant — 200", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .put(`/api/super-admin/tenants/${tenant.tenantId}/reactivate`)
+      .put(`/api/v1/super-admin/tenants/${tenant.tenantId}/reactivate`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.tenant.status).toBe("active");
@@ -286,14 +286,14 @@ describe("PUT /api/super-admin/tenants/:id/deactivate + reactivate", () => {
   it("reactivating an active tenant returns 409 ALREADY_ACTIVE", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .put(`/api/super-admin/tenants/${tenant.tenantId}/reactivate`)
+      .put(`/api/v1/super-admin/tenants/${tenant.tenantId}/reactivate`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("ALREADY_ACTIVE");
   });
 });
 
-describe("GET/PUT /api/super-admin/tenants/:id/features", () => {
+describe("GET/PUT /api/v1/super-admin/tenants/:id/features", () => {
   let token: string;
   let tenant: TestTenant;
 
@@ -313,7 +313,7 @@ describe("GET/PUT /api/super-admin/tenants/:id/features", () => {
   it("GET returns 200 + features array", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get(`/api/super-admin/tenants/${tenant.tenantId}/features`)
+      .get(`/api/v1/super-admin/tenants/${tenant.tenantId}/features`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.features)).toBe(true);
@@ -326,8 +326,9 @@ describe("GET/PUT /api/super-admin/tenants/:id/features", () => {
 
   it("GET returns 404 for unknown tenant", async () => {
     if (SKIP) return;
+    const unknownTenantId = uuidv4();
     const res = await makeAgent()
-      .get("/api/super-admin/tenants/no-such-tenant/features")
+      .get(`/api/v1/super-admin/tenants/${unknownTenantId}/features`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
@@ -335,7 +336,7 @@ describe("GET/PUT /api/super-admin/tenants/:id/features", () => {
   it("PUT enables timetable — 200", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .put(`/api/super-admin/tenants/${tenant.tenantId}/features/timetable`)
+      .put(`/api/v1/super-admin/tenants/${tenant.tenantId}/features/timetable`)
       .set("Authorization", `Bearer ${token}`)
       .send({ enabled: true });
     expect(res.status).toBe(200);
@@ -345,7 +346,7 @@ describe("GET/PUT /api/super-admin/tenants/:id/features", () => {
   it("PUT enables attendance — 200 (no dependency error since timetable already on)", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .put(`/api/super-admin/tenants/${tenant.tenantId}/features/attendance`)
+      .put(`/api/v1/super-admin/tenants/${tenant.tenantId}/features/attendance`)
       .set("Authorization", `Bearer ${token}`)
       .send({ enabled: true });
     expect(res.status).toBe(200);
@@ -356,16 +357,16 @@ describe("GET/PUT /api/super-admin/tenants/:id/features", () => {
     if (SKIP) return;
     // First disable timetable, then disable attendance, then try to enable attendance alone
     await makeAgent()
-      .put(`/api/super-admin/tenants/${tenant.tenantId}/features/attendance`)
+      .put(`/api/v1/super-admin/tenants/${tenant.tenantId}/features/attendance`)
       .set("Authorization", `Bearer ${token}`)
       .send({ enabled: false });
     await makeAgent()
-      .put(`/api/super-admin/tenants/${tenant.tenantId}/features/timetable`)
+      .put(`/api/v1/super-admin/tenants/${tenant.tenantId}/features/timetable`)
       .set("Authorization", `Bearer ${token}`)
       .send({ enabled: false });
 
     const res = await makeAgent()
-      .put(`/api/super-admin/tenants/${tenant.tenantId}/features/attendance`)
+      .put(`/api/v1/super-admin/tenants/${tenant.tenantId}/features/attendance`)
       .set("Authorization", `Bearer ${token}`)
       .send({ enabled: true });
     expect(res.status).toBe(400);

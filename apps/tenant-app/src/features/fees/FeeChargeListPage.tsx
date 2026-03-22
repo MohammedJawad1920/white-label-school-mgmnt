@@ -64,8 +64,9 @@ export default function FeeChargeListPage() {
       notes?: string;
     }) =>
       feesApi.recordPayment(data.chargeId, {
-        amount: data.amount,
+        amountPaid: data.amount,
         paymentMode: data.paymentMode,
+        paidAt: new Date().toISOString().slice(0, 10),
         receiptNumber: data.receiptNumber,
         notes: data.notes,
       }),

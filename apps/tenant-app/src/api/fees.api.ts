@@ -19,23 +19,25 @@ export const feesApi = {
     data: Omit<BulkChargeRequest, "studentIds" | "classId"> & {
       studentId: string;
     },
-  ) => apiClient.post<FeeCharge>("/fees/charges", data).then((r) => r.data),
+  ) =>
+    apiClient
+      .post<{ charge: FeeCharge }>("/fees/charges", data)
+      .then((r) => r.data.charge),
 
   bulkCharge: (data: BulkChargeRequest) =>
     apiClient
       .post<{
-        created: number;
-        charges: FeeCharge[];
+        charged: number;
+        skipped: number;
       }>("/fees/charges/bulk", data)
       .then((r) => r.data),
 
   listCharges: (filters?: FeeChargeFilters) =>
     apiClient
       .get<{
-        charges: FeeCharge[];
-        total: number;
+        data: FeeCharge[];
       }>("/fees/charges", { params: filters })
-      .then((r) => r.data),
+      .then((r) => ({ charges: r.data.data, total: r.data.data.length })),
 
   deleteCharge: (id: string) =>
     apiClient
@@ -45,20 +47,21 @@ export const feesApi = {
   recordPayment: (
     chargeId: string,
     data: {
-      amount: number;
+      amountPaid: number;
       paymentMode: "Cash" | "SelfPaid";
+      paidAt: string;
       receiptNumber?: string;
       notes?: string;
     },
   ) =>
     apiClient
-      .post<FeePayment>(`/fees/charges/${chargeId}/payments`, data)
-      .then((r) => r.data),
+      .post<{ payment: FeePayment }>(`/fees/charges/${chargeId}/payments`, data)
+      .then((r) => r.data.payment),
 
   summary: (filters?: { sessionId?: string; classId?: string }) =>
     apiClient
-      .get<{ summary: FeeSummaryEntry[] }>("/fees/summary", { params: filters })
-      .then((r) => r.data),
+      .get<{ data: FeeSummaryEntry[] }>("/fees/summary", { params: filters })
+      .then((r) => ({ summary: r.data.data })),
 };
 
 // Re-export for convenience

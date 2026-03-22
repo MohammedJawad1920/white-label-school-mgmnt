@@ -11,9 +11,8 @@ export const notificationsApi = {
   list: (filters?: NotificationFilters) =>
     apiClient
       .get<{
-        notifications: Notification[];
+        data: Notification[];
         total: number;
-        unreadCount: number;
       }>("/notifications", { params: filters })
       .then((r) => r.data),
 
@@ -24,7 +23,7 @@ export const notificationsApi = {
 
   markAllRead: () =>
     apiClient
-      .put<{ updatedCount: number }>("/notifications/read-all")
+      .put<{ updated: number }>("/notifications/read-all")
       .then((r) => r.data),
 
   subscribe: (subscription: {

@@ -26,6 +26,7 @@ export const pool = new Pool({
   max: config.DATABASE_POOL_MAX,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
+  statement_timeout: config.DB_STATEMENT_TIMEOUT_MS,
   ssl:
     config.NODE_ENV === "production" ? { rejectUnauthorized: true } : undefined,
 });

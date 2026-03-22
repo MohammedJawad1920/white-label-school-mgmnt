@@ -14,6 +14,7 @@
 import { pool } from "../db/pool";
 import { logger } from "../utils/logger";
 import { sendPushToUser } from "./push.service";
+import { formatInTimeZone } from "date-fns-tz";
 
 const timers: NodeJS.Timeout[] = [];
 
@@ -215,54 +216,97 @@ async function cleanupExpiredPreviews(): Promise<void> {
 // ─── Job 4: Absence Streak Alert (runs every 60 min, logic checks time) ──────
 
 async function absenceStreakAlert(): Promise<void> {
-  // Check if current hour is 09:00 in any tenant timezone (approximate)
-  const now = new Date();
-  if (now.getUTCHours() !== 9) return; // Simple UTC approximation
-
-  // Find students with 3+ consecutive absent days in their attendances
-  const { rows } = await pool.query<{
-    student_id: string;
-    tenant_id: string;
-    student_name: string;
-    absent_days: number;
-  }>(
-    `SELECT ar.student_id, ar.tenant_id, s.name AS student_name,
-            COUNT(*) AS absent_days
-     FROM attendance_records ar
-     JOIN students s ON ar.student_id = s.id
-     WHERE ar.status = 'Absent'
-       AND ar.date >= (CURRENT_DATE - INTERVAL '3 days')
-       AND ar.date < CURRENT_DATE
-     GROUP BY ar.student_id, ar.tenant_id, s.name
-     HAVING COUNT(DISTINCT ar.date) >= 3`,
+  // Get all active tenants with their timezone
+  const { rows: tenants } = await pool.query<{ id: string; timezone: string }>(
+    `SELECT id, timezone FROM tenants WHERE deleted_at IS NULL`,
   );
 
-  for (const row of rows) {
-    try {
-      // Get guardian user IDs
-      const { rows: guardians } = await pool.query<{ user_id: string }>(
-        `SELECT g.user_id FROM guardians g
-         JOIN student_guardians sg ON sg.guardian_id = g.id
-         WHERE sg.student_id = $1 AND sg.tenant_id = $2
-           AND g.user_id IS NOT NULL AND g.deleted_at IS NULL`,
-        [row.student_id, row.tenant_id],
-      );
+  for (const tenant of tenants) {
+    const tenantTZ = tenant.timezone ?? "UTC";
+    const currentHour = formatInTimeZone(new Date(), tenantTZ, "HH");
 
-      await Promise.allSettled(
-        guardians.map((g) =>
-          sendPushToUser(g.user_id, row.tenant_id, {
-            type: "ABSENCE_ALERT",
-            title: "Attendance Alert",
-            body: `${row.student_name} has been absent for ${row.absent_days} consecutive days.`,
-            route: "/guardian/attendance",
-          }),
-        ),
-      );
-    } catch (err) {
-      logger.error(
-        { err, studentId: row.student_id },
-        "Failed to send absence streak alert",
-      );
+    // Only proceed if it's 09:00 in this tenant's timezone
+    if (currentHour !== "09") continue;
+
+    // Walk backwards from today per student, stop at first Present/Late,
+    // skip Excused days, and alert when Absents in that window reach 3+.
+    const { rows } = await pool.query<{
+      student_id: string;
+      student_name: string;
+      streak_length: number;
+    }>(
+      `WITH ordered AS (
+         SELECT
+           ar.student_id,
+           s.name AS student_name,
+           ar.date,
+           ar.status,
+           ROW_NUMBER() OVER (
+             PARTITION BY ar.student_id
+             ORDER BY ar.date DESC
+           ) AS rn
+         FROM attendance_records ar
+         JOIN students s ON s.id = ar.student_id
+         WHERE ar.tenant_id = $1
+           AND s.tenant_id = $1
+           AND s.deleted_at IS NULL
+           AND ar.date <= CURRENT_DATE
+           AND ar.status IN ('Absent', 'Present', 'Late', 'Excused')
+       ),
+       cutoffs AS (
+         SELECT student_id, MIN(rn) AS stop_rn
+         FROM ordered
+         WHERE status IN ('Present', 'Late')
+         GROUP BY student_id
+       ),
+       streak_window AS (
+         SELECT o.student_id, o.student_name, o.status
+         FROM ordered o
+         LEFT JOIN cutoffs c ON c.student_id = o.student_id
+         WHERE c.stop_rn IS NULL OR o.rn < c.stop_rn
+       ),
+       streaks AS (
+         SELECT
+           student_id,
+           MAX(student_name) AS student_name,
+           COUNT(*) FILTER (WHERE status = 'Absent')::int AS streak_length
+         FROM streak_window
+         WHERE status IN ('Absent', 'Excused')
+         GROUP BY student_id
+       )
+       SELECT student_id, student_name, streak_length
+       FROM streaks
+       WHERE streak_length >= 3`,
+      [tenant.id],
+    );
+
+    for (const row of rows) {
+      try {
+        // Get guardian user IDs
+        const { rows: guardians } = await pool.query<{ user_id: string }>(
+          `SELECT g.user_id FROM guardians g
+           JOIN student_guardians sg ON sg.guardian_id = g.id
+           WHERE sg.student_id = $1 AND sg.tenant_id = $2
+             AND g.user_id IS NOT NULL AND g.deleted_at IS NULL`,
+          [row.student_id, tenant.id],
+        );
+
+        await Promise.allSettled(
+          guardians.map((g) =>
+            sendPushToUser(g.user_id, tenant.id, {
+              type: "ABSENCE_ALERT",
+              title: "Attendance Alert",
+              body: `${row.student_name} has been absent for ${row.streak_length} consecutive days.`,
+              route: "/guardian/attendance",
+            }),
+          ),
+        );
+      } catch (err) {
+        logger.error(
+          { err, studentId: row.student_id },
+          "Failed to send absence streak alert",
+        );
+      }
     }
   }
 }

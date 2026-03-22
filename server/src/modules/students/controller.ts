@@ -274,8 +274,9 @@ export async function createStudent(
     await withTransaction(async (client) => {
       // 1. Create the user row (roles: ["Student"])
       await client.query(
-        `INSERT INTO users (id, tenant_id, name, email, password_hash, roles, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, '["Student"]'::jsonb, NOW(), NOW())`,
+        `INSERT INTO users
+           (id, tenant_id, name, email, password_hash, roles, must_change_password, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, '["Student"]'::jsonb, true, NOW(), NOW())`,
         [userId, tenantId, name.trim(), loginId, passwordHash],
       );
       // 2. Create the student row referencing the new user

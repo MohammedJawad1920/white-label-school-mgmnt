@@ -62,8 +62,7 @@ export default function ChangePasswordPage() {
         currentPassword: values.currentPassword,
         newPassword: values.newPassword,
       });
-      // C-02fe: use existing user from auth context (API returns only { token }, no user)
-      login(res.token, user!);
+      login(res.token, res.user);
       setSuccess(true);
       navigate("/dashboard", { replace: true });
     } catch (err) {

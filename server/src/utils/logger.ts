@@ -11,6 +11,8 @@
 
 import { Request, Response, NextFunction } from "express";
 import { randomUUID } from "crypto";
+import pino from "pino";
+import { config } from "../config/env";
 
 // Extend Request type locally to carry requestId
 interface RequestWithId extends Request {
@@ -30,15 +32,16 @@ export function requestLogger(
   req.requestId = requestId;
 
   res.on("finish", () => {
-    const logEntry = {
-      requestId,
-      userId: req.userId ?? req.superAdminId ?? null,
-      route: `${req.method} ${req.path}`,
-      statusCode: res.statusCode,
-      latencyMs: Date.now() - startMs,
-    };
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify(logEntry));
+    logger.info(
+      {
+        requestId,
+        userId: req.userId ?? req.superAdminId ?? null,
+        route: `${req.method} ${req.path}`,
+        statusCode: res.statusCode,
+        latencyMs: Date.now() - startMs,
+      },
+      "http.request",
+    );
   });
 
   next();
@@ -48,26 +51,8 @@ export function requestLogger(
 // Simple structured logger for use in service and controller code.
 // Never log passwords, tokens, or PII.
 
-type LogLevel = "info" | "error" | "debug" | "warn";
-
-function log(
-  level: LogLevel,
-  data: Record<string, unknown>,
-  message: string,
-): void {
-  // eslint-disable-next-line no-console
-  console.log(
-    JSON.stringify({ level, message, ...data, ts: new Date().toISOString() }),
-  );
-}
-
-export const logger = {
-  info: (data: Record<string, unknown>, message: string) =>
-    log("info", data, message),
-  error: (data: Record<string, unknown>, message: string) =>
-    log("error", data, message),
-  debug: (data: Record<string, unknown>, message: string) =>
-    log("debug", data, message),
-  warn: (data: Record<string, unknown>, message: string) =>
-    log("warn", data, message),
-};
+export const logger = pino({
+  level: config.LOG_LEVEL,
+  base: undefined,
+  timestamp: pino.stdTimeFunctions.isoTime,
+});

@@ -14,7 +14,7 @@ export function NotificationBell() {
     staleTime: 30_000,
   });
 
-  const unreadCount = data?.unreadCount ?? 0;
+  const unreadCount = data?.total ?? 0;
 
   return (
     <a

@@ -18,6 +18,7 @@ import { ErrorBoundary, type FallbackProps } from "react-error-boundary";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/features/auth/AuthContext";
 import { pushApi } from "@/api/push.api";
+import { useStudentStore } from "@/stores/student.store";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { SessionExpiredModal } from "./SessionExpiredModal";
 import { RoleGate } from "./RoleGate";
@@ -208,8 +209,7 @@ const TENANT_ID = import.meta.env.VITE_TENANT_ID as string | undefined;
 // tenants.id is UUID type after migration 018.
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const isTenantIdValid =
-  !!TENANT_ID && UUID_REGEX.test(TENANT_ID.trim());
+const isTenantIdValid = !!TENANT_ID && UUID_REGEX.test(TENANT_ID.trim());
 
 // ── QueryClient — Freeze §3 (QC1–QC4 locked rules) ────────────────────────────
 const queryClient = new QueryClient({
@@ -332,6 +332,17 @@ function Guarded({ children }: { children: React.ReactNode }) {
 // Must live inside <AuthProvider> so it can access the auth context.
 function PwaEffects() {
   const { user } = useAuth();
+  const hydrateFromStudentId = useStudentStore((s) => s.hydrateFromStudentId);
+  const clearStudentStore = useStudentStore((s) => s.clear);
+
+  // Freeze v3.2: student portal boot must hydrate classId + batchId from GET /students/:studentId.
+  useEffect(() => {
+    if (!user || user.activeRole !== "Student" || !user.studentId) {
+      clearStudentStore();
+      return;
+    }
+    void hydrateFromStudentId(user.studentId);
+  }, [user, hydrateFromStudentId, clearStudentStore]);
 
   // CR-FE-038: Listen for PUSH_CLICK messages from the service worker and
   // navigate to the deep-link route embedded in the notification payload.
@@ -346,17 +357,14 @@ function PwaEffects() {
     };
 
     navigator.serviceWorker.addEventListener("message", handler);
-    return () => navigator.serviceWorker.removeEventListener("message", handler);
+    return () =>
+      navigator.serviceWorker.removeEventListener("message", handler);
   }, []);
 
   // Subscribe to Web Push after the user logs in.
   // Skipped silently when VITE_VAPID_PUBLIC_KEY is not set (Phase 0 / Phase 1 builds).
   useEffect(() => {
-    if (
-      !user ||
-      !("serviceWorker" in navigator) ||
-      !("PushManager" in window)
-    )
+    if (!user || !("serviceWorker" in navigator) || !("PushManager" in window))
       return;
 
     const vapidKey = (import.meta.env.VITE_VAPID_PUBLIC_KEY ?? "") as string;
@@ -1157,29 +1165,21 @@ const router = createBrowserRouter(
           />
           <Route
             path="/admin/attendance/monthly"
-            element={
-              <Navigate to="/attendance/monthly-sheet" replace />
-            }
+            element={<Navigate to="/attendance/monthly-sheet" replace />}
           />
           <Route
             path="/teacher/attendance/monthly"
-            element={
-              <Navigate to="/attendance/monthly-sheet" replace />
-            }
+            element={<Navigate to="/attendance/monthly-sheet" replace />}
           />
 
           {/* Freeze §2 URL aliases — canonical path redirects */}
           <Route
             path="/admin/attendance/correct"
-            element={
-              <Navigate to="/admin/attendance/correction" replace />
-            }
+            element={<Navigate to="/admin/attendance/correction" replace />}
           />
           <Route
             path="/admin/settings/grade-config"
-            element={
-              <Navigate to="/admin/settings/grades" replace />
-            }
+            element={<Navigate to="/admin/settings/grades" replace />}
           />
           {/* Freeze §2 marks entry alias: /teacher/exams/:examId/marks/:subjectId */}
           <Route
@@ -1196,7 +1196,7 @@ const router = createBrowserRouter(
       </Route>
 
       <Route path="*" element={<DashboardRedirect />} />
-    </Route>
+    </Route>,
   ),
 );
 

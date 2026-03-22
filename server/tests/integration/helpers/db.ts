@@ -56,7 +56,7 @@ export async function seedSuperAdmin(): Promise<string> {
   if ((existing.rowCount ?? 0) > 0) {
     return existing.rows[0]!.id;
   }
-  const id = `SA-T-${uuidv4()}`;
+  const id = uuidv4();
   const hash = await bcrypt.hash(SA_PASSWORD, 10);
   await testPool.query(
     `INSERT INTO superadmins (id, name, email, password_hash, created_at, updated_at)
@@ -91,12 +91,14 @@ export interface TestTenant {
  */
 export async function createTestTenant(): Promise<TestTenant> {
   const suffix = uuidv4().replace(/-/g, "").slice(0, 8);
-  const tenantId = `T-TEST-${suffix}`;
+  const tenantId = uuidv4();
   const tenantSlug = `test-school-${suffix}`;
   const adminPassword = "Admin@Pass123";
   const adminEmail = `admin-${suffix}@test.local`;
-  const adminId = `U-ADM-${suffix}`;
-  const periodId = `SP-${suffix}`;
+  const adminId = uuidv4();
+  const periodId = uuidv4();
+  const timetableFeatureId = uuidv4();
+  const attendanceFeatureId = uuidv4();
 
   // Tenant
   await testPool.query(
@@ -126,7 +128,7 @@ export async function createTestTenant(): Promise<TestTenant> {
      VALUES
        ($1, $2, 'timetable', TRUE, NOW()),
        ($3, $2, 'attendance', TRUE, NOW())`,
-    [`TF-TT-${suffix}`, tenantId, `TF-AT-${suffix}`],
+    [timetableFeatureId, tenantId, attendanceFeatureId],
   );
 
   return {
@@ -152,6 +154,8 @@ export async function cleanupTenant(tenantId: string): Promise<void> {
     tenantId,
   ]);
   await testPool.query("DELETE FROM students WHERE tenant_id = $1", [tenantId]);
+  // events must be deleted before users due to events_created_by_fkey constraint
+  await testPool.query("DELETE FROM events WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM users WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM school_periods WHERE tenant_id = $1", [
     tenantId,
@@ -159,7 +163,6 @@ export async function cleanupTenant(tenantId: string): Promise<void> {
   await testPool.query("DELETE FROM classes WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM batches WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM subjects WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM events WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM tenant_features WHERE tenant_id = $1", [
     tenantId,
   ]);

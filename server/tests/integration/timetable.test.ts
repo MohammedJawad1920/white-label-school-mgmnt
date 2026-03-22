@@ -2,16 +2,16 @@
  * Integration tests: Timetable endpoints (v4.4 — CR-32)
  *
  * Covers:
- *   GET    /api/timetable        — list non-deleted timeslots (dayOfWeek/teacherId/classId filters)
- *   POST   /api/timetable        — create timeslot (effectiveFrom removed since CR-31)
- *   DELETE /api/timetable/:id    — soft-delete timeslot (CR-31)
+ *   GET    /api/v1/timetable        — list non-deleted timeslots (dayOfWeek/teacherId/classId filters)
+ *   POST   /api/v1/timetable        — create timeslot (effectiveFrom removed since CR-31)
+ *   DELETE /api/v1/timetable/:id    — soft-delete timeslot (CR-31)
  *
  * FREEZE INVARIANTS (v4.4):
  *   - Feature guard: requires timetable feature enabled
  *   - PERIOD_NOT_CONFIGURED when periodNumber not in school_periods
  *   - POST: no effectiveFrom in body; slot identified by class+day+period
  *   - DELETE: 204; subsequent GET excludes the slot
- *   - PUT /api/timetable/:id does NOT exist (CR-32 removed it)
+ *   - PUT /api/v1/timetable/:id does NOT exist (CR-32 removed it)
  */
 import dotenv from "dotenv";
 import path from "path";
@@ -28,28 +28,28 @@ import {
 const SKIP = skipIfNoDb();
 
 async function loginAsAdmin(tenant: TestTenant): Promise<string> {
-  const res = await makeAgent().post("/api/auth/login").send({
+  const res = await makeAgent().post("/api/v1/auth/login").send({
     email: tenant.adminEmail,
     password: tenant.adminPassword,
-    tenantSlug: tenant.tenantSlug,
+    tenantId: tenant.tenantId,
   });
   return res.body.token as string;
 }
 
 /**
  * Scaffolds a subject + teacher + batch + class via API.
- * Returns all IDs needed to POST /api/timetable.
+ * Returns all IDs needed to POST /api/v1/timetable.
  */
 async function scaffoldTimetableData(token: string) {
   const suffix = Date.now();
 
   const [subjectRes, teacherRes, batchRes] = await Promise.all([
     makeAgent()
-      .post("/api/subjects")
+      .post("/api/v1/subjects")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: `Subject-${suffix}` }),
     makeAgent()
-      .post("/api/users")
+      .post("/api/v1/users")
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: `Teacher-${suffix}`,
@@ -58,14 +58,14 @@ async function scaffoldTimetableData(token: string) {
         roles: ["Teacher"],
       }),
     makeAgent()
-      .post("/api/batches")
+      .post("/api/v1/batches")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: `Batch-${suffix}`, startYear: 2024, endYear: 2025 }),
   ]);
 
   const batchId = batchRes.body.batch.id as string;
   const classRes = await makeAgent()
-    .post("/api/classes")
+    .post("/api/v1/classes")
     .set("Authorization", `Bearer ${token}`)
     .send({ name: `Class-${suffix}`, batchId });
 
@@ -76,7 +76,7 @@ async function scaffoldTimetableData(token: string) {
   };
 }
 
-describe("GET /api/timetable (feature guarded)", () => {
+describe("GET /api/v1/timetable (feature guarded)", () => {
   let tenant: TestTenant;
   let token: string;
 
@@ -95,7 +95,7 @@ describe("GET /api/timetable (feature guarded)", () => {
     if (SKIP) return;
     // createTestTenant enables timetable + attendance features
     const res = await makeAgent()
-      .get("/api/timetable")
+      .get("/api/v1/timetable")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.timetable)).toBe(true);
@@ -103,12 +103,12 @@ describe("GET /api/timetable (feature guarded)", () => {
 
   it("returns 401 without token", async () => {
     if (SKIP) return;
-    const res = await makeAgent().get("/api/timetable");
+    const res = await makeAgent().get("/api/v1/timetable");
     expect(res.status).toBe(401);
   });
 });
 
-describe("POST /api/timetable", () => {
+describe("POST /api/v1/timetable", () => {
   let tenant: TestTenant;
   let token: string;
   let subjectId: string;
@@ -130,7 +130,7 @@ describe("POST /api/timetable", () => {
   it("creates timeslot — 201 with joined school_period data", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/timetable")
+      .post("/api/v1/timetable")
       .set("Authorization", `Bearer ${token}`)
       .send({
         classId,
@@ -154,7 +154,7 @@ describe("POST /api/timetable", () => {
   it("returns 400 PERIOD_NOT_CONFIGURED for non-existent periodNumber", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/timetable")
+      .post("/api/v1/timetable")
       .set("Authorization", `Bearer ${token}`)
       .send({
         classId,
@@ -170,14 +170,14 @@ describe("POST /api/timetable", () => {
   it("returns 400 when required fields are missing", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .post("/api/timetable")
+      .post("/api/v1/timetable")
       .set("Authorization", `Bearer ${token}`)
       .send({ classId });
     expect(res.status).toBe(400);
   });
 });
 
-describe("DELETE /api/timetable/:id (soft-delete — CR-31)", () => {
+describe("DELETE /api/v1/timetable/:id (soft-delete — CR-31)", () => {
   let tenant: TestTenant;
   let token: string;
   let timeslotId: string;
@@ -190,7 +190,7 @@ describe("DELETE /api/timetable/:id (soft-delete — CR-31)", () => {
       await scaffoldTimetableData(token);
 
     const res = await makeAgent()
-      .post("/api/timetable")
+      .post("/api/v1/timetable")
       .set("Authorization", `Bearer ${token}`)
       .send({
         classId,
@@ -210,7 +210,7 @@ describe("DELETE /api/timetable/:id (soft-delete — CR-31)", () => {
   it("soft-deletes timeslot — 204 no body", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .delete(`/api/timetable/${timeslotId}`)
+      .delete(`/api/v1/timetable/${timeslotId}`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(204);
     expect(res.body).toEqual({});
@@ -219,7 +219,7 @@ describe("DELETE /api/timetable/:id (soft-delete — CR-31)", () => {
   it("excludes deleted slot from GET /timetable", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/timetable")
+      .get("/api/v1/timetable")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     const ids = (res.body.timetable as Array<{ id: string }>).map((s) => s.id);
@@ -229,7 +229,7 @@ describe("DELETE /api/timetable/:id (soft-delete — CR-31)", () => {
   it("returns 404 when deleting already-deleted timeslot", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .delete(`/api/timetable/${timeslotId}`)
+      .delete(`/api/v1/timetable/${timeslotId}`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
@@ -237,7 +237,7 @@ describe("DELETE /api/timetable/:id (soft-delete — CR-31)", () => {
   it("returns 404 for unknown timeslotId", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .delete("/api/timetable/TS-no-such-id")
+      .delete("/api/v1/timetable/00000000-0000-0000-0000-000000000040")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });

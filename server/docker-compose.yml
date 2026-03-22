@@ -32,6 +32,37 @@ services:
       - ./src/db/migrations/006_student_status_classid_nullable.sql:/docker-entrypoint-initdb.d/006_student_status_classid_nullable.sql
       - ./src/db/migrations/007_batch_status_graduated.sql:/docker-entrypoint-initdb.d/007_batch_status_graduated.sql
       - ./src/db/migrations/008_timeslot_remove_effective_dates.sql:/docker-entrypoint-initdb.d/008_timeslot_remove_effective_dates.sql
+      - ./src/db/migrations/009_academic_calendar_events.sql:/docker-entrypoint-initdb.d/009_academic_calendar_events.sql
+      - ./src/db/migrations/010_users_token_version.sql:/docker-entrypoint-initdb.d/010_users_token_version.sql
+      - ./src/db/migrations/011_users_must_change_password.sql:/docker-entrypoint-initdb.d/011_users_must_change_password.sql
+      - ./src/db/migrations/012_attendance_records_update.sql:/docker-entrypoint-initdb.d/012_attendance_records_update.sql
+      - ./src/db/migrations/013_academic_sessions.sql:/docker-entrypoint-initdb.d/013_academic_sessions.sql
+      - ./src/db/migrations/014_batches_entry_level.sql:/docker-entrypoint-initdb.d/014_batches_entry_level.sql
+      - ./src/db/migrations/015_classes_session_level_section.sql:/docker-entrypoint-initdb.d/015_classes_session_level_section.sql
+      - ./src/db/migrations/016_students_enrollment_dates.sql:/docker-entrypoint-initdb.d/016_students_enrollment_dates.sql
+      - ./src/db/migrations/017_tenants_school_profile.sql:/docker-entrypoint-initdb.d/017_tenants_school_profile.sql
+      - ./src/db/migrations/018_tenants_uuid_primary_key.sql:/docker-entrypoint-initdb.d/018_tenants_uuid_primary_key.sql
+      - ./src/db/migrations/019_leave_requests.sql:/docker-entrypoint-initdb.d/019_leave_requests.sql
+      - ./src/db/migrations/020_guardians.sql:/docker-entrypoint-initdb.d/020_guardians.sql
+      - ./src/db/migrations/021_student_guardians.sql:/docker-entrypoint-initdb.d/021_student_guardians.sql
+      - ./src/db/migrations/022_push_subscriptions.sql:/docker-entrypoint-initdb.d/022_push_subscriptions.sql
+      - ./src/db/migrations/023_notifications.sql:/docker-entrypoint-initdb.d/023_notifications.sql
+      - ./src/db/migrations/024_events_check_session_id.sql:/docker-entrypoint-initdb.d/024_events_check_session_id.sql
+      - ./src/db/migrations/025_promotion_logs_v5.sql:/docker-entrypoint-initdb.d/025_promotion_logs_v5.sql
+      - ./src/db/migrations/026_promotion_previews_v5.sql:/docker-entrypoint-initdb.d/026_promotion_previews_v5.sql
+      - ./src/db/migrations/027_exams.sql:/docker-entrypoint-initdb.d/027_exams.sql
+      - ./src/db/migrations/028_exam_subjects.sql:/docker-entrypoint-initdb.d/028_exam_subjects.sql
+      - ./src/db/migrations/029_exam_results.sql:/docker-entrypoint-initdb.d/029_exam_results.sql
+      - ./src/db/migrations/030_exam_student_summaries.sql:/docker-entrypoint-initdb.d/030_exam_student_summaries.sql
+      - ./src/db/migrations/031_external_results.sql:/docker-entrypoint-initdb.d/031_external_results.sql
+      - ./src/db/migrations/032_fee_charges.sql:/docker-entrypoint-initdb.d/032_fee_charges.sql
+      - ./src/db/migrations/033_fee_payments.sql:/docker-entrypoint-initdb.d/033_fee_payments.sql
+      - ./src/db/migrations/034_announcements.sql:/docker-entrypoint-initdb.d/034_announcements.sql
+      - ./src/db/migrations/035_import_jobs.sql:/docker-entrypoint-initdb.d/035_import_jobs.sql
+      - ./src/db/migrations/036_tenants_profile_note.sql:/docker-entrypoint-initdb.d/036_tenants_profile_note.sql
+      - ./src/db/migrations/037_assignments.sql:/docker-entrypoint-initdb.d/037_assignments.sql
+      - ./src/db/migrations/038_assignment_submissions.sql:/docker-entrypoint-initdb.d/038_assignment_submissions.sql
+      - ./src/db/migrations/039_entity_ids_to_uuid.sql:/docker-entrypoint-initdb.d/039_entity_ids_to_uuid.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -55,7 +86,7 @@ services:
       DATABASE_POOL_MIN: 2
       DATABASE_POOL_MAX: 10
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-365d}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-30d}
       BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-10}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
       LOG_LEVEL: ${LOG_LEVEL:-info}

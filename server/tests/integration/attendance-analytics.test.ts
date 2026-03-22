@@ -2,10 +2,10 @@
  * Integration tests: Attendance analytics endpoints (v4.5 CR-33–36)
  *
  * Covers:
- *   GET /api/attendance/streaks         — consecutive absent streak per student
- *   GET /api/attendance/toppers         — students ranked by attendance %
- *   GET /api/attendance/daily-summary   — per-slot counts for a class on a date
- *   GET /api/attendance/monthly-sheet   — student × day × period grid
+ *   GET /api/v1/attendance/streaks         — consecutive absent streak per student
+ *   GET /api/v1/attendance/toppers         — students ranked by attendance %
+ *   GET /api/v1/attendance/daily-summary   — per-slot counts for a class on a date
+ *   GET /api/v1/attendance/monthly-sheet   — student × day × period grid
  *
  * FREEZE INVARIANTS:
  *   - All endpoints require attendance feature flag
@@ -29,10 +29,10 @@ import {
 const SKIP = skipIfNoDb();
 
 async function loginAsAdmin(tenant: TestTenant): Promise<string> {
-  const res = await makeAgent().post("/api/auth/login").send({
+  const res = await makeAgent().post("/api/v1/auth/login").send({
     email: tenant.adminEmail,
     password: tenant.adminPassword,
-    tenantSlug: tenant.tenantSlug,
+    tenantId: tenant.tenantId,
   });
   return res.body.token as string;
 }
@@ -53,13 +53,13 @@ async function scaffoldData(
   const suffix = Date.now();
 
   const subjectRes = await makeAgent()
-    .post("/api/subjects")
+    .post("/api/v1/subjects")
     .set("Authorization", `Bearer ${token}`)
     .send({ name: `ANA-Subj-${suffix}` });
   const subjectId = subjectRes.body.subject.id as string;
 
   const teacherRes = await makeAgent()
-    .post("/api/users")
+    .post("/api/v1/users")
     .set("Authorization", `Bearer ${token}`)
     .send({
       name: `ANA-Teacher-${suffix}`,
@@ -70,19 +70,19 @@ async function scaffoldData(
   const teacherId = teacherRes.body.user.id as string;
 
   const batchRes = await makeAgent()
-    .post("/api/batches")
+    .post("/api/v1/batches")
     .set("Authorization", `Bearer ${token}`)
     .send({ name: `ANA-Batch-${suffix}`, startYear: 2024, endYear: 2025 });
   const batchId = batchRes.body.batch.id as string;
 
   const classRes = await makeAgent()
-    .post("/api/classes")
+    .post("/api/v1/classes")
     .set("Authorization", `Bearer ${token}`)
     .send({ name: `ANA-Class-${suffix}`, batchId });
   const classId = classRes.body.class.id as string;
 
   const studentRes = await makeAgent()
-    .post("/api/students")
+    .post("/api/v1/students")
     .set("Authorization", `Bearer ${token}`)
     .send({
       name: `ANA-Student-${suffix}`,
@@ -95,7 +95,7 @@ async function scaffoldData(
 
   // Timeslot on Friday (so daily-summary can target a Friday date)
   const tsRes = await makeAgent()
-    .post("/api/timetable")
+    .post("/api/v1/timetable")
     .set("Authorization", `Bearer ${token}`)
     .send({
       classId,
@@ -111,10 +111,10 @@ async function scaffoldData(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/attendance/streaks  (CR-33)
+// GET /api/v1/attendance/streaks  (CR-33)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("GET /api/attendance/streaks", () => {
+describe("GET /api/v1/attendance/streaks", () => {
   let tenant: TestTenant;
   let token: string;
   let timeslotId: string;
@@ -133,20 +133,20 @@ describe("GET /api/attendance/streaks", () => {
 
     // Record 2 consecutive absences so streak = 2
     await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        timeSlotId: timeslotId,
+        timeslotId,
         date: "2025-03-07",
-        defaultStatus: "Absent",
+        students: [{ studentId, status: "Absent" }],
       });
     await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        timeSlotId: timeslotId,
+        timeslotId,
         date: "2025-03-14",
-        defaultStatus: "Absent",
+        students: [{ studentId, status: "Absent" }],
       });
   });
 
@@ -158,7 +158,7 @@ describe("GET /api/attendance/streaks", () => {
   it("returns 200 with streaks array containing the student", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get(`/api/attendance/streaks?timeSlotId=${timeslotId}`)
+      .get(`/api/v1/attendance/streaks?timeSlotId=${timeslotId}`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("classId", classId);
@@ -178,7 +178,7 @@ describe("GET /api/attendance/streaks", () => {
   it("returns 400 when timeSlotId is missing", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/attendance/streaks")
+      .get("/api/v1/attendance/streaks")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
@@ -187,7 +187,9 @@ describe("GET /api/attendance/streaks", () => {
   it("returns 404 for unknown timeSlotId", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/attendance/streaks?timeSlotId=TS-no-such-id")
+      .get(
+        "/api/v1/attendance/streaks?timeSlotId=00000000-0000-0000-0000-000000000001",
+      )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
@@ -195,17 +197,17 @@ describe("GET /api/attendance/streaks", () => {
   it("returns 401 when unauthenticated", async () => {
     if (SKIP) return;
     const res = await makeAgent().get(
-      `/api/attendance/streaks?timeSlotId=${timeslotId}`,
+      `/api/v1/attendance/streaks?timeSlotId=${timeslotId}`,
     );
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/attendance/toppers  (CR-34)
+// GET /api/v1/attendance/toppers  (CR-34)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("GET /api/attendance/toppers", () => {
+describe("GET /api/v1/attendance/toppers", () => {
   let tenant: TestTenant;
   let token: string;
   let classId: string;
@@ -222,12 +224,12 @@ describe("GET /api/attendance/toppers", () => {
 
     // Record one Present to give the student a non-null attendancePercentage
     await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        timeSlotId: timeslotId,
+        timeslotId,
         date: "2025-03-07",
-        defaultStatus: "Present",
+        students: [{ studentId, status: "Present" }],
       });
   });
 
@@ -239,7 +241,9 @@ describe("GET /api/attendance/toppers", () => {
   it("returns 200 with toppers array and pagination meta", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get(`/api/attendance/toppers?classId=${classId}&from=${from}&to=${to}`)
+      .get(
+        `/api/v1/attendance/toppers?classId=${classId}&from=${from}&to=${to}`,
+      )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("classId", classId);
@@ -254,7 +258,9 @@ describe("GET /api/attendance/toppers", () => {
   it("includes the seeded student with rank and attendancePercentage", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get(`/api/attendance/toppers?classId=${classId}&from=${from}&to=${to}`)
+      .get(
+        `/api/v1/attendance/toppers?classId=${classId}&from=${from}&to=${to}`,
+      )
       .set("Authorization", `Bearer ${token}`);
     const entry = (
       res.body.toppers as Array<{
@@ -271,7 +277,7 @@ describe("GET /api/attendance/toppers", () => {
   it("returns 400 when required params are missing", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/attendance/toppers?classId=X")
+      .get("/api/v1/attendance/toppers?classId=X")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
@@ -280,7 +286,9 @@ describe("GET /api/attendance/toppers", () => {
   it("returns 404 for unknown classId", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get(`/api/attendance/toppers?classId=CLS-no-such&from=${from}&to=${to}`)
+      .get(
+        `/api/v1/attendance/toppers?classId=00000000-0000-0000-0000-000000000002&from=${from}&to=${to}`,
+      )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
@@ -289,7 +297,7 @@ describe("GET /api/attendance/toppers", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/toppers?classId=${classId}&from=${from}&to=${to}&limit=1&offset=0`,
+        `/api/v1/attendance/toppers?classId=${classId}&from=${from}&to=${to}&limit=1&offset=0`,
       )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
@@ -300,20 +308,21 @@ describe("GET /api/attendance/toppers", () => {
   it("returns 401 when unauthenticated", async () => {
     if (SKIP) return;
     const res = await makeAgent().get(
-      `/api/attendance/toppers?classId=${classId}&from=${from}&to=${to}`,
+      `/api/v1/attendance/toppers?classId=${classId}&from=${from}&to=${to}`,
     );
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/attendance/daily-summary  (CR-35)
+// GET /api/v1/attendance/daily-summary  (CR-35)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("GET /api/attendance/daily-summary", () => {
+describe("GET /api/v1/attendance/daily-summary", () => {
   let tenant: TestTenant;
   let token: string;
   let classId: string;
+  let studentId: string;
   let timeslotId: string;
   // 2025-03-07 is a Friday — matches the timeslot's dayOfWeek
   const fridayDate = "2025-03-07";
@@ -322,16 +331,16 @@ describe("GET /api/attendance/daily-summary", () => {
     if (SKIP) return;
     tenant = await createTestTenant();
     token = await loginAsAdmin(tenant);
-    ({ timeslotId, classId } = await scaffoldData(token, tenant));
+    ({ timeslotId, classId, studentId } = await scaffoldData(token, tenant));
 
     // Record attendance for that Friday so a slot appears as attendanceMarked
     await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        timeSlotId: timeslotId,
+        timeslotId,
         date: fridayDate,
-        defaultStatus: "Present",
+        students: [{ studentId, status: "Present" }],
       });
   });
 
@@ -344,7 +353,7 @@ describe("GET /api/attendance/daily-summary", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/daily-summary?classId=${classId}&date=${fridayDate}`,
+        `/api/v1/attendance/daily-summary?classId=${classId}&date=${fridayDate}`,
       )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
@@ -358,7 +367,7 @@ describe("GET /api/attendance/daily-summary", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/daily-summary?classId=${classId}&date=${fridayDate}`,
+        `/api/v1/attendance/daily-summary?classId=${classId}&date=${fridayDate}`,
       )
       .set("Authorization", `Bearer ${token}`);
     const slot = (
@@ -376,7 +385,7 @@ describe("GET /api/attendance/daily-summary", () => {
     const saturdayDate = "2025-03-08"; // Saturday — no timeslots
     const res = await makeAgent()
       .get(
-        `/api/attendance/daily-summary?classId=${classId}&date=${saturdayDate}`,
+        `/api/v1/attendance/daily-summary?classId=${classId}&date=${saturdayDate}`,
       )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
@@ -386,7 +395,7 @@ describe("GET /api/attendance/daily-summary", () => {
   it("returns 400 when required params are missing", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get("/api/attendance/daily-summary?classId=X")
+      .get("/api/v1/attendance/daily-summary?classId=X")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
@@ -396,7 +405,7 @@ describe("GET /api/attendance/daily-summary", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/daily-summary?classId=CLS-no-such&date=${fridayDate}`,
+        `/api/v1/attendance/daily-summary?classId=00000000-0000-0000-0000-000000000003&date=${fridayDate}`,
       )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
@@ -405,17 +414,17 @@ describe("GET /api/attendance/daily-summary", () => {
   it("returns 401 when unauthenticated", async () => {
     if (SKIP) return;
     const res = await makeAgent().get(
-      `/api/attendance/daily-summary?classId=${classId}&date=${fridayDate}`,
+      `/api/v1/attendance/daily-summary?classId=${classId}&date=${fridayDate}`,
     );
     expect(res.status).toBe(401);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/attendance/monthly-sheet  (CR-36)
+// GET /api/v1/attendance/monthly-sheet  (CR-36)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("GET /api/attendance/monthly-sheet", () => {
+describe("GET /api/v1/attendance/monthly-sheet", () => {
   let tenant: TestTenant;
   let token: string;
   let classId: string;
@@ -434,12 +443,12 @@ describe("GET /api/attendance/monthly-sheet", () => {
 
     // Seed an attendance record in March 2025 for the student
     await makeAgent()
-      .post("/api/attendance/record-class")
+      .post("/api/v1/attendance/record-class")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        timeSlotId: timeslotId,
+        timeslotId,
         date: "2025-03-07",
-        defaultStatus: "Present",
+        students: [{ studentId, status: "Present" }],
       });
   });
 
@@ -452,7 +461,7 @@ describe("GET /api/attendance/monthly-sheet", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/monthly-sheet?classId=${classId}&subjectId=${subjectId}&year=2025&month=3`,
+        `/api/v1/attendance/monthly-sheet?classId=${classId}&subjectId=${subjectId}&year=2025&month=3`,
       )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
@@ -468,7 +477,7 @@ describe("GET /api/attendance/monthly-sheet", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/monthly-sheet?classId=${classId}&subjectId=${subjectId}&year=2025&month=3`,
+        `/api/v1/attendance/monthly-sheet?classId=${classId}&subjectId=${subjectId}&year=2025&month=3`,
       )
       .set("Authorization", `Bearer ${token}`);
     const student = (
@@ -490,7 +499,7 @@ describe("GET /api/attendance/monthly-sheet", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/monthly-sheet?classId=${classId}&subjectId=${subjectId}&year=2025`,
+        `/api/v1/attendance/monthly-sheet?classId=${classId}&subjectId=${subjectId}&year=2025`,
       )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(400);
@@ -501,7 +510,7 @@ describe("GET /api/attendance/monthly-sheet", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/monthly-sheet?classId=${classId}&subjectId=${subjectId}&year=2025&month=13`,
+        `/api/v1/attendance/monthly-sheet?classId=${classId}&subjectId=${subjectId}&year=2025&month=13`,
       )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(400);
@@ -512,7 +521,7 @@ describe("GET /api/attendance/monthly-sheet", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/monthly-sheet?classId=CLS-no-such&subjectId=${subjectId}&year=2025&month=3`,
+        `/api/v1/attendance/monthly-sheet?classId=00000000-0000-0000-0000-000000000004&subjectId=${subjectId}&year=2025&month=3`,
       )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
@@ -522,7 +531,7 @@ describe("GET /api/attendance/monthly-sheet", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .get(
-        `/api/attendance/monthly-sheet?classId=${classId}&subjectId=SUB-no-such&year=2025&month=3`,
+        `/api/v1/attendance/monthly-sheet?classId=${classId}&subjectId=00000000-0000-0000-0000-000000000005&year=2025&month=3`,
       )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
@@ -531,7 +540,7 @@ describe("GET /api/attendance/monthly-sheet", () => {
   it("returns 401 when unauthenticated", async () => {
     if (SKIP) return;
     const res = await makeAgent().get(
-      `/api/attendance/monthly-sheet?classId=${classId}&subjectId=${subjectId}&year=2025&month=3`,
+      `/api/v1/attendance/monthly-sheet?classId=${classId}&subjectId=${subjectId}&year=2025&month=3`,
     );
     expect(res.status).toBe(401);
   });

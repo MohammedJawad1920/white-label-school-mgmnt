@@ -14,6 +14,7 @@ import {
   updateUserRoles,
   deleteUser,
   bulkDeleteUsers,
+  resetUserPassword,
 } from "./controller";
 
 const router = Router();
@@ -24,6 +25,11 @@ router.get("/", asyncHandler(listUsers));
 router.get("/:id", requireRole("Admin"), asyncHandler(getUser));
 router.post("/", requireRole("Admin"), asyncHandler(createUser));
 router.put("/:id/roles", requireRole("Admin"), asyncHandler(updateUserRoles));
+router.post(
+  "/:id/reset-password",
+  requireRole("Admin"),
+  asyncHandler(resetUserPassword),
+);
 router.delete("/:id", requireRole("Admin"), asyncHandler(deleteUser));
 
 export default router;

@@ -43,11 +43,23 @@ import {
   ApiConsolidatedResults,
   ApiExternalResult,
 } from "../../types";
+import { sendPushToUser } from "../../services/push.service";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const VALID_EXAM_TYPES = ["TermExam", "PeriodicTest"] as const;
+
+const DEFAULT_GRADE_BOUNDARIES: GradeBoundary[] = [
+  { grade: "A+", minPercentage: 90, maxPercentage: 100, label: "Outstanding" },
+  { grade: "A", minPercentage: 80, maxPercentage: 89, label: "Excellent" },
+  { grade: "B+", minPercentage: 70, maxPercentage: 79, label: "Very Good" },
+  { grade: "B", minPercentage: 60, maxPercentage: 69, label: "Good" },
+  { grade: "C+", minPercentage: 50, maxPercentage: 59, label: "Above Average" },
+  { grade: "C", minPercentage: 40, maxPercentage: 49, label: "Average" },
+  { grade: "D", minPercentage: 30, maxPercentage: 39, label: "Below Average" },
+  { grade: "F", minPercentage: 0, maxPercentage: 29, label: "Fail" },
+];
 type ExamType = (typeof VALID_EXAM_TYPES)[number];
 
 // ─── Extended row types for JOIN queries ──────────────────────────────────────
@@ -317,7 +329,7 @@ export async function listExams(req: Request, res: Response): Promise<void> {
 
   const exams = examsResult.rows;
   if (exams.length === 0) {
-    res.status(200).json({ data: [] });
+    res.status(200).json({ data: [], total: 0 });
     return;
   }
 
@@ -327,7 +339,7 @@ export async function listExams(req: Request, res: Response): Promise<void> {
      FROM exam_subjects es
      JOIN subjects s ON s.id = es.subject_id
      JOIN users u ON u.id = es.teacher_id
-     WHERE es.exam_id = ANY($1::text[]) AND es.tenant_id = $2
+     WHERE es.exam_id = ANY($1::uuid[]) AND es.tenant_id = $2
      ORDER BY es.exam_date ASC`,
     [examIds, tenantId],
   );
@@ -341,7 +353,7 @@ export async function listExams(req: Request, res: Response): Promise<void> {
   }
 
   const data = exams.map((e) => formatExam(e, subjectsByExam[e.id] ?? []));
-  res.status(200).json({ data });
+  res.status(200).json({ data, total: exams.length });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -368,7 +380,7 @@ export async function getExam(req: Request, res: Response): Promise<void> {
   }
 
   const subjects = await getExamSubjectsWithNames(id, tenantId);
-  res.status(200).json({ exam: formatExam(exam, subjects) });
+  res.status(200).json({ data: formatExam(exam, subjects) });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -509,7 +521,11 @@ export async function publishExam(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const boundaries = exam.grade_boundaries;
+  // Use default grade boundaries if not set
+  const boundaries =
+    exam.grade_boundaries && exam.grade_boundaries.length > 0
+      ? exam.grade_boundaries
+      : DEFAULT_GRADE_BOUNDARIES;
 
   try {
     await withTransaction(async (client) => {
@@ -686,6 +702,51 @@ export async function publishExam(req: Request, res: Response): Promise<void> {
          WHERE exam_id = $1 AND tenant_id = $2`,
         [id, tenantId],
       );
+
+      // Dispatch push notifications to students + guardians
+      const { rows: students } = await client.query<{
+        id: string;
+        user_id: string | null;
+      }>(
+        `SELECT id, user_id FROM students
+         WHERE class_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+        [exam.class_id, tenantId],
+      );
+
+      const userIds: string[] = students
+        .filter((s) => s.user_id !== null)
+        .map((s) => s.user_id!);
+      const studentIds = students.map((s) => s.id);
+
+      if (studentIds.length > 0) {
+        const { rows: guardians } = await client.query<{ user_id: string }>(
+          `SELECT DISTINCT g.user_id FROM guardians g
+           JOIN student_guardians sg ON sg.guardian_id = g.id
+           WHERE sg.student_id = ANY($1::uuid[])
+             AND g.tenant_id = $2
+             AND g.user_id IS NOT NULL
+             AND g.deleted_at IS NULL`,
+          [studentIds, tenantId],
+        );
+        userIds.push(...guardians.map((g) => g.user_id));
+      }
+
+      // Send push notifications (non-blocking, outside transaction)
+      Promise.allSettled(
+        userIds.map((uid) =>
+          sendPushToUser(uid, tenantId, {
+            type: "EXAM_PUBLISHED",
+            title: "Exam Results Published",
+            body: `Results for ${exam.name} are now available.`,
+            route: `/exams/${id}`,
+          }),
+        ),
+      ).catch((err) => {
+        logger.error(
+          { err, examId: id },
+          "Failed to dispatch exam publish notifications",
+        );
+      });
     });
   } catch (err) {
     const error = err as Error & { code?: string };
@@ -1608,7 +1669,7 @@ export async function listExternalResults(
       res.status(200).json({ data: [] });
       return;
     }
-    conditions.push(`er.student_id = ANY($${paramIdx++}::text[])`);
+    conditions.push(`er.student_id = ANY($${paramIdx++}::uuid[])`);
     params.push(childIds);
   } else if (studentIdFilter) {
     conditions.push(`er.student_id = $${paramIdx++}`);

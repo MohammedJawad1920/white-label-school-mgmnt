@@ -7,6 +7,7 @@
 
 import { Router } from "express";
 import { tenantContextMiddleware } from "../../middleware/tenantContext";
+import { featureGuard } from "../../middleware/featureGuard";
 import { requireRole } from "../../middleware/requireRole";
 import { asyncHandler } from "../../utils/asyncHandler";
 import {
@@ -22,6 +23,7 @@ import {
 
 const router = Router();
 router.use(tenantContextMiddleware);
+router.use(featureGuard("assignments"));
 
 router.post(
   "/",

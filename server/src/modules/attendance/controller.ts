@@ -16,8 +16,15 @@
 
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
+import { formatInTimeZone } from "date-fns-tz";
 import { pool, withTransaction } from "../../db/pool";
-import { send400, send403, send404, send409, send422 } from "../../utils/errors";
+import {
+  send400,
+  send403,
+  send404,
+  send409,
+  send422,
+} from "../../utils/errors";
 import {
   AttendanceRecordRow,
   AttendanceStatus,
@@ -44,7 +51,11 @@ export async function recordClassAttendance(
   };
 
   // ── Validation ────────────────────────────────────────────────────
-  if (!timeslotId || typeof timeslotId !== "string" || timeslotId.trim().length === 0) {
+  if (
+    !timeslotId ||
+    typeof timeslotId !== "string" ||
+    timeslotId.trim().length === 0
+  ) {
     send422(res, "timeslotId is required");
     return;
   }
@@ -76,7 +87,10 @@ export async function recordClassAttendance(
       send422(res, "Each student entry must have a studentId");
       return;
     }
-    if (!entry.status || !validStatuses.includes(entry.status as AttendanceStatus)) {
+    if (
+      !entry.status ||
+      !validStatuses.includes(entry.status as AttendanceStatus)
+    ) {
       send422(
         res,
         `Each student status must be one of: ${validStatuses.join(", ")}`,
@@ -119,14 +133,22 @@ export async function recordClassAttendance(
   // ── Backdating guard (Teacher only) ──────────────────────────────
   // Per OpenAPI: Teachers cannot backdate attendance.
   if (callerRoles.includes("Teacher") && !isAdmin) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const recordDate = new Date(date + "T00:00:00Z");
-    recordDate.setUTCHours(0, 0, 0, 0);
-    // Compare using ISO date strings for reliable comparison
-    const todayStr = today.toISOString().slice(0, 10);
+    // Fetch tenant timezone for accurate date comparison
+    const { rows: tenantRows } = await pool.query<{ timezone: string }>(
+      "SELECT timezone FROM tenants WHERE id = $1",
+      [tenantId],
+    );
+    const tenantTimezone = tenantRows[0]?.timezone ?? "UTC";
+
+    // Get today's date in tenant's timezone
+    const todayStr = formatInTimeZone(new Date(), tenantTimezone, "yyyy-MM-dd");
+
     if (date < todayStr) {
-      send400(res, "Teachers cannot backdate attendance", "BACKDATING_NOT_ALLOWED");
+      send400(
+        res,
+        "Teachers cannot backdate attendance",
+        "BACKDATING_NOT_ALLOWED",
+      );
       return;
     }
   }
@@ -144,7 +166,15 @@ export async function recordClassAttendance(
            status     = EXCLUDED.status,
            updated_by = $7,
            updated_at = NOW()`,
-        [id, tenantId, entry.studentId, timeslotId, date, entry.status, recordedBy],
+        [
+          id,
+          tenantId,
+          entry.studentId,
+          timeslotId,
+          date,
+          entry.status,
+          recordedBy,
+        ],
       );
     }
   });
@@ -913,7 +943,7 @@ export async function getAttendanceToppers(
      WHERE s.class_id = $1
        AND ar.tenant_id = $2
        AND ar.date BETWEEN $3 AND $4
-       AND ar.student_id = ANY($5::varchar[])
+       AND ar.student_id = ANY($5::uuid[])
      GROUP BY ar.student_id`,
     [classId, tenantId, from, to, studentsResult.rows.map((s) => s.id)],
   );
@@ -1237,7 +1267,7 @@ export async function getAttendanceMonthlySheet(
      FROM attendance_records ar
      JOIN timeslots t ON t.id = ar.timeslot_id
      WHERE ar.tenant_id   = $1
-       AND ar.student_id  = ANY($2::varchar[])
+       AND ar.student_id  = ANY($2::uuid[])
        AND t.subject_id   = $3
        AND ar.date BETWEEN $4 AND $5
      ORDER BY ar.date ASC, t.period_number ASC`,
@@ -1318,9 +1348,12 @@ export async function getAbsentees(req: Request, res: Response): Promise<void> {
   const tenantId = req.tenantId!;
   const callerRole = req.activeRole!;
 
-  // H-03: timeslotId is a path parameter; date remains a query parameter
-  const { timeslotId } = req.params as { timeslotId: string };
-  const { date } = req.query as { date?: string };
+  // H-03 fix: both timeSlotId and date are query parameters
+  const { timeSlotId, date } = req.query as {
+    timeSlotId?: string;
+    date?: string;
+  };
+  const timeslotId = timeSlotId; // alias for compatibility with existing code
 
   // ── Validation ─────────────────────────────────────────────────
   if (!timeslotId) {

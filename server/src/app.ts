@@ -3,7 +3,7 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { config } from "./config/env";
 import { requestLogger } from "./utils/logger";
-import { globalErrorHandler } from "./utils/errors";
+import { globalErrorHandler, send404 } from "./utils/errors";
 
 // Phase 2
 import superAdminRouter from "./modules/super-admin/routes";
@@ -32,9 +32,7 @@ import guardiansRouter from "./modules/guardians/routes";
 import notificationsRouter from "./modules/notifications/routes";
 import pushRouter from "./modules/push/routes";
 import leaveRouter from "./modules/leave/routes";
-import examsRouter, {
-  externalResultsRouter,
-} from "./modules/exams/routes";
+import examsRouter, { externalResultsRouter } from "./modules/exams/routes";
 import feesRouter from "./modules/fees/routes";
 import announcementsRouter from "./modules/announcements/routes";
 import assignmentsRouter from "./modules/assignments/routes";
@@ -78,7 +76,7 @@ export function createApp(): Application {
   app.get("/health", (_req, res) => {
     res.json({
       status: "ok",
-      version: "5.0.0",
+      version: "6.0.0",
       timestamp: new Date().toISOString(),
     });
   });
@@ -120,15 +118,7 @@ export function createApp(): Application {
   app.use("/api/v1/guardian", guardianPortalRouter);
 
   app.use((_req, res) => {
-    res.status(404).json({
-      error: {
-        code: "NOT_FOUND",
-        message: "Endpoint not found",
-        details: {},
-      },
-      requestId: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
-    });
+    send404(res, "Endpoint not found");
   });
 
   app.use(globalErrorHandler);

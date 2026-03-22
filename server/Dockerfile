@@ -44,7 +44,7 @@ USER appuser
 
 # Metadata
 LABEL org.opencontainers.image.title="White-Label School Management"
-LABEL org.opencontainers.image.version="3.3.0"
+LABEL org.opencontainers.image.version="6.0.0"
 
 EXPOSE 3000
 

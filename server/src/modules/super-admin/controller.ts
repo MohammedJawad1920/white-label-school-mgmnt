@@ -171,7 +171,8 @@ export async function listTenants(req: Request, res: Response): Promise<void> {
 // ═══════════════════════════════════════════════════════════════════
 
 export async function createTenant(req: Request, res: Response): Promise<void> {
-  const { name, slug, timezone, admin } = req.body as {
+  const { id, name, slug, timezone, admin } = req.body as {
+    id?: string;
     name?: string;
     slug?: string;
     timezone?: string;
@@ -201,6 +202,9 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
     send400(res, "slug must be 1–100 lowercase alphanumeric/dash characters");
     return;
   }
+
+  const tenantId =
+    typeof id === "string" && id.trim().length > 0 ? id.trim() : uuidv4();
 
   // ── Validate admin block (v3.4 CR-06 — REQUIRED) ─────────────────
   if (!admin || typeof admin !== "object") {
@@ -234,10 +238,10 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
     const { tenant, adminUser } = await withTransaction(async (client) => {
       // 1. Insert tenant
       const tenantResult = await client.query<TenantRow>(
-        `INSERT INTO tenants (name, slug, status, timezone, created_at, updated_at)
-         VALUES ($1, $2, 'active', $3, NOW(), NOW())
+        `INSERT INTO tenants (id, name, slug, status, timezone, created_at, updated_at)
+         VALUES ($1, $2, $3, 'active', $4, NOW(), NOW())
          RETURNING id, name, slug, status, timezone, deactivated_at, created_at, updated_at`,
-        [name.trim(), slug.trim(), resolvedTimezone],
+        [tenantId, name.trim(), slug.trim(), resolvedTimezone],
       );
       const newTenant = tenantResult.rows[0];
       if (!newTenant) throw new Error("Tenant insert returned no rows");
@@ -252,13 +256,91 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
         );
       }
 
-      // 3. Seed tenant_features rows (both disabled by default)
-      const featureKeys: FeatureKey[] = ["timetable", "attendance"];
+      // 3. Seed tenant_features rows (all 10 features, disabled by default)
+      const featureDefinitions: Array<{
+        key: FeatureKey;
+        name: string;
+        description: string;
+      }> = [
+        {
+          key: "timetable",
+          name: "Timetable Management",
+          description:
+            "Create and manage class schedules with teacher assignments",
+        },
+        {
+          key: "attendance",
+          name: "Attendance Tracking",
+          description: "Record and view student attendance per class period",
+        },
+        {
+          key: "leave",
+          name: "Leave Management",
+          description: "Manage leave requests and approvals",
+        },
+        {
+          key: "exams",
+          name: "Exam Management",
+          description: "Create exams, enter marks, and publish results",
+        },
+        {
+          key: "fees",
+          name: "Fees Management",
+          description: "Track charges, payments, and balances",
+        },
+        {
+          key: "announcements",
+          name: "Announcements",
+          description: "Publish announcements to school users",
+        },
+        {
+          key: "assignments",
+          name: "Assignments",
+          description: "Create and submit assignment work",
+        },
+        {
+          key: "import",
+          name: "CSV Import",
+          description: "Bulk import school data from CSV files",
+        },
+        {
+          key: "guardian",
+          name: "Guardian Portal",
+          description: "Guardian-specific views and actions",
+        },
+        {
+          key: "notifications",
+          name: "Notifications",
+          description: "In-app and push notifications",
+        },
+      ];
+
+      for (const feature of featureDefinitions) {
+        await client.query(
+          `INSERT INTO features (id, key, name, description, created_at)
+           VALUES ($1, $2, $3, $4, NOW())
+           ON CONFLICT (key) DO NOTHING`,
+          [uuidv4(), feature.key, feature.name, feature.description],
+        );
+      }
+
+      const featureKeys: FeatureKey[] = [
+        "timetable",
+        "attendance",
+        "leave",
+        "exams",
+        "fees",
+        "announcements",
+        "assignments",
+        "import",
+        "guardian",
+        "notifications",
+      ];
       for (const key of featureKeys) {
         await client.query(
           `INSERT INTO tenant_features (id, tenant_id, feature_key, enabled, enabled_at)
            VALUES ($1, $2, $3, false, NULL)`,
-          [`TF-${uuidv4()}`, newTenant.id, key],
+          [uuidv4(), newTenant.id, key],
         );
       }
 
@@ -545,10 +627,23 @@ export async function getTenantFeatures(
   const { tenantId } = req.params as { tenantId: string };
 
   // Verify tenant exists
-  const tenantCheck = await pool.query<Pick<TenantRow, "id">>(
-    "SELECT id FROM tenants WHERE id = $1",
-    [tenantId],
-  );
+  let tenantCheck;
+  try {
+    tenantCheck = await pool.query<Pick<TenantRow, "id">>(
+      "SELECT id FROM tenants WHERE id = $1",
+      [tenantId],
+    );
+  } catch (err: unknown) {
+    if (
+      err instanceof Error &&
+      "code" in err &&
+      (err as NodeJS.ErrnoException).code === "22P02"
+    ) {
+      send404(res, "Tenant does not exist");
+      return;
+    }
+    throw err;
+  }
   if ((tenantCheck.rowCount ?? 0) === 0) {
     send404(res, "Tenant does not exist");
     return;
@@ -602,7 +697,18 @@ export async function toggleTenantFeature(
     return;
   }
 
-  const validKeys: FeatureKey[] = ["timetable", "attendance"];
+  const validKeys: FeatureKey[] = [
+    "timetable",
+    "attendance",
+    "leave",
+    "exams",
+    "fees",
+    "announcements",
+    "assignments",
+    "import",
+    "guardian",
+    "notifications",
+  ];
   if (!validKeys.includes(featureKey as FeatureKey)) {
     send404(res, `Feature key "${featureKey}" does not exist`);
     return;
@@ -648,7 +754,7 @@ export async function toggleTenantFeature(
   // ── UPSERT tenant_features ─────────────────────────────────────────
   // WHY UPSERT: tenant_features rows are created at tenant-creation time,
   // so INSERT is rarely needed. But UPSERT is safer than assuming the row exists.
-  const id = `TF-${uuidv4()}`;
+  const id = uuidv4();
   const enabledAt = enabled ? "NOW()" : "NULL";
 
   await pool.query(

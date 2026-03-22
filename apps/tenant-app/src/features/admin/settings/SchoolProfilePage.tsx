@@ -143,11 +143,15 @@ export default function SchoolProfilePage() {
     mutationFn: ({
       file,
       field,
+      uploadType,
     }: {
       file: File;
       field: "logoUrl" | "principalSignatureUrl";
+      uploadType: "logo" | "signature";
     }) =>
-      schoolProfileApi.uploadFile(file).then((r) => ({ url: r.url, field })),
+      schoolProfileApi
+        .uploadFile(file, uploadType)
+        .then((r) => ({ url: r.url, field })),
     onSuccess: ({ url, field }) => {
       updateMutation.mutate({ [field]: url });
       appToast.success(
@@ -230,7 +234,12 @@ export default function SchoolProfilePage() {
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) uploadMutation.mutate({ file, field: "logoUrl" });
+                if (file)
+                  uploadMutation.mutate({
+                    file,
+                    field: "logoUrl",
+                    uploadType: "logo",
+                  });
               }}
             />
             <button
@@ -414,6 +423,7 @@ export default function SchoolProfilePage() {
                       uploadMutation.mutate({
                         file,
                         field: "principalSignatureUrl",
+                        uploadType: "signature",
                       });
                   }}
                 />

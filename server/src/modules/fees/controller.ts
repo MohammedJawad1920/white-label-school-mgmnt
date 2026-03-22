@@ -318,7 +318,7 @@ export async function bulkCharge(req: Request, res: Response): Promise<void> {
   const existingResult = await pool.query<{ student_id: string }>(
     `SELECT student_id FROM fee_charges
      WHERE tenant_id = $1 AND session_id = $2 AND description = $3
-       AND student_id = ANY($4::text[])`,
+       AND student_id = ANY($4::uuid[])`,
     [tenantId, sessionId, description.trim(), resolvedStudentIds],
   );
   const alreadyCharged = new Set(existingResult.rows.map((r) => r.student_id));
@@ -426,7 +426,7 @@ export async function listCharges(req: Request, res: Response): Promise<void> {
       res.status(200).json({ data: [] });
       return;
     }
-    conditions.push(`fc.student_id = ANY($${paramIdx++}::text[])`);
+    conditions.push(`fc.student_id = ANY($${paramIdx++}::uuid[])`);
     params.push(childIds);
   } else if (studentIdFilter) {
     conditions.push(`fc.student_id = $${paramIdx++}`);
@@ -480,10 +480,10 @@ export async function deleteCharge(req: Request, res: Response): Promise<void> {
     }
 
     // Hard delete — no audit trail needed for unrecorded charge
-    await client.query("DELETE FROM fee_charges WHERE id = $1 AND tenant_id = $2", [
-      id,
-      tenantId,
-    ]);
+    await client.query(
+      "DELETE FROM fee_charges WHERE id = $1 AND tenant_id = $2",
+      [id, tenantId],
+    );
 
     return { success: true };
   });
@@ -545,58 +545,67 @@ export async function recordPayment(
     return;
   }
 
-  // Verify charge exists in tenant
-  const chargeResult = await pool.query<FeeChargeRow>(
-    "SELECT * FROM fee_charges WHERE id = $1 AND tenant_id = $2",
-    [chargeId, tenantId],
-  );
-  if ((chargeResult.rowCount ?? 0) === 0) {
+  const paymentId = uuidv4();
+  const txResult = await withTransaction(async (client) => {
+    const chargeResult = await client.query<FeeChargeRow>(
+      "SELECT * FROM fee_charges WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+      [chargeId, tenantId],
+    );
+    if ((chargeResult.rowCount ?? 0) === 0) {
+      return { notFound: true as const };
+    }
+
+    const charge = chargeResult.rows[0]!;
+
+    const paidResult = await client.query<{ total_paid: string }>(
+      "SELECT COALESCE(SUM(amount_paid), 0) AS total_paid FROM fee_payments WHERE charge_id = $1 AND tenant_id = $2",
+      [chargeId, tenantId],
+    );
+    const totalPaid = parseFloat(paidResult.rows[0]?.total_paid ?? "0");
+    const balance = Number(charge.amount) - totalPaid;
+
+    if (amountPaid > balance) {
+      return { overpayment: true as const };
+    }
+
+    await client.query(
+      `INSERT INTO fee_payments
+         (id, tenant_id, charge_id, student_id, amount_paid, payment_mode,
+          paid_at, receipt_number, recorded_by, notes, recorded_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+      [
+        paymentId,
+        tenantId,
+        chargeId,
+        charge.student_id,
+        amountPaid,
+        paymentMode,
+        paidAt,
+        receiptNumber ?? null,
+        userId,
+        notes ?? null,
+      ],
+    );
+
+    const result = await client.query<FeePaymentRow>(
+      "SELECT * FROM fee_payments WHERE id = $1",
+      [paymentId],
+    );
+
+    return { payment: result.rows[0]! };
+  });
+
+  if ("notFound" in txResult) {
     send404(res, "Fee charge not found");
     return;
   }
 
-  // Compute current balance
-  const balanceResult = await pool.query<{ balance: string }>(
-    `SELECT fc.amount - COALESCE(SUM(fp.amount_paid), 0) AS balance
-     FROM fee_charges fc
-     LEFT JOIN fee_payments fp ON fp.charge_id = fc.id
-     WHERE fc.id = $1 AND fc.tenant_id = $2
-     GROUP BY fc.amount`,
-    [chargeId, tenantId],
-  );
-  const balance = parseFloat(balanceResult.rows[0]?.balance ?? "0");
-
-  if (amountPaid > balance) {
+  if ("overpayment" in txResult) {
     send400(res, "Payment exceeds outstanding balance", "OVERPAYMENT");
     return;
   }
 
-  const paymentId = uuidv4();
-  await pool.query(
-    `INSERT INTO fee_payments
-       (id, tenant_id, charge_id, student_id, amount_paid, payment_mode,
-        paid_at, receipt_number, recorded_by, notes, recorded_at)
-     SELECT $1, $2, $3, fc.student_id, $4, $5, $6, $7, $8, $9, NOW()
-     FROM fee_charges fc WHERE fc.id = $3 AND fc.tenant_id = $2`,
-    [
-      paymentId,
-      tenantId,
-      chargeId,
-      amountPaid,
-      paymentMode,
-      paidAt,
-      receiptNumber ?? null,
-      userId,
-      notes ?? null,
-    ],
-  );
-
-  const result = await pool.query<FeePaymentRow>(
-    "SELECT * FROM fee_payments WHERE id = $1",
-    [paymentId],
-  );
-
-  res.status(201).json({ payment: formatFeePayment(result.rows[0]!) });
+  res.status(201).json({ payment: formatFeePayment(txResult.payment) });
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -9,6 +9,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { examsApi } from "@/api/exams.api";
+import { academicSessionsApi } from "@/api/academicSessions";
 import { subjectsApi } from "@/api/subjects";
 import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
@@ -54,10 +55,19 @@ export default function ExamDetailPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const sessionsQuery = useQuery({
+    queryKey: ["academic-sessions"],
+    queryFn: () => academicSessionsApi.list(),
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Exam subjects — embedded in exam detail or fetched via subjects list
   // The Exam type includes gradeBoundaries; subjects come from the exam object itself after
   // adding them. We treat examQuery.data as the source of truth.
   const exam = examQuery.data ?? null;
+  const sessionName =
+    sessionsQuery.data?.sessions.find((s) => s.id === exam?.sessionId)?.name ??
+    "-";
 
   // Subjects for this exam — they are returned as part of the exam object?
   // Looking at the Exam type, it doesn't include subjects directly.
@@ -169,7 +179,7 @@ export default function ExamDetailPage() {
         <div>
           <h1 className="text-xl font-semibold">{exam.name}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {exam.className} · {exam.sessionName} · {exam.type}
+            {exam.className} · {sessionName} · {exam.type}
           </p>
         </div>
         <div className="flex items-center gap-2">

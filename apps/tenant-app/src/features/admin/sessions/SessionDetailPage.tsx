@@ -32,7 +32,7 @@ function statusBadgeCls(status: AcademicSessionStatus): string {
 }
 
 const copyTimetableSchema = z.object({
-  sourceSessionId: z
+  fromSessionId: z
     .string()
     .min(1, "Source session is required")
     .uuid("Must be a valid session ID"),
@@ -85,10 +85,10 @@ export default function SessionDetailPage() {
   });
 
   const copyMutation = useMutation({
-    mutationFn: (sourceSessionId: string) =>
-      academicSessionsApi.copyTimetable(id!, { sourceSessionId }),
+    mutationFn: (fromSessionId: string) =>
+      academicSessionsApi.copyTimetable(id!, { fromSessionId }),
     onSuccess: (data) => {
-      toast.success(`Copied ${data.copiedCount} timeslots`);
+      toast.success(`Copied ${data.copied} timeslots`);
       setShowCopyTimetable(false);
       resetCopyForm();
     },
@@ -275,29 +275,29 @@ export default function SessionDetailPage() {
             </p>
             <form
               onSubmit={handleCopySubmit((v) =>
-                copyMutation.mutate(v.sourceSessionId),
+                copyMutation.mutate(v.fromSessionId),
               )}
               noValidate
               className="space-y-4"
             >
               <div>
                 <label
-                  htmlFor="sourceSessionId"
+                  htmlFor="fromSessionId"
                   className="block text-sm font-medium mb-1.5"
                 >
                   Source session ID
                 </label>
                 <input
-                  id="sourceSessionId"
+                  id="fromSessionId"
                   type="text"
                   placeholder="UUID of source session"
-                  aria-invalid={copyErrors.sourceSessionId ? true : undefined}
+                  aria-invalid={copyErrors.fromSessionId ? true : undefined}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
-                  {...registerCopy("sourceSessionId")}
+                  {...registerCopy("fromSessionId")}
                 />
-                {copyErrors.sourceSessionId && (
+                {copyErrors.fromSessionId && (
                   <p role="alert" className="mt-1.5 text-xs text-destructive">
-                    {copyErrors.sourceSessionId.message}
+                    {copyErrors.fromSessionId.message}
                   </p>
                 )}
               </div>

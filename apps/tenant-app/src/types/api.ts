@@ -130,6 +130,10 @@ export interface UpdateUserRolesRequest {
 export interface UpdateUserRolesResponse {
   user: User;
 }
+export interface ResetPasswordResponse {
+  user: TenantUser;
+  temporaryPassword: string;
+}
 
 // ─── STUDENTS ────────────────────────────────────────────────────────────────
 export type StudentStatus = "Active" | "DroppedOff" | "Graduated"; // v4.0 CR-22
@@ -547,9 +551,9 @@ export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
 }
-/** v5.0 C-02fe: response is token only — no user object (OpenAPI /auth/change-password) */
 export interface ChangePasswordResponse {
   token: string;
+  user: TenantUser;
 }
 
 // ─── ACADEMIC SESSIONS (v5.0 M-013) ──────────────────────────────────────────
@@ -578,10 +582,10 @@ export interface ListSessionsResponse {
   sessions: AcademicSession[];
 }
 export interface CopyTimetableRequest {
-  sourceSessionId: string;
+  fromSessionId: string;
 }
 export interface CopyTimetableResponse {
-  copiedCount: number;
+  copied: number;
 }
 
 // Promotion preview — expires 10 min after creation
@@ -664,9 +668,16 @@ export interface UploadProfileFileResponse {
 }
 
 // ─── LEAVE (Phase 1) ─────────────────────────────────────────────────────────
-export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'ACTIVE' | 'COMPLETED' | 'OVERDUE';
-export type LeaveType = 'SICK' | 'CASUAL' | 'EMERGENCY' | 'OTHER';
-export type DurationType = 'FULL_DAY' | 'HALF_DAY';
+export type LeaveStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "ACTIVE"
+  | "COMPLETED"
+  | "OVERDUE";
+export type LeaveType = "SICK" | "CASUAL" | "EMERGENCY" | "OTHER";
+export type DurationType = "FULL_DAY" | "HALF_DAY";
 
 export interface LeaveRequest {
   id: string;
@@ -681,7 +692,7 @@ export interface LeaveRequest {
   leaveType: LeaveType;
   durationType: DurationType;
   startDate: string; // ISO date
-  endDate: string;   // ISO date
+  endDate: string; // ISO date
   totalDays: number;
   reason: string;
   status: LeaveStatus;
@@ -735,10 +746,15 @@ export interface CreateGuardianResponse {
 
 // ─── NOTIFICATIONS (Phase 1) ──────────────────────────────────────────────────
 export type NotificationType =
-  | 'LEAVE_APPROVED' | 'LEAVE_REJECTED' | 'LEAVE_SUBMITTED'
-  | 'EXAM_PUBLISHED' | 'EXAM_MARKS_ENTRY_OPEN'
-  | 'ANNOUNCEMENT' | 'FEE_REMINDER'
-  | 'ATTENDANCE_ALERT' | 'ASSIGNMENT_DUE';
+  | "LEAVE_APPROVED"
+  | "LEAVE_REJECTED"
+  | "LEAVE_SUBMITTED"
+  | "EXAM_PUBLISHED"
+  | "EXAM_MARKS_ENTRY_OPEN"
+  | "ANNOUNCEMENT"
+  | "FEE_REMINDER"
+  | "ATTENDANCE_ALERT"
+  | "ASSIGNMENT_DUE";
 
 export interface Notification {
   id: string;
@@ -754,8 +770,8 @@ export interface Notification {
 }
 
 // ─── EXAMS (Phase 1) ──────────────────────────────────────────────────────────
-export type ExamStatus = 'DRAFT' | 'PUBLISHED' | 'UNPUBLISHED';
-export type MarksStatus = 'PENDING' | 'ENTERED' | 'ABSENT';
+export type ExamStatus = "DRAFT" | "PUBLISHED" | "UNPUBLISHED";
+export type MarksStatus = "PENDING" | "ENTERED" | "ABSENT";
 
 export interface GradeBoundary {
   grade: string;
@@ -855,7 +871,14 @@ export interface ExternalResult {
 }
 
 // ─── FEES (Phase 1) ───────────────────────────────────────────────────────────
-export type FeeCategory = 'TUITION' | 'TRANSPORT' | 'HOSTEL' | 'EXAM' | 'LIBRARY' | 'SPORTS' | 'OTHER';
+export type FeeCategory =
+  | "TUITION"
+  | "TRANSPORT"
+  | "HOSTEL"
+  | "EXAM"
+  | "LIBRARY"
+  | "SPORTS"
+  | "OTHER";
 
 export interface FeeCharge {
   id: string;
@@ -881,7 +904,7 @@ export interface FeePayment {
   chargeId: string;
   tenantId: string;
   amount: number;
-  paymentMode: 'Cash' | 'SelfPaid';
+  paymentMode: "Cash" | "SelfPaid";
   paidAt: string;
   receiptNumber: string | null;
   notes: string | null;
@@ -909,7 +932,12 @@ export interface BulkChargeRequest {
 }
 
 // ─── ANNOUNCEMENTS (Phase 1) ──────────────────────────────────────────────────
-export type AudienceType = 'All' | 'Teachers' | 'Students' | 'Guardians' | 'Class';
+export type AudienceType =
+  | "All"
+  | "Teachers"
+  | "Students"
+  | "Guardians"
+  | "Class";
 
 export interface Announcement {
   id: string;
@@ -938,8 +966,18 @@ export interface CreateAnnouncementRequest {
 }
 
 // ─── ASSIGNMENTS (Phase 1) ────────────────────────────────────────────────────
-export type AssignmentType = 'HOMEWORK' | 'PROJECT' | 'CLASSWORK' | 'QUIZ' | 'LAB' | 'OTHER';
-export type SubmissionStatus = 'PENDING' | 'COMPLETED' | 'INCOMPLETE' | 'NOT_SUBMITTED';
+export type AssignmentType =
+  | "HOMEWORK"
+  | "PROJECT"
+  | "CLASSWORK"
+  | "QUIZ"
+  | "LAB"
+  | "OTHER";
+export type SubmissionStatus =
+  | "PENDING"
+  | "COMPLETED"
+  | "INCOMPLETE"
+  | "NOT_SUBMITTED";
 
 export interface Assignment {
   id: string;
@@ -955,7 +993,7 @@ export interface Assignment {
   sessionName: string;
   dueDate: string | null;
   maxMarks: number | null;
-  status: 'OPEN' | 'CLOSED';
+  status: "OPEN" | "CLOSED";
   createdById: string;
   createdByName: string;
   createdAt: string;
@@ -987,7 +1025,7 @@ export interface BulkMarkRequest {
 }
 
 // ─── IMPORT (Phase 1) ─────────────────────────────────────────────────────────
-export type ImportJobStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED';
+export type ImportJobStatus = "PENDING" | "CONFIRMED" | "CANCELLED" | "EXPIRED";
 
 export interface ImportError {
   row: number;

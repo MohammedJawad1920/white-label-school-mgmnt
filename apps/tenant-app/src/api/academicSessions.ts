@@ -36,8 +36,8 @@ export const academicSessionsApi = {
 
   getCurrent: () =>
     apiClient
-      .get<AcademicSession>("/academic-sessions/current")
-      .then((r) => r.data),
+      .get<{ data: AcademicSession }>("/academic-sessions/current")
+      .then((r) => r.data.data),
 
   create: (payload: CreateSessionRequest) =>
     apiClient

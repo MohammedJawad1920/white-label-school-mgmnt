@@ -553,77 +553,99 @@ export async function confirmImport(
   // ── Execute import in transaction ─────────────────────────────────────────
   let temporaryPassword: string | undefined;
 
-  const updatedJob = await withTransaction(async (client: PoolClient) => {
-    let importedCount = 0;
+  let updatedJob: ImportJobRow;
+  try {
+    updatedJob = await withTransaction(async (client: PoolClient) => {
+      // Re-lock inside the transaction to serialize concurrent confirm attempts.
+      const { rows: lockedRows } = await client.query<ImportJobRow>(
+        `SELECT * FROM import_jobs WHERE id = $1 AND tenant_id = $2 AND status = 'PREVIEW' FOR UPDATE`,
+        [jobId, tenantId],
+      );
+      if (lockedRows.length === 0) {
+        throw Object.assign(new Error("IMPORT_NOT_CONFIRMABLE"), {
+          statusCode: 409,
+        });
+      }
 
-    if (job.entity_type === "Student") {
-      const previewData = (job.preview_data ?? []) as StudentCsvRow[];
+      let importedCount = 0;
 
-      for (const row of previewData) {
-        const result = await client.query<{ id: string }>(
-          `INSERT INTO students
+      if (job.entity_type === "Student") {
+        const previewData = (job.preview_data ?? []) as StudentCsvRow[];
+
+        for (const row of previewData) {
+          const result = await client.query<{ id: string }>(
+            `INSERT INTO students
              (id, tenant_id, name, admission_number, dob, batch_id, status)
            VALUES ($1, $2, $3, $4, $5::date,
              (SELECT id FROM batches WHERE tenant_id = $2 AND name = $6 AND deleted_at IS NULL LIMIT 1),
              'Active')
            ON CONFLICT DO NOTHING
            RETURNING id`,
-          [
-            uuidv4(),
-            tenantId,
-            row.name,
-            row.admissionNumber,
-            row.dob,
-            row.batchName ?? null,
-          ],
-        );
-        if (result.rows.length > 0) {
-          importedCount++;
+            [
+              uuidv4(),
+              tenantId,
+              row.name,
+              row.admissionNumber,
+              row.dob,
+              row.batchName ?? null,
+            ],
+          );
+          if (result.rows.length > 0) {
+            importedCount++;
+          }
         }
-      }
-    } else {
-      // entityType === 'User'
-      const previewData = (job.preview_data ?? []) as UserCsvRow[];
-      const tempPassword = crypto.randomBytes(8).toString("hex").slice(0, 12);
-      temporaryPassword = tempPassword;
-      const passwordHash = await bcrypt.hash(
-        tempPassword,
-        config.BCRYPT_ROUNDS,
-      );
+      } else {
+        // entityType === 'User'
+        const previewData = (job.preview_data ?? []) as UserCsvRow[];
+        const tempPassword = crypto.randomBytes(8).toString("hex").slice(0, 12);
+        temporaryPassword = tempPassword;
+        const passwordHash = await bcrypt.hash(
+          tempPassword,
+          config.BCRYPT_ROUNDS,
+        );
 
-      for (const row of previewData) {
-        const result = await client.query<{ id: string }>(
-          `INSERT INTO users
+        for (const row of previewData) {
+          const result = await client.query<{ id: string }>(
+            `INSERT INTO users
              (id, tenant_id, name, email, password_hash, roles, must_change_password, token_version)
            VALUES ($1, $2, $3, $4, $5, $6::jsonb, true, 1)
            ON CONFLICT DO NOTHING
            RETURNING id`,
-          [
-            uuidv4(),
-            tenantId,
-            row.name,
-            row.email,
-            passwordHash,
-            JSON.stringify([row.role]),
-          ],
-        );
-        if (result.rows.length > 0) {
-          importedCount++;
+            [
+              uuidv4(),
+              tenantId,
+              row.name,
+              row.email,
+              passwordHash,
+              JSON.stringify([row.role]),
+            ],
+          );
+          if (result.rows.length > 0) {
+            importedCount++;
+          }
         }
       }
+
+      // Update job to COMPLETED
+      const { rows: updatedRows } = await client.query<ImportJobRow>(
+        `UPDATE import_jobs
+         SET status = 'COMPLETED', confirmed_at = NOW(), imported_rows = $1
+         WHERE id = $2
+         RETURNING *`,
+        [importedCount, jobId],
+      );
+
+      return updatedRows[0]!;
+    });
+  } catch (err: unknown) {
+    if (
+      err instanceof Error &&
+      (err as Error & { statusCode?: number }).statusCode === 409
+    ) {
+      send400(res, "Import cannot be confirmed", "VALIDATION_ERROR");
+      return;
     }
 
-    // Update job to COMPLETED
-    const { rows: updatedRows } = await client.query<ImportJobRow>(
-      `UPDATE import_jobs
-       SET status = 'COMPLETED', confirmed_at = NOW(), imported_rows = $1
-       WHERE id = $2
-       RETURNING *`,
-      [importedCount, jobId],
-    );
-
-    return updatedRows[0]!;
-  }).catch(async (err) => {
     // On transaction error, set job status to FAILED
     try {
       await pool.query(
@@ -637,7 +659,7 @@ export async function confirmImport(
       );
     }
     throw err;
-  });
+  }
 
   logger.info(
     {
