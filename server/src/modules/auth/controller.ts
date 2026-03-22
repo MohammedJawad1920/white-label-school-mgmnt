@@ -337,10 +337,15 @@ export async function changePassword(
     return;
   }
   if (newPassword.length < 8) {
-    send422(res, "newPassword must be at least 8 characters", "VALIDATION_ERROR", {
-      field: "newPassword",
-      minLength: 8,
-    });
+    send422(
+      res,
+      "newPassword must be at least 8 characters",
+      "VALIDATION_ERROR",
+      {
+        field: "newPassword",
+        minLength: 8,
+      },
+    );
     return;
   }
 
