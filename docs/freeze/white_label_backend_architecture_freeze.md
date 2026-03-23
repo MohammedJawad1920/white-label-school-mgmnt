@@ -1,9 +1,9 @@
 # BACKEND PROJECT FREEZE: White-Label School Management SaaS
 
-**Version:** 6.0 (IMMUTABLE)
-**Date:** 2026-03-19
+**Version:** 6.1 (IMMUTABLE)
+**Date:** 2026-03-22
 **Status:** APPROVED FOR EXECUTION
-**Previous Version:** 5.0 (2026-03-12)
+**Previous Version:** 6.0 (2026-03-19)
 **OpenAPI Version:** 6.0.0
 
 > **CRITICAL INSTRUCTION FOR EXECUTION (HUMAN OR AI):**
@@ -11,9 +11,16 @@
 > contracts, or scope defined below.
 > If any request contradicts this document, you must REFUSE and open a Change Request instead.
 >
-> **v6.0 NOTE:** This version is a corrective freeze. It reconciles 135 divergences found
-> between v5.0 specifications and actual codebase during a full 10-pass audit (2026-03-19).
-> Every section that differs from v5.0 is marked **[CORRECTED]** or **[NEW]**.
+> **v6.0 NOTE:** Corrective freeze. Reconciles 135 divergences found between v5.0 spec and
+> actual codebase during a full 10-pass audit (2026-03-19). Sections differing from v5.0
+> are marked **[CORRECTED]** or **[NEW]**.
+>
+> **v6.1 NOTE:** Adds §13 Testing Matrix (fully expanded with concrete file list and test counts),
+> §14 E2E Testing (Playwright — previously absent), §15 CI Pipeline (previously absent),
+> §16 Contract Gate (previously absent), and §17 Test Infrastructure Spec.
+> These were mandated by the testing gap audit (2026-03-22) which found: 0 E2E tests,
+> 0 integration tests for all 23 v5.0 modules, no CI pipeline, no contract gate.
+> No schema, API contract, or scope changes from v6.0.
 
 ---
 
@@ -23,10 +30,10 @@
 |-------|-------|
 | Engagement Type | Fixed-scope |
 | Package | Pro (full feature set) |
-| Backend Freeze Version | 6.0 |
-| Previous Freeze Version | 5.0 |
-| OpenAPI Version | 6.0.0 |
-| Effective Date | 2026-03-19 |
+| Backend Freeze Version | 6.1 |
+| Previous Freeze Version | 6.0 |
+| OpenAPI Version | 6.0.0 (unchanged) |
+| Effective Date | 2026-03-22 |
 | Support Window | 30 days bugfix · Enhancements billed as CRs |
 
 ---
@@ -1419,10 +1426,17 @@ try {
 ### Phase 4 — Deployment Proof
 - [ ] Single Docker build works: `docker build`, `docker run` applies migrations then starts
 - [ ] docker-compose mounts all 39 migration files
-- [ ] `server/package.json` version = `"6.0.0"` — matches Dockerfile LABEL and startup log
+- [ ] `server/package.json` version = `"6.1.0"` — matches Dockerfile LABEL and startup log
 - [ ] OpenAPI docs URL works — spec matches actual behavior
 - [ ] Smoke test steps documented in README (v6.0 schema, not v1)
 - [ ] Push subscription works; notification delivered on test event
+- [ ] **All 327 server integration tests pass** (§13.3)
+- [ ] **All 68 server unit tests pass** (§13.4)
+- [ ] **All 150 frontend unit tests pass** (§13.5)
+- [ ] **All 12 Playwright E2E flows pass** (§14.5)
+- [ ] **Spectral lint gate passes** (§16.1)
+- [ ] **openapi-typescript type generation succeeds with zero TS errors** (§16.2)
+- [ ] **CI pipeline runs green on clean branch** (§15)
 
 ---
 
@@ -1618,41 +1632,525 @@ export type FeatureKey =
 
 ---
 
-## 13. Testing Matrix **[CORRECTED]**
+## 13. Testing Matrix **[EXPANDED — v6.1]**
 
-| Type | Coverage Target | Tools | Key Scenarios |
-|------|----------------|-------|---------------|
-| Unit | 80% business logic | **jest** | Grade computation, consecutive streak calc, leave state machine, fee balance, promotion logic |
-| Integration | All 30 API modules | **jest + supertest** | Happy path + error codes per endpoint, auth enforcement, role scoping — must cover all v5.0 modules (leave, exams, fees, announcements, assignments, guardians, import, notifications) |
-| Contract | OpenAPI vs implementation | openapi-typescript + jest | Every endpoint matches OpenAPI 6.0.0 — schema, status codes, error format |
-| Load | 50 RPS sustained 5min | k6 | Attendance record-class, timetable fetch, leave list |
-| Security | OWASP basics | Manual | SQL injection (esp. cron student_name), auth bypass, privilege escalation, JSONB role bypass |
-| Failure-mode | Critical paths | jest | Push delivery failure (non-blocking), R2 upload failure, concurrent leave approval, double import confirm |
+> **Current state (audit 2026-03-22):** 127 server integration tests · 24 server unit tests ·
+> 68 frontend unit tests · 0 E2E tests · 0 contract tests · 0 CI pipeline.
+> All 23 v5.0 modules have zero integration test coverage.
+> This section is the authoritative target. All items below are mandatory for Phase 4 sign-off.
 
-**Integration test requirements:**
-- `createTestTenant` must use `uuidv4()` for `tenantId` (not `'T-TEST-xxx'` strings)
-- Login sends `{ tenantId }` not `{ tenantSlug }`
-- Comment in `jest.config.integration.ts` must say "39 migrations" not "4 migrations"
+### 13.1 Summary Targets
 
----
-
-## 14. Mock Server & Contract Enforcement
-
-### Mock Server
-
-| Property | Value |
-|----------|-------|
-| Tool | Prism (stoplight/prism) |
-| Run command | `npx @stoplight/prism-cli mock openapi.yaml --port 4000` |
-| Simulate 401 | Send request without Authorization header |
-| Simulate 403 | Send request with role that lacks permission |
-| Simulate 409 | POST duplicate leave approval for already-reviewed request |
-| Simulate 422 | Send invalid enum value in request body |
-| Simulate 500 | Send `x-simulate-error: 500` header |
+| Type | Tool | Current | Required | Status |
+|------|------|---------|----------|--------|
+| Server integration | Jest + Supertest | 127 tests · 9 files | **≥310 tests · 23 files** | 🔴 Incomplete |
+| Server unit | Jest | 24 tests · 5 files | **≥80 tests · 10 files** | 🔴 Incomplete |
+| Frontend unit | Vitest + jsdom | 68 tests · 8 files | **≥150 tests · 16 files** | 🟠 Partial |
+| E2E user flows | Playwright | **0** | **12 flows** | 🔴 Not installed |
+| Contract gate | Spectral + openapi-typescript | **0** | **1 CI gate** | 🔴 Missing |
+| Load | k6 | 0 | 3 scenarios | 🔴 Missing |
+| CI pipeline | GitHub Actions | **0** | **1 workflow** | 🔴 Missing |
 
 ---
 
-## 15. Deployment, Rollback, Backups, DR
+### 13.2 Test Infrastructure — Fix First (Prerequisite)
+
+These four bugs in `server/tests/integration/helpers/db.ts` must be fixed before any new test can pass:
+
+**FIX-TEST-001** — `createTestTenant` seeds only `timetable` + `attendance` feature flags.
+Any new test for leave/exams/fees/etc. will hit 403 FEATURE_DISABLED.
+
+```typescript
+// REQUIRED: seed all 10 feature flags
+await testPool.query(`
+  INSERT INTO tenant_features (id, tenant_id, feature_key, enabled, enabled_at) VALUES
+    ($1, $2, 'timetable', TRUE, NOW()), ($3, $2, 'attendance', TRUE, NOW()),
+    ($4, $2, 'leave', TRUE, NOW()), ($5, $2, 'exams', TRUE, NOW()),
+    ($6, $2, 'fees', TRUE, NOW()), ($7, $2, 'announcements', TRUE, NOW()),
+    ($8, $2, 'assignments', TRUE, NOW()), ($9, $2, 'import', TRUE, NOW()),
+    ($10, $2, 'guardian', TRUE, NOW()), ($11, $2, 'notifications', TRUE, NOW())`,
+  [uuidv4(), tenantId, uuidv4(), uuidv4(), uuidv4(),
+   uuidv4(), uuidv4(), uuidv4(), uuidv4(), uuidv4(), uuidv4()]
+);
+```
+
+**FIX-TEST-002** — `cleanupTenant` does not delete any v5.0 tables. Tests leak data between runs.
+Must add all v5.0 tables in reverse FK order:
+
+```
+assignment_submissions, assignments,
+exam_results, exam_student_summaries, exam_subjects, exams, external_results,
+fee_payments, fee_charges,
+announcements, notifications, push_subscriptions, leave_requests,
+student_guardians, guardians, promotion_logs, promotion_previews, import_jobs,
+attendance_records, timeslots, students, classes, batches, subjects,
+events, academic_sessions, users, school_periods, tenant_features, tenants
+```
+
+**FIX-TEST-003** — `jest.config.integration.ts` comment says "All 4 migrations applied (001–004)".
+Must say "All 39 migrations applied (001–039)".
+
+**FIX-TEST-004** — One test in `auth.test.ts` sends `tenantSlug` in login body.
+Must send `tenantId` (UUID).
+
+---
+
+### 13.3 Server Integration Tests — Required Files
+
+All files follow the existing pattern: real PostgreSQL · isolated tenant per suite · `createTestTenant()` + `cleanupTenant()` · `makeAgent()` = `supertest(createApp())`.
+
+| File | Tests | Modules covered |
+|------|-------|-----------------|
+| `auth.test.ts` | 11 | ✅ exists — login/logout/switch-role |
+| `attendance-analytics.test.ts` | 23 | ✅ exists — streaks/toppers/daily-summary/monthly-sheet |
+| `attendance.test.ts` | 14 | ✅ exists — record-class/correct |
+| `events.test.ts` | 21 | ✅ exists |
+| `school-periods.test.ts` | 10 | ✅ exists |
+| `students.test.ts` | 10 | ✅ exists |
+| `superadmin.test.ts` | 18 | ✅ exists |
+| `timetable.test.ts` | 9 | ✅ exists |
+| `users.test.ts` | 11 | ✅ exists + add reset-password tests |
+| **`academic-sessions.test.ts`** | **22** | 🔴 NEW — create/activate/close/copy-timetable/current/transition |
+| **`leave.test.ts`** | **30** | 🔴 NEW — full state machine, auto-excused, SELECT FOR UPDATE race |
+| **`guardians.test.ts`** | **14** | 🔴 NEW — create/link/can_submit_leave/delete tenant_id regression |
+| **`exams.test.ts`** | **35** | 🔴 NEW — create/subjects/marks/publish/grade computation/response envelope |
+| **`fees.test.ts`** | **20** | 🔴 NEW — charges/payments/balance/TOCTOU race |
+| **`notifications.test.ts`** | **16** | 🔴 NEW — list/read/read-all — response key regressions |
+| **`announcements.test.ts`** | **18** | 🔴 NEW — audience targeting/Teacher restriction/push_sent reset |
+| **`assignments.test.ts`** | **20** | 🔴 NEW — create/submissions/bulk-mark withTransaction/due-date TZ |
+| **`import.test.ts`** | **18** | 🔴 NEW — preview/confirm/race/temporaryPassword/entity restriction |
+| **`school-profile.test.ts`** | **10** | 🔴 NEW — upload type field regression/slug not subdomain |
+| **`settings.test.ts`** | **4** | 🔴 NEW — grade-config returns A+ 8-grade scale regression |
+| **`guardian-portal.test.ts`** | **20** | 🔴 NEW — all 6 child endpoints, isolation enforcement |
+| **`security-regression.test.ts`** | **12** | 🔴 NEW — SQL injection, JSONB role, tenant isolation, token revocation |
+
+**Total required: ≥327 integration tests across 23 files**
+
+#### Mandatory test cases per new file (locked — cannot be omitted):
+
+**`academic-sessions.test.ts`**
+- `GET /academic-sessions/current` returns `{ data: AcademicSession }` — not `{ session }` (envelope regression)
+- `POST /academic-sessions/:id/copy-timetable` with body `{ fromSessionId }` returns `{ copied: N }`
+- `POST /academic-sessions/:id/copy-timetable` with body `{ sourceSessionId }` returns 400 (old-field regression)
+- Activating session when another is already ACTIVE returns 409
+
+**`leave.test.ts`**
+- Guardian with `can_submit_leave = false` gets 403 SUBMIT_LEAVE_NOT_ALLOWED
+- Leave approval auto-creates Excused attendance records for each leave day
+- Second approve attempt on same leave returns 409 LEAVE_ALREADY_REVIEWED (SELECT FOR UPDATE test)
+
+**`exams.test.ts`**
+- `GET /exams` returns `{ data: Exam[], total }` not `{ exams }` (envelope regression)
+- `GET /exams/:id` returns `{ data: Exam }` not `{ exam }` (envelope regression)
+- Publish: student with `marks_obtained < pass_marks` gets grade F regardless of percentage
+- Publish: student with `is_absent = true` gets grade AB
+- Publish: `overall_result = FAIL` if any single subject `is_pass = false`
+- Second publish attempt returns 409 ALREADY_PUBLISHED (SELECT FOR UPDATE test)
+
+**`fees.test.ts`**
+- `POST /fees/charges/:id/payments` with body `{ amount }` returns 400 (old-field regression)
+- `POST /fees/charges/:id/payments` with body `{ amountPaid, paidAt }` returns 201
+- `paidAt` missing from body returns 400
+- Delete charge with existing payment returns 400 CHARGE_HAS_PAYMENTS
+
+**`notifications.test.ts`**
+- `GET /notifications` returns `{ data: Notification[], total }` not `{ notifications, unreadCount, total }` (envelope regression)
+- `PUT /notifications/read-all` returns `{ updated: N }` not `{ updatedCount }` (regression)
+
+**`announcements.test.ts`**
+- Teacher can create `audienceType = Class` for own class — 201
+- Teacher creating `audienceType = All` returns 403
+- Rescheduling `publish_at` to future resets `push_sent` to false
+
+**`import.test.ts`**
+- `entity = classes` returns 400 — not a supported entity (regression, UI was showing it)
+- Confirm returns `temporaryPassword` for User entity imports
+- Second confirm on same jobId returns 409 (SELECT FOR UPDATE test)
+
+**`school-profile.test.ts`**
+- Upload without `type` field returns 400 (regression — was always failing)
+- Profile returns `slug` not `subdomain` field (schema regression)
+
+**`settings.test.ts`**
+- `GET /settings/grade-config` returns array with 8 items, first grade = `A+`, last = `F` (regression — was returning S-scale)
+
+**`security-regression.test.ts`**
+- Student name containing `'; DROP TABLE notifications; --` stored safely, no DB error
+- Admin cron query for `roles @> '["Admin"]'::jsonb` returns correct users (JSONB regression)
+- Tenant A Admin token rejected on Tenant B endpoints (isolation)
+- After logout, old JWT returns 401 TOKEN_REVOKED on any protected endpoint
+- After password change, old JWT returns 401 TOKEN_REVOKED
+
+---
+
+### 13.4 Server Unit Tests — Required Files
+
+| File | Tests | Logic covered |
+|------|-------|---------------|
+| `asyncHandler.test.ts` | 2 | ✅ exists |
+| `bulkDelete.test.ts` | 4 | ✅ exists |
+| `errors.test.ts` | 10 | ✅ exists |
+| `featureGuard.test.ts` | 3 | ✅ exists |
+| `requireRole.test.ts` | 5 | ✅ exists |
+| **`gradeComputation.test.ts`** | **12** | 🔴 NEW — lookupGrade, A+ scale boundaries, F-for-fail, AB-for-absent, tied ranks |
+| **`consecutiveStreak.test.ts`** | **10** | 🔴 NEW — walk-backwards algorithm, Excused skip, streak break on Present |
+| **`feeBalance.test.ts`** | **6** | 🔴 NEW — balance = amount − totalPaid edge cases |
+| **`leaveStateMachine.test.ts`** | **8** | 🔴 NEW — valid transitions, invalid transitions → 400 |
+| **`tenantTimezone.test.ts`** | **8** | 🔴 NEW — backdating guard uses tenant TZ not UTC, IST vs UTC edge case |
+
+**Total required: ≥68 unit tests across 10 files**
+
+#### Mandatory test cases per new file (locked):
+
+**`gradeComputation.test.ts`**
+- 95% → `A+` with default boundaries
+- Exactly 90.00% → `A+` (inclusive boundary)
+- Exactly 89.99% → `A`
+- `marks_obtained < pass_marks` → grade = `F` regardless of percentage
+- `is_absent = true` → grade = `AB`, `is_pass = null`
+- Two students with identical percentage → same `class_rank`, next rank skipped
+
+**`consecutiveStreak.test.ts`**
+- 3 consecutive Absent → streak = 3
+- 2 Absent + 1 Present (earlier) → streak = 2 (Present breaks streak going back)
+- Excused days do NOT break streak and are NOT counted in streak total
+- 0 records → streak = 0
+
+**`tenantTimezone.test.ts`**
+- Server UTC = 18:00, tenant TZ = Asia/Kolkata (UTC+5:30), local date = tomorrow → date is NOT in the past, no 400
+- Server UTC = 20:31, tenant TZ = Asia/Kolkata, local date = today → local time is 02:01+1 = next day UTC, so today IS in the past → 400
+- Admin role bypasses guard regardless of date
+
+---
+
+### 13.5 Frontend Unit Tests — Required Files
+
+| File | Tests | What is tested |
+|------|-------|----------------|
+| `SAAuthContext.test.tsx` | 6 | ✅ exists |
+| `StatusBadge.test.tsx` | 9 | ✅ exists |
+| `useBulkSelect.test.ts` | 9 | ✅ exists |
+| `useFeatureFlag.test.tsx` | 4 | ✅ exists |
+| `cn.test.ts` (×2) | 9 | ✅ exists |
+| `dates.test.ts` | 8 | ✅ exists |
+| `errors.test.ts` (×2) | 12 | ✅ exists |
+| `roles.test.ts` | 11 | ✅ exists |
+| **`AuthContext.test.tsx`** | **10** | 🔴 NEW — login stores `res.user` not stale context; roles array not singular; mustChangePassword correctly cleared |
+| **`useCurrentSession.test.tsx`** | **6** | 🔴 NEW — `currentSession.id` accessible; 404 returns null; envelope unwrap regression |
+| **`examsApi.test.ts`** | **4** | 🔴 NEW — list reads `.data.data` not `.data.exams`; get reads `.data.data` not `.data.exam` |
+| **`notificationsApi.test.ts`** | **4** | 🔴 NEW — list reads `.data.data`; markAllRead reads `.data.updated` |
+| **`feesApi.test.ts`** | **3** | 🔴 NEW — recordPayment sends `amountPaid` + `paidAt` not `amount` |
+| **`academicSessionsApi.test.ts`** | **3** | 🔴 NEW — copyTimetable sends `fromSessionId` not `sourceSessionId` |
+| **`schoolProfileApi.test.ts`** | **3** | 🔴 NEW — uploadFile appends `type` field to FormData |
+| **`ChangePasswordPage.test.tsx`** | **5** | 🔴 NEW — calls `login(res.token, res.user)` not `login(res.token, user!)`; no redirect loop |
+| **`GradeConfigPage.test.tsx`** | **4** | 🔴 NEW — calls API on mount; renders 8 rows; first grade = A+ |
+
+**Total required: ≥150 frontend unit tests across 16 files**
+
+---
+
+## 14. E2E Testing — Playwright **[NEW — v6.1]**
+
+> **Current state:** Playwright is not installed. Zero E2E tests exist anywhere in the codebase.
+> This section mandates the full setup and 12 critical user flows.
+
+### 14.1 Installation (locked)
+
+```bash
+npm install --save-dev @playwright/test --workspace=apps/tenant-app
+npm install --save-dev @playwright/test --workspace=apps/superadmin-app
+npx playwright install chromium   # headless only — sufficient for CI
+```
+
+### 14.2 Configuration (locked)
+
+`apps/tenant-app/playwright.config.ts`:
+
+```typescript
+import { defineConfig, devices } from '@playwright/test';
+export default defineConfig({
+  testDir: './e2e',
+  fullyParallel: false,           // tests share one DB tenant — no parallel
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 1 : 0,
+  workers: 1,
+  reporter: process.env.CI ? 'github' : 'html',
+  use: {
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173',
+    trace: 'on-first-retry',
+    video: 'on-first-retry',
+  },
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  globalSetup: './e2e/global-setup.ts',
+  globalTeardown: './e2e/global-teardown.ts',
+});
+```
+
+### 14.3 Global setup / teardown (locked)
+
+```
+e2e/global-setup.ts   — Seeds test tenant in test DB via direct SQL.
+                        Exports env vars: E2E_TENANT_ID, E2E_ADMIN_EMAIL,
+                        E2E_ADMIN_PASSWORD, E2E_TEACHER_EMAIL,
+                        E2E_GUARDIAN_EMAIL, E2E_STUDENT_EMAIL
+
+e2e/global-teardown.ts — Hard-deletes test tenant (CASCADE) from test DB
+```
+
+### 14.4 Required E2E helpers
+
+```
+e2e/helpers/auth.ts   — loginAs(page, role: 'admin'|'teacher'|'guardian'|'student')
+e2e/helpers/api.ts    — Direct API calls for seeding data without UI:
+                        seedLeaveRequest(), approveLeave(), publishExam()
+```
+
+### 14.5 Required Flows (12 — all mandatory for Phase 4)
+
+| ID | Flow | Regression target |
+|----|------|-------------------|
+| **E2E-001** | Admin login + must_change_password forced redirect + successful password change → lands on dashboard, NOT looping back to /change-password | CR-FE-009 |
+| **E2E-002** | Record class attendance (3 students: Present/Absent/Late) → verify persisted on reload | H-10 timezone guard |
+| **E2E-003** | Guardian submits leave → Admin approves → attendance auto-marked Excused for each leave day | Leave state machine + §4.4 |
+| **E2E-004** | Full exam lifecycle: create → add subjects → enter marks → publish → verify grade F for failed subject, AB for absent, overall FAIL if any subject fails → download PDF report card | §4.5 grade computation |
+| **E2E-005** | Raise fee charge → record payment with `{ amountPaid, paidAt }` → balance reduces → Guardian sees updated balance | CR-FE-006 field names |
+| **E2E-006** | Notification bell shows unread count → click notification navigates without page reload → Mark all read → badge clears → `{ updated: N }` received | CR-FE-004, CR-FE-005, CR-FE-012 |
+| **E2E-007** | CSV import: valid file previews correctly → confirm → students appear in list; invalid file shows error rows → confirm blocked | Import flow |
+| **E2E-008** | Upload school logo with `type=logo` in FormData → logo URL saved → logo renders in profile page | CR-FE-003 type field |
+| **E2E-009** | Student logs in → views own exam results and report card → cannot see other students' individual marks | Student portal isolation |
+| **E2E-010** | Teacher dashboard renders non-blank → Record Attendance shows only teacher's class students (not all tenant students) | CR-FE-022 class filter |
+| **E2E-011** | SuperAdmin creates tenant → all 10 feature flags visible → disable exams → Admin login to tenant → exams route returns 403 FEATURE_DISABLED | M-35 feature seeding |
+| **E2E-012** | On-campus list refreshes automatically every 30s (verify via network interception); departure/return updates list in real time | M-48 refetchInterval |
+
+---
+
+## 15. CI Pipeline **[NEW — v6.1]**
+
+> **Current state:** No `.github/workflows/` directory exists. All test runs are manual.
+
+### 15.1 Required: `.github/workflows/ci.yml`
+
+```yaml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  server-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci --prefix server
+      - run: npm run test:unit --prefix server
+
+  server-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env: { POSTGRES_DB: school_test, POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres }
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+        ports: ['5432:5432']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci --prefix server
+      - name: Apply all 39 migrations
+        run: node server/run-migrations.js
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/school_test
+      - run: npm run test:integration --prefix server
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/school_test
+
+  openapi-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npx --yes @stoplight/spectral-cli lint openapi_v6.0.0.yaml
+
+  frontend-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci --prefix apps/tenant-app
+      - run: npm test --prefix apps/tenant-app
+      - run: npm ci --prefix apps/superadmin-app
+      - run: npm test --prefix apps/superadmin-app
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [server-integration, frontend-unit]
+    services:
+      postgres:
+        image: postgres:15
+        env: { POSTGRES_DB: school_e2e, POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres }
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+        ports: ['5433:5432']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npx playwright install --with-deps chromium
+      - run: node server/run-migrations.js
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/school_e2e
+      - name: Start server
+        run: node dist/server.js &
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/school_e2e
+          NODE_ENV: test
+      - run: npm run build --prefix apps/tenant-app
+        env:
+          VITE_API_BASE_URL: http://localhost:3000
+          VITE_TENANT_ID: ${{ env.E2E_TENANT_ID }}
+      - run: npx serve apps/tenant-app/dist --port 5173 &
+      - run: npx playwright test --config apps/tenant-app/playwright.config.ts
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:5173
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/school_e2e
+```
+
+### 15.2 CI gate rules (merge blocked if any fail)
+
+| Gate | Fail condition |
+|------|---------------|
+| `server-unit` | Any unit test fails |
+| `server-integration` | Any integration test fails OR migration fails |
+| `openapi-lint` | Any Spectral error-level rule violation |
+| `frontend-unit` | Any vitest test fails |
+| `e2e` | Any Playwright flow fails |
+
+---
+
+## 16. Contract Gate **[NEW — v6.1]**
+
+### 16.1 OpenAPI lint gate (Spectral)
+
+`.spectral.yaml` at repo root:
+
+```yaml
+extends: ["spectral:oas"]
+rules:
+  operation-success-response: error
+  oas3-valid-media-example: error
+  no-$ref-siblings: error
+  operation-operationId: warn
+```
+
+Run: `npx @stoplight/spectral-cli lint openapi_v6.0.0.yaml`
+
+Blocks merge on any `error`-level violation.
+
+### 16.2 Type generation gate (openapi-typescript)
+
+```bash
+# Run after any OpenAPI change — output committed to repo
+npx openapi-typescript openapi_v6.0.0.yaml \
+  --output server/src/types/openapi.generated.ts
+
+# TypeScript compiler failing on this file = contract violation
+npm run typecheck --prefix server
+```
+
+If the generated types cause a TypeScript compile error, it means implementation diverged from OpenAPI. Merge blocked.
+
+### 16.3 Mock server (local dev)
+
+```bash
+# Spin up a mock server from the OpenAPI spec — no backend needed
+npx @stoplight/prism-cli mock openapi_v6.0.0.yaml --port 4000 --validate-request --validate-response
+
+# Simulations:
+# 401: send request without Authorization header
+# 403: send request with role that lacks permission
+# 409: POST leave approval for already-reviewed request
+# 422: send invalid enum value in request body
+# 500: send header x-simulate-error: 500
+```
+
+---
+
+## 17. Test Infrastructure Spec **[NEW — v6.1]**
+
+### 17.1 Test database setup
+
+```bash
+# One-time local setup
+createdb school_test
+node server/run-migrations.js
+
+# Verify
+psql school_test -c "\dt"   # should list 30+ tables
+```
+
+`server/.env.test`:
+```bash
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/school_test
+```
+
+### 17.2 Test scripts (server/package.json)
+
+```json
+{
+  "scripts": {
+    "test:unit":        "jest --testPathPattern=tests/unit",
+    "test:integration": "jest --config jest.config.integration.ts --runInBand",
+    "test:all":         "npm run test:unit && npm run test:integration",
+    "typecheck":        "tsc --noEmit"
+  }
+}
+```
+
+### 17.3 jest.config.integration.ts (corrected)
+
+```typescript
+// REQUIRES: PostgreSQL test database with all 39 migrations applied
+// Setup: node run-migrations.js (with TEST_DATABASE_URL set)
+// Run: npx jest --config jest.config.integration.ts --runInBand
+export default {
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  testMatch: ['**/tests/integration/**/*.test.ts'],
+  globalSetup: './tests/integration/helpers/globalSetup.ts',
+  globalTeardown: './tests/integration/helpers/globalTeardown.ts',
+  testTimeout: 30000,
+  runInBand: true,   // REQUIRED: tests share DB, must not run in parallel
+};
+```
+
+### 17.4 Data isolation rules (locked)
+
+- Each `describe` block that writes data must call `createTestTenant()` in `beforeAll` and `cleanupTenant(tenant.tenantId)` in `afterAll`
+- `createTestTenant()` must seed all 10 feature flags (see §13.2 FIX-TEST-001)
+- `cleanupTenant()` must delete all 24 v5.0 tables (see §13.2 FIX-TEST-002)
+- No test may rely on data created by another test or another describe block
+- Tests within a `describe` may share setup data created in `beforeAll`
+- `runInBand: true` is mandatory — concurrent test tenants cause FK constraint races
+
+### 17.5 Acceptance: tests must be runnable with this single command sequence
+
+```bash
+# From repo root:
+createdb school_test
+node server/run-migrations.js
+npm run test:all --prefix server
+npm test --prefix apps/tenant-app
+npm test --prefix apps/superadmin-app
+
+# E2E (requires server running on :3000 and tenant-app built on :5173):
+npx playwright test --config apps/tenant-app/playwright.config.ts
+```
+
+If any command fails on a clean clone of the repo, the test suite is considered broken.
+
+---
+
+## 18. Deployment, Rollback, Backups, DR
 
 | Property | Value |
 |----------|-------|
@@ -1665,11 +2163,11 @@ export type FeatureKey =
 | RPO | 24 hours |
 | RTO | 4 hours |
 | Zero-downtime approach | Additive migrations only; drop columns in separate follow-up migration |
-| Version consistency | `server/package.json` version = Dockerfile LABEL = server.ts startup log = `"6.0.0"` |
+| Version consistency | `server/package.json` version = Dockerfile LABEL = server.ts startup log = `"6.1.0"` |
 
 ---
 
-## 16. Change Control
+## 19. Change Control
 
 Any modification to schema, API contract, or scope requires:
 
@@ -1680,19 +2178,20 @@ Any modification to schema, API contract, or scope requires:
 
 | Change Type | Version Bump |
 |-------------|-------------|
-| Bug fix in logic — no API change | Patch (6.0.1) |
-| New endpoint added | 6.1 |
-| Existing endpoint modified | 6.1 |
-| New table added | 6.1 |
+| Bug fix in logic — no API change | Patch (6.1.1) |
+| New endpoint added | 6.2 |
+| Existing endpoint modified | 6.2 |
+| New table added | 6.2 |
 | Breaking API change | 7.0 |
 | Major scope addition | 7.0 |
 
 ---
 
-## 17. Version History
+## 20. Version History
 
 | Version | Date | Summary |
 |---------|------|---------|
 | v1.0–v4.8 | prior | (see v5.0 freeze) |
 | v5.0 | 2026-03-12 | Major scope addition: Sessions, Leave, Exams, Fees, Announcements, Assignments, Import, Push, R2, PWA |
-| v6.0 | 2026-03-19 | **Corrective freeze** — 135 divergences reconciled between v5.0 spec and actual codebase. Tech stack corrected to Express/raw-pg/jest (from Fastify/Prisma/vitest). JWT payload corrected (removed tenantTimezone/classId/batchId/linkedStudentIds). Schema corrected: roles→JSONB, tenants.slug (not subdomain), tenants.status (not is_active), academic_sessions no is_current column, attendance_records no class_id, can_submit_leave default→true. API contracts corrected: 9 response envelope mismatches fixed, copyTimetable→fromSessionId, upload→type field, fees→amountPaid+paidAt. New endpoint: POST /users/:id/reset-password. 9 critical security/data bugs documented and mandated fixed: SQL injection in cron, JSONB role query, TOCTOU in fees/import, consecutive-streak algorithm, tenant-timezone backdating guard, Puppeteer browser reuse, Guardian JSONB cast, deleteGuardian tenant_id filter, publishExam push dispatch. FeatureKey expanded to 10 modules. Grade scale standardized to A+/8-grade. |
+| v6.0 | 2026-03-19 | **Corrective freeze** — 135 divergences reconciled between v5.0 spec and actual codebase. Tech stack corrected to Express/raw-pg/jest. JWT payload corrected. Schema corrected: roles→JSONB, tenants.slug, tenants.status, no is_current column, no class_id in attendance_records, can_submit_leave default→true. 9 response envelope mismatches fixed. New endpoint: POST /users/:id/reset-password. 9 critical security/data bugs mandated fixed. FeatureKey expanded to 10 modules. Grade scale standardized to A+/8-grade. |
+| v6.1 | 2026-03-22 | **Testing freeze** — Testing gap audit found 0 E2E tests, 0 integration tests for all 23 v5.0 modules, no CI pipeline, no contract gate. Added §13 (full expanded testing matrix with 23 required integration test files, 10 unit test files, 16 frontend unit test files, mandatory locked test cases for all regression scenarios), §14 (Playwright E2E — 12 mandatory user flows with locked scenarios), §15 (GitHub Actions CI pipeline spec), §16 (Spectral + openapi-typescript contract gate), §17 (test infrastructure spec — DB setup, isolation rules, runnable command sequence). No schema, API contract, or scope changes. Phase 4 acceptance criteria updated to require all tests passing and CI green. |

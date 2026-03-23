@@ -4,13 +4,13 @@ info:
   version: 6.0.0
   description: |
     White-label school management SaaS for residential Islamic educational institutions.
-    Backend Freeze v6.0 — 2026-03-19.
+    Backend Freeze v6.1 — 2026-03-22.
 
     **Auth:** Bearer JWT on all protected endpoints.
     **Base path:** /api/v1
     **Error format:** All errors return `{ error: { code, message, details }, requestId, timestamp }`
 
-    ## v6.0 Corrections (from 135-issue audit)
+    ## v6.0 Corrections (from 135-issue audit — 2026-03-19)
     - User.roles is now an array (`roles: string[]`), not singular `role: string`
     - JWT payload: removed tenantTimezone, classId, batchId, linkedStudentIds
     - Login/changePassword/switchRole responses use flat `{ token, user }` (NOT `{ data: { token, user } }`)
@@ -29,6 +29,24 @@ info:
     - `GET /settings/grade-config` returns 8-grade A+ scale (not 6-grade S scale)
     - Import confirm for User entity returns `temporaryPassword`
 
+    ## v6.0.0 completion (omissions added — 2026-03-22, Freeze v6.1)
+    The following endpoint groups were in Freeze v6.0 but accidentally omitted from the initial
+    OpenAPI document. Added now as documentation corrections — no contract changes:
+    - `GET/POST/DELETE /batches`
+    - `GET/POST/DELETE /subjects`
+    - `GET/POST/PUT/:id /classes`
+    - `GET/POST/GET/:id/PUT/:id /students`
+    - `GET/POST/PUT/:id/DELETE/:id /timetable`
+    - `GET /students/:id/attendance`
+    - `POST /promotions/:id/rollback`
+    - `GET/POST /external-results`
+    - `POST /fees/charges/bulk`
+    - `GET /fees/summary`
+    - `PUT /assignments/:id/close`
+    - `GET /import/template/:entity`
+    - `GET /features`
+    - `GET /guardian/children/:studentId/timetable`
+
     ## Role Clarification — ClassTeacher vs Teacher
     ClassTeacher is NOT a distinct UserRole value. A Teacher acts as Class Teacher
     when `JWT.classTeacherOf != null`.
@@ -38,7 +56,13 @@ info:
     - v5.0.0: Initial freeze
     - v5.0.1: CR-43 guardian attendance
     - v5.0.2: ClassTeacher clarification
-    - v6.0.0: 135-issue corrective freeze (2026-03-19)
+    - v6.0.0: 135-issue corrective freeze (2026-03-19). Omitted endpoint groups added as documentation
+      corrections (2026-03-22): batches, subjects, classes, students, timetable, student attendance,
+      promotions rollback, external-results, bulk fee charges, fee summary, assignment close,
+      import template, features list, guardian timetable.
+    - v6.0.0 (Freeze v6.1 — 2026-03-22): **No contract changes.** Backend Freeze v6.1 added
+      testing/CI/E2E sections only (§13–§17). This OpenAPI spec remains at v6.0.0. Any future
+      endpoint addition or modification will bump to v6.1.0.
 
 servers:
   - url: /api/v1
@@ -849,6 +873,67 @@ components:
                 type: string
               admissionNumber:
                 type: string
+
+    BulkDeleteResult:
+      type: object
+      description: Result of a bulk soft-delete operation
+      properties:
+        deleted:
+          type: array
+          items:
+            $ref: '#/components/schemas/UUID'
+          description: IDs successfully deleted
+        failed:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                $ref: '#/components/schemas/UUID'
+              reason:
+                type: string
+                enum: [NOT_FOUND, HAS_REFERENCES]
+              message:
+                type: string
+          description: IDs that could not be deleted and why
+
+    Subject:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        tenantId:
+          $ref: '#/components/schemas/UUID'
+        name:
+          type: string
+        createdAt:
+          $ref: '#/components/schemas/ISO8601'
+
+    ExternalResult:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        tenantId:
+          $ref: '#/components/schemas/UUID'
+        studentId:
+          $ref: '#/components/schemas/UUID'
+        sessionId:
+          $ref: '#/components/schemas/UUID'
+        examName:
+          type: string
+        conductedBy:
+          type: string
+        resultSummary:
+          type: string
+          nullable: true
+        documentUrl:
+          type: string
+          nullable: true
+        recordedBy:
+          $ref: '#/components/schemas/UUID'
+        recordedAt:
+          $ref: '#/components/schemas/ISO8601'
 
   # ─── Reusable responses ──────────────────────────────────────────
   responses:
@@ -3776,3 +3861,1004 @@ paths:
       responses:
         '200':
           description: Updated
+
+  # ─── BATCHES ──────────────────────────────────────────────────────
+  /batches:
+    get:
+      tags: [Batches]
+      summary: List batches (Admin)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Active, Graduated]
+      responses:
+        '200':
+          description: Batches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Batch'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Batches]
+      summary: Create batch (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, startYear, endYear, entryLevel]
+              properties:
+                name:
+                  type: string
+                  example: "Verity"
+                startYear:
+                  type: integer
+                  example: 2019
+                endYear:
+                  type: integer
+                  example: 2026
+                entryLevel:
+                  $ref: '#/components/schemas/StudentLevel'
+                entrySessionId:
+                  $ref: '#/components/schemas/UUID'
+                  nullable: true
+      responses:
+        '201':
+          description: Batch created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Batch'
+        '409':
+          description: Duplicate batch name within tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Batches]
+      summary: Bulk soft-delete batches (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Bulk delete result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResult'
+
+  # ─── SUBJECTS ────────────────────────────────────────────────────
+  /subjects:
+    get:
+      tags: [Subjects]
+      summary: List subjects (Admin/Teacher)
+      responses:
+        '200':
+          description: Subjects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Subject'
+                  total:
+                    type: integer
+    post:
+      tags: [Subjects]
+      summary: Create subject (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: "Islamic Studies"
+      responses:
+        '201':
+          description: Subject created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Subject'
+    delete:
+      tags: [Subjects]
+      summary: Bulk soft-delete subjects (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Bulk delete result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResult'
+
+  # ─── CLASSES ─────────────────────────────────────────────────────
+  /classes:
+    get:
+      tags: [Classes]
+      summary: List classes (Admin/Teacher)
+      parameters:
+        - name: sessionId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: batchId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Classes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Class'
+                  total:
+                    type: integer
+    post:
+      tags: [Classes]
+      summary: Create class (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, batchId, sessionId, level]
+              properties:
+                name:
+                  type: string
+                  example: "Plus One A"
+                batchId:
+                  $ref: '#/components/schemas/UUID'
+                sessionId:
+                  $ref: '#/components/schemas/UUID'
+                level:
+                  $ref: '#/components/schemas/StudentLevel'
+                section:
+                  type: string
+                  example: "A"
+                  nullable: true
+                classTeacherId:
+                  $ref: '#/components/schemas/UUID'
+                  nullable: true
+      responses:
+        '201':
+          description: Class created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Class'
+        '409':
+          description: Duplicate class (same batch+session+level+section)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Classes]
+      summary: Bulk soft-delete classes (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Bulk delete result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResult'
+
+  /classes/{classId}:
+    put:
+      tags: [Classes]
+      summary: Update class (Admin)
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                classTeacherId:
+                  $ref: '#/components/schemas/UUID'
+                  nullable: true
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Class'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── STUDENTS CRUD ───────────────────────────────────────────────
+  /students:
+    get:
+      tags: [Students]
+      summary: List students (Admin/ClassTeacher)
+      parameters:
+        - name: classId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: batchId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Active, DroppedOff, Graduated]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Students
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Student'
+                  total:
+                    type: integer
+    post:
+      tags: [Students]
+      summary: Create student (Admin)
+      description: |
+        Atomically creates users row + students row.
+        Sets must_change_password = true.
+        loginId = admissionNumber.toLowerCase() + '@' + tenantSlug + '.local'
+        Default password = admissionNumber + DDMMYYYY(dob)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, admissionNumber, dob, classId, batchId]
+              properties:
+                name:
+                  type: string
+                admissionNumber:
+                  type: string
+                dob:
+                  $ref: '#/components/schemas/DateString'
+                classId:
+                  $ref: '#/components/schemas/UUID'
+                batchId:
+                  $ref: '#/components/schemas/UUID'
+      responses:
+        '201':
+          description: Student created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Student'
+        '409':
+          description: Duplicate admission number
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "ADMISSIONNUMBERCONFLICT"
+                  message: "Admission number already exists in this tenant"
+                  details: {}
+                requestId: "550e8400-e29b-41d4-a716-446655440000"
+                timestamp: "2026-03-22T08:00:00.000Z"
+    delete:
+      tags: [Students]
+      summary: Bulk soft-delete students (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Bulk delete result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResult'
+
+  /students/{studentId}:
+    get:
+      tags: [Students]
+      summary: Get student by ID
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Student
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Student'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Students]
+      summary: Update student (Admin)
+      description: |
+        Updating admissionNumber or dob recomputes password_hash.
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                admissionNumber:
+                  type: string
+                dob:
+                  $ref: '#/components/schemas/DateString'
+                classId:
+                  $ref: '#/components/schemas/UUID'
+                status:
+                  type: string
+                  enum: [Active, DroppedOff, Graduated]
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Student'
+
+  /students/{studentId}/attendance:
+    get:
+      tags: [Students]
+      summary: Get student attendance history (Admin/ClassTeacher/Student/Guardian)
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: month
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+            example: "2026-03"
+        - name: from
+          in: query
+          schema:
+            $ref: '#/components/schemas/DateString'
+        - name: to
+          in: query
+          schema:
+            $ref: '#/components/schemas/DateString'
+      responses:
+        '200':
+          description: Attendance records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AttendanceRecord'
+                  total:
+                    type: integer
+                  presentDays:
+                    type: integer
+                  absentDays:
+                    type: integer
+                  lateDays:
+                    type: integer
+                  excusedDays:
+                    type: integer
+
+  # ─── TIMETABLE ───────────────────────────────────────────────────
+  /timetable:
+    get:
+      tags: [Timetable]
+      summary: List timetable slots (Admin/Teacher)
+      parameters:
+        - name: classId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: dayOfWeek
+          in: query
+          schema:
+            type: string
+            enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+        - name: teacherId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: sessionId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Timeslots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  timetable:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Timeslot'
+    post:
+      tags: [Timetable]
+      summary: Create timeslot (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [classId, dayOfWeek, periodNumber]
+              properties:
+                classId:
+                  $ref: '#/components/schemas/UUID'
+                subjectId:
+                  $ref: '#/components/schemas/UUID'
+                  nullable: true
+                teacherId:
+                  $ref: '#/components/schemas/UUID'
+                  nullable: true
+                dayOfWeek:
+                  type: string
+                  enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+                periodNumber:
+                  type: integer
+      responses:
+        '201':
+          description: Timeslot created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Timeslot'
+        '409':
+          description: Conflict — class already has slot for this day+period
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /timetable/{timeslotId}:
+    put:
+      tags: [Timetable]
+      summary: Update timeslot (Admin)
+      parameters:
+        - name: timeslotId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subjectId:
+                  $ref: '#/components/schemas/UUID'
+                  nullable: true
+                teacherId:
+                  $ref: '#/components/schemas/UUID'
+                  nullable: true
+                dayOfWeek:
+                  type: string
+                  enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+                periodNumber:
+                  type: integer
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Timeslot'
+    delete:
+      tags: [Timetable]
+      summary: Delete timeslot (Admin)
+      parameters:
+        - name: timeslotId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Deleted
+
+  # ─── PROMOTIONS ───────────────────────────────────────────────────
+  /promotions/{promotionId}/rollback:
+    post:
+      tags: [Academic Sessions]
+      summary: Rollback promotion (Admin — one-time only)
+      description: |
+        Reverses a committed batch promotion. Moves students back to previous class.
+        Can only be done once per promotion log. Sets rolled_back_at.
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Rollback complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      rolledBackCount:
+                        type: integer
+        '409':
+          description: Already rolled back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "ALREADY_ROLLED_BACK"
+                  message: "This promotion has already been rolled back"
+                  details: {}
+                requestId: "550e8400-e29b-41d4-a716-446655440000"
+                timestamp: "2026-03-22T08:00:00.000Z"
+
+  # ─── EXTERNAL RESULTS ────────────────────────────────────────────
+  /external-results:
+    get:
+      tags: [Exams]
+      summary: List external results (Admin/Student/Guardian)
+      parameters:
+        - name: studentId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: sessionId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: External results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExternalResult'
+                  total:
+                    type: integer
+    post:
+      tags: [Exams]
+      summary: Record external exam result (Admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentId, sessionId, examName, conductedBy]
+              properties:
+                studentId:
+                  $ref: '#/components/schemas/UUID'
+                sessionId:
+                  $ref: '#/components/schemas/UUID'
+                examName:
+                  type: string
+                  example: "SSLC 2026"
+                conductedBy:
+                  type: string
+                  example: "DHSE Kerala"
+                resultSummary:
+                  type: string
+                  nullable: true
+                documentUrl:
+                  type: string
+                  nullable: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ExternalResult'
+
+  # ─── FEES BULK + SUMMARY ─────────────────────────────────────────
+  /fees/charges/bulk:
+    post:
+      tags: [Fees]
+      summary: Bulk raise fee charges (Admin)
+      description: |
+        Raises the same charge for multiple students at once.
+        Target by: explicit studentIds, or all students in a classId, or all students at a level.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, description, category, amount]
+              properties:
+                sessionId:
+                  $ref: '#/components/schemas/UUID'
+                description:
+                  type: string
+                category:
+                  $ref: '#/components/schemas/FeeCategory'
+                amount:
+                  type: number
+                dueDate:
+                  $ref: '#/components/schemas/DateString'
+                  nullable: true
+                notes:
+                  type: string
+                  nullable: true
+                studentIds:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/UUID'
+                  description: Explicit list. Mutually exclusive with classId/level.
+                classId:
+                  $ref: '#/components/schemas/UUID'
+                  nullable: true
+                  description: All active students in this class.
+                level:
+                  $ref: '#/components/schemas/StudentLevel'
+                  nullable: true
+                  description: All active students at this level.
+      responses:
+        '201':
+          description: Charges created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    type: integer
+                    description: Number of charges created
+                  skipped:
+                    type: integer
+                    description: Students skipped (already have identical charge)
+
+  /fees/summary:
+    get:
+      tags: [Fees]
+      summary: Outstanding dues summary (Admin/ClassTeacher)
+      description: Per-student totals — amount charged, amount paid, balance outstanding.
+      parameters:
+        - name: sessionId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: classId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: unpaidOnly
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Fee summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        studentId:
+                          $ref: '#/components/schemas/UUID'
+                        studentName:
+                          type: string
+                        admissionNumber:
+                          type: string
+                        totalCharged:
+                          type: number
+                        totalPaid:
+                          type: number
+                        balance:
+                          type: number
+
+  # ─── ASSIGNMENTS CLOSE ────────────────────────────────────────────
+  /assignments/{assignmentId}/close:
+    put:
+      tags: [Assignments]
+      summary: Close assignment (Admin)
+      description: Transitions ACTIVE → CLOSED. No further submission updates possible.
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: Closed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Assignment'
+        '409':
+          description: Already closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "ALREADY_CLOSED"
+                  message: "Assignment is already closed"
+                  details: {}
+                requestId: "550e8400-e29b-41d4-a716-446655440000"
+                timestamp: "2026-03-22T08:00:00.000Z"
+
+  # ─── IMPORT TEMPLATE ─────────────────────────────────────────────
+  /import/template/{entity}:
+    get:
+      tags: [Import]
+      summary: Download CSV template for entity type (Admin)
+      parameters:
+        - name: entity
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ImportEntityType'
+      responses:
+        '200':
+          description: CSV template file
+          content:
+            text/csv:
+              schema:
+                type: string
+                example: "name,admission_number,dob,class_name,batch_name\n"
+        '400':
+          description: Unsupported entity type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ─── FEATURES ────────────────────────────────────────────────────
+  /features:
+    get:
+      tags: [Features]
+      summary: Get enabled features for current tenant (any role)
+      description: |
+        Returns which of the 10 module feature flags are enabled for this tenant.
+        Used by frontend FeatureGate component to decide which routes to render.
+      responses:
+        '200':
+          description: Feature flags for tenant
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  features:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                          enum:
+                            - timetable
+                            - attendance
+                            - leave
+                            - exams
+                            - fees
+                            - announcements
+                            - assignments
+                            - import
+                            - guardian
+                            - notifications
+                        name:
+                          type: string
+                        enabled:
+                          type: boolean
+                        enabledAt:
+                          $ref: '#/components/schemas/ISO8601'
+                          nullable: true
+              example:
+                features:
+                  - key: "timetable"
+                    name: "Timetable Management"
+                    enabled: true
+                    enabledAt: "2026-01-01T00:00:00.000Z"
+                  - key: "leave"
+                    name: "Leave Management"
+                    enabled: true
+                    enabledAt: "2026-01-01T00:00:00.000Z"
+                  - key: "exams"
+                    name: "Exam Management"
+                    enabled: false
+                    enabledAt: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ─── GUARDIAN PORTAL — TIMETABLE ─────────────────────────────────
+  /guardian/children/{studentId}/timetable:
+    get:
+      tags: [Guardian Portal]
+      summary: Child timetable (Guardian)
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: dayOfWeek
+          in: query
+          schema:
+            type: string
+            enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+      responses:
+        '200':
+          description: Timetable slots for student's class
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  timetable:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Timeslot'
+        '403':
+          description: Guardian not linked to student
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

@@ -107,7 +107,7 @@ describe("POST /api/v1/auth/login", () => {
     if (SKIP) return;
     const res = await makeAgent()
       .post("/api/v1/auth/login")
-      .send({ email: "x@x.com", password: "wrong1234", tenantSlug: "nope" });
+      .send({ email: "x@x.com", password: "wrong1234", tenantId: "00000000-0000-0000-0000-000000000000" });
     expect(res.body).toHaveProperty("error");
     expect(res.body.error).toHaveProperty("timestamp");
     expect(res.body).not.toHaveProperty("timestamp"); // NOT sibling

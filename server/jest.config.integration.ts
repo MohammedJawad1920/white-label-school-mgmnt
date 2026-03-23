@@ -4,7 +4,7 @@
  * These tests hit the real PostgreSQL DB (or a test DB specified by
  * TEST_DATABASE_URL env var). They require:
  *   - A running PostgreSQL instance
- *   - All 4 migrations applied (001–004)
+ *   - All 39 migrations applied (001–039)
  *   - DATABASE_URL (or TEST_DATABASE_URL) set in .env or environment
  *
  * Run:  npx jest --config jest.config.integration.ts --runInBand

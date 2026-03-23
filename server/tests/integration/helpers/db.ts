@@ -97,8 +97,19 @@ export async function createTestTenant(): Promise<TestTenant> {
   const adminEmail = `admin-${suffix}@test.local`;
   const adminId = uuidv4();
   const periodId = uuidv4();
-  const timetableFeatureId = uuidv4();
-  const attendanceFeatureId = uuidv4();
+  // Feature flag IDs — all 10 required per Freeze v6.1 FIX-TEST-001
+  const featureIds = {
+    timetable: uuidv4(),
+    attendance: uuidv4(),
+    leave: uuidv4(),
+    guardians: uuidv4(),
+    notifications: uuidv4(),
+    exams: uuidv4(),
+    fees: uuidv4(),
+    announcements: uuidv4(),
+    assignments: uuidv4(),
+    import: uuidv4(),
+  };
 
   // Tenant
   await testPool.query(
@@ -122,13 +133,32 @@ export async function createTestTenant(): Promise<TestTenant> {
     [periodId, tenantId, 1, "Period 1"],
   );
 
-  // Feature flags — both enabled so timetable + attendance routes work
+  // Feature flags — all 10 enabled per Freeze v6.1 FIX-TEST-001
   await testPool.query(
     `INSERT INTO tenant_features (id, tenant_id, feature_key, enabled, enabled_at)
      VALUES
        ($1, $2, 'timetable', TRUE, NOW()),
-       ($3, $2, 'attendance', TRUE, NOW())`,
-    [timetableFeatureId, tenantId, attendanceFeatureId],
+       ($3, $2, 'attendance', TRUE, NOW()),
+       ($4, $2, 'leave', TRUE, NOW()),
+       ($5, $2, 'guardians', TRUE, NOW()),
+       ($6, $2, 'notifications', TRUE, NOW()),
+       ($7, $2, 'exams', TRUE, NOW()),
+       ($8, $2, 'fees', TRUE, NOW()),
+       ($9, $2, 'announcements', TRUE, NOW()),
+       ($10, $2, 'assignments', TRUE, NOW()),
+       ($11, $2, 'import', TRUE, NOW())`,
+    [
+      featureIds.timetable, tenantId,
+      featureIds.attendance,
+      featureIds.leave,
+      featureIds.guardians,
+      featureIds.notifications,
+      featureIds.exams,
+      featureIds.fees,
+      featureIds.announcements,
+      featureIds.assignments,
+      featureIds.import,
+    ],
   );
 
   return {
@@ -145,27 +175,41 @@ export async function createTestTenant(): Promise<TestTenant> {
 /**
  * Hard-deletes all rows for a test tenant (reverse FK order).
  * Safe to call in afterAll even if some rows were not created.
+ * Includes all v5.0 tables per Freeze v6.1 FIX-TEST-002.
  */
 export async function cleanupTenant(tenantId: string): Promise<void> {
-  await testPool.query("DELETE FROM attendance_records WHERE tenant_id = $1", [
-    tenantId,
-  ]);
-  await testPool.query("DELETE FROM timeslots WHERE tenant_id = $1", [
-    tenantId,
-  ]);
+  // Phase 2 tables (deepest FK dependencies)
+  await testPool.query("DELETE FROM assignment_submissions WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM assignments WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM exam_results WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM exam_student_summaries WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM exam_subjects WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM exams WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM external_results WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM fee_payments WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM fee_charges WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM announcements WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM notifications WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM push_subscriptions WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM leave_requests WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM student_guardians WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM guardians WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM promotion_logs WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM promotion_previews WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM import_jobs WHERE tenant_id = $1", [tenantId]);
+
+  // Phase 1 tables (original)
+  await testPool.query("DELETE FROM attendance_records WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM timeslots WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM students WHERE tenant_id = $1", [tenantId]);
-  // events must be deleted before users due to events_created_by_fkey constraint
   await testPool.query("DELETE FROM events WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM users WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM school_periods WHERE tenant_id = $1", [
-    tenantId,
-  ]);
+  await testPool.query("DELETE FROM school_periods WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM classes WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM batches WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM subjects WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM tenant_features WHERE tenant_id = $1", [
-    tenantId,
-  ]);
+  await testPool.query("DELETE FROM academic_sessions WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM tenant_features WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM tenants WHERE id = $1", [tenantId]);
 }
 
