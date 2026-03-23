@@ -10,24 +10,36 @@
  *   - Response types (`ListExamsResponse`, `GetExamResponse`) are correctly used
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as examsApi from './exams.api';
-import { apiClient } from './client';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as examsApi from "./exams.api";
+import { apiClient } from "./client";
 
-vi.mock('./client');
+vi.mock("./client");
 
-describe('exams.api', () => {
+describe("exams.api", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('listExams', () => {
-    it('correctly unwraps response envelope from `.data.data` (regression: CR-FE-007)', async () => {
+  describe("listExams", () => {
+    it("correctly unwraps response envelope from `.data.data` (regression: CR-FE-007)", async () => {
       const mockResponse = {
         data: {
           data: [
-            { id: 'exam-1', name: 'Math', sessionId: 'session-1', maxScore: 100, status: 'draft' },
-            { id: 'exam-2', name: 'English', sessionId: 'session-1', maxScore: 100, status: 'draft' },
+            {
+              id: "exam-1",
+              name: "Math",
+              sessionId: "session-1",
+              maxScore: 100,
+              status: "draft",
+            },
+            {
+              id: "exam-2",
+              name: "English",
+              sessionId: "session-1",
+              maxScore: 100,
+              status: "draft",
+            },
           ],
         },
       };
@@ -38,58 +50,76 @@ describe('exams.api', () => {
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(2);
-      expect(result[0]).toHaveProperty('id');
-      expect(result[1].name).toBe('English');
+      expect(result[0]).toHaveProperty("id");
+      expect(result[1].name).toBe("English");
     });
 
-    it('correctly reads from `.data.data` not `.data.exams`', async () => {
+    it("correctly reads from `.data.data` not `.data.exams`", async () => {
       const mockResponse = {
         data: {
-          data: [{ id: 'exam-1', name: 'Math', sessionId: 'session-1', maxScore: 100, status: 'draft' }],
+          data: [
+            {
+              id: "exam-1",
+              name: "Math",
+              sessionId: "session-1",
+              maxScore: 100,
+              status: "draft",
+            },
+          ],
         },
       };
 
       vi.mocked(apiClient.get).mockResolvedValue(mockResponse);
       await examsApi.listExams();
 
-      expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining('/exams'));
+      expect(apiClient.get).toHaveBeenCalledWith(
+        expect.stringContaining("/exams"),
+      );
     });
   });
 
-  describe('getExam', () => {
-    it('correctly unwraps response envelope from `.data.data` (regression: CR-FE-008)', async () => {
+  describe("getExam", () => {
+    it("correctly unwraps response envelope from `.data.data` (regression: CR-FE-008)", async () => {
       const mockResponse = {
         data: {
           data: {
-            id: 'exam-1',
-            name: 'Math Exam',
-            sessionId: 'session-1',
+            id: "exam-1",
+            name: "Math Exam",
+            sessionId: "session-1",
             maxScore: 100,
-            status: 'published',
+            status: "published",
           },
         },
       };
 
       vi.mocked(apiClient.get).mockResolvedValue(mockResponse);
 
-      const result = await examsApi.getExam('exam-1');
+      const result = await examsApi.getExam("exam-1");
 
       expect(result).toBeDefined();
-      expect(result.id).toBe('exam-1');
-      expect(result.name).toBe('Math Exam');
+      expect(result.id).toBe("exam-1");
+      expect(result.name).toBe("Math Exam");
     });
 
-    it('correctly reads from `.data.data` not `.data.exam`', async () => {
+    it("correctly reads from `.data.data` not `.data.exam`", async () => {
       const mockResponse = {
         data: {
-          data: { id: 'exam-1', name: 'Test', sessionId: 'session-1', maxScore: 100, status: 'draft' },
+          data: {
+            id: "exam-1",
+            name: "Test",
+            sessionId: "session-1",
+            maxScore: 100,
+            status: "draft",
+          },
         },
       };
 
       vi.mocked(apiClient.get).mockResolvedValue(mockResponse);
-      await examsApi.getExam('exam-1');
+      await examsApi.getExam("exam-1");
 
-      expect(apiClient.get).toHaveBeenCalledWith(expect.stringContaining('/exams/exam-1'));
+      expect(apiClient.get).toHaveBeenCalledWith(
+        expect.stringContaining("/exams/exam-1"),
+      );
     });
   });
 });

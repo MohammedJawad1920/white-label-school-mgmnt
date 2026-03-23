@@ -5,9 +5,10 @@
  * Provides functions to seed/prepare test data via API calls.
  */
 
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance } from "axios";
 
-const API_BASE_URL = process.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
+const API_BASE_URL =
+  process.env.VITE_API_BASE_URL || "http://localhost:3000/api/v1";
 
 export function createApiClient(token: string): AxiosInstance {
   return axios.create({
@@ -42,11 +43,11 @@ export async function seedLeaveRequest(
   startDate: string,
   endDate: string,
 ): Promise<string> {
-  const res = await client.post('/leave', {
+  const res = await client.post("/leave", {
     studentId,
     startDate,
     endDate,
-    reason: 'E2E test leave',
+    reason: "E2E test leave",
   });
   return res.data.leave.id;
 }
@@ -63,7 +64,7 @@ export async function publishExam(
   examId: string,
 ): Promise<void> {
   await client.patch(`/exams/${examId}`, {
-    status: 'published',
+    status: "published",
   });
 }
 
@@ -73,11 +74,11 @@ export async function createFeeCharge(
   amount: number,
   dueDate: string,
 ): Promise<string> {
-  const res = await client.post('/fees/charges', {
+  const res = await client.post("/fees/charges", {
     studentId,
     amount,
     dueDate,
-    description: 'E2E test fee',
+    description: "E2E test fee",
   });
   return res.data.charge.id;
 }
@@ -91,7 +92,7 @@ export async function recordPayment(
   await client.post(`/fees/charges/${chargeId}/payment`, {
     amountPaid,
     paidAt,
-    method: 'cash',
+    method: "cash",
   });
 }
 
@@ -101,7 +102,7 @@ export async function seedAcademicSession(
   startDate: string,
   endDate: string,
 ): Promise<string> {
-  const res = await client.post('/academic-sessions', {
+  const res = await client.post("/academic-sessions", {
     name,
     startDate,
     endDate,
@@ -121,7 +122,7 @@ export async function seedBatch(
   name: string,
   level: string,
 ): Promise<string> {
-  const res = await client.post('/batches', {
+  const res = await client.post("/batches", {
     name,
     level,
   });
@@ -134,7 +135,7 @@ export async function seedClass(
   sessionId: string,
   name: string,
 ): Promise<string> {
-  const res = await client.post('/classes', {
+  const res = await client.post("/classes", {
     batchId,
     sessionId,
     name,
@@ -149,7 +150,7 @@ export async function seedStudent(
   registerNumber: string,
   name: string,
 ): Promise<string> {
-  const res = await client.post('/students', {
+  const res = await client.post("/students", {
     batchId,
     classId,
     registerNumber,

@@ -10,25 +10,25 @@
  *   - Response envelope correctly unwrapped (`r.data.data` not `r.data`)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook, waitFor } from "@testing-library/react";
 
 // This assumes useCurrentSession is exported from the hooks directory
 // The exact import will depend on the project structure
 
-describe('useCurrentSession', () => {
+describe("useCurrentSession", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('exposes currentSession.id after boot with valid session', async () => {
+  it("exposes currentSession.id after boot with valid session", async () => {
     // Mock the API response
     const mockSession = {
-      id: 'session-2026-27',
-      name: '2026-27',
-      status: 'ACTIVE',
-      startDate: '2026-06-01',
-      endDate: '2027-05-31',
+      id: "session-2026-27",
+      name: "2026-27",
+      status: "ACTIVE",
+      startDate: "2026-06-01",
+      endDate: "2027-05-31",
     };
 
     // Simulate the hook returning the session
@@ -38,10 +38,10 @@ describe('useCurrentSession', () => {
 
     expect(result).toBeDefined();
     expect(result.id).toBeDefined();
-    expect(result.id).toBe('session-2026-27');
+    expect(result.id).toBe("session-2026-27");
   });
 
-  it('returns null on 404 (session not found)', async () => {
+  it("returns null on 404 (session not found)", async () => {
     // Simulate 404 error response
     const mockUseCurrentSession = vi.fn().mockReturnValue(null);
 
@@ -50,14 +50,14 @@ describe('useCurrentSession', () => {
     expect(result).toBeNull();
   });
 
-  it('correctly unwraps response envelope from `.data.data` not `.data`', async () => {
+  it("correctly unwraps response envelope from `.data.data` not `.data`", async () => {
     // Simulate API response with proper envelope unwrapping
     const apiResponse = {
       data: {
         data: {
-          id: 'session-1',
-          name: '2025-26',
-          status: 'CLOSED',
+          id: "session-1",
+          name: "2025-26",
+          status: "CLOSED",
         },
       },
     };
@@ -66,46 +66,46 @@ describe('useCurrentSession', () => {
     const unwrappedSession = apiResponse.data.data;
 
     expect(unwrappedSession).toBeDefined();
-    expect(unwrappedSession.id).toBe('session-1');
+    expect(unwrappedSession.id).toBe("session-1");
   });
 
-  it('handles missing session gracefully', () => {
+  it("handles missing session gracefully", () => {
     const mockUseCurrentSession = vi.fn().mockReturnValue(null);
     const result = mockUseCurrentSession();
 
     expect(result).toBeNull();
   });
 
-  it('provides accessible session properties when loaded', () => {
+  it("provides accessible session properties when loaded", () => {
     const mockSession = {
-      id: 'session-123',
-      name: '2026-27',
-      status: 'ACTIVE',
-      startDate: '2026-06-01',
-      endDate: '2027-05-31',
+      id: "session-123",
+      name: "2026-27",
+      status: "ACTIVE",
+      startDate: "2026-06-01",
+      endDate: "2027-05-31",
     };
 
-    expect(mockSession.id).toBe('session-123');
-    expect(mockSession.name).toBe('2026-27');
-    expect(mockSession.status).toBe('ACTIVE');
+    expect(mockSession.id).toBe("session-123");
+    expect(mockSession.name).toBe("2026-27");
+    expect(mockSession.status).toBe("ACTIVE");
   });
 
-  it('does not confuse `.data.session` with `.data.data`', () => {
+  it("does not confuse `.data.session` with `.data.data`", () => {
     const correctEnvelope = {
       data: {
-        data: { id: 'correct-id' },
+        data: { id: "correct-id" },
       },
     };
 
     const incorrectEnvelope = {
       data: {
-        session: { id: 'incorrect-id' },
+        session: { id: "incorrect-id" },
       },
     };
 
-    expect(correctEnvelope.data.data.id).toBe('correct-id');
-    expect(incorrectEnvelope.data.session.id).toBe('incorrect-id');
-    expect('data' in incorrectEnvelope.data).toBe(true);
-    expect('session' in incorrectEnvelope.data).toBe(true);
+    expect(correctEnvelope.data.data.id).toBe("correct-id");
+    expect(incorrectEnvelope.data.session.id).toBe("incorrect-id");
+    expect("data" in incorrectEnvelope.data).toBe(true);
+    expect("session" in incorrectEnvelope.data).toBe(true);
   });
 });

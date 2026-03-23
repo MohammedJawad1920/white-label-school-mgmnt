@@ -6,14 +6,16 @@
  * invalid file shows error rows → confirm blocked
  */
 
-import { test, expect } from '@playwright/test';
-import { loginAs } from './helpers/auth';
-import path from 'path';
+import { test, expect } from "@playwright/test";
+import { loginAs } from "./helpers/auth";
+import path from "path";
 
-test.describe('E2E-007: CSV Import', () => {
-  test('Valid CSV file uploads, previews, and imports successfully', async ({ page }) => {
-    await loginAs(page, 'admin');
-    await page.goto('/admin/import/students');
+test.describe("E2E-007: CSV Import", () => {
+  test("Valid CSV file uploads, previews, and imports successfully", async ({
+    page,
+  }) => {
+    await loginAs(page, "admin");
+    await page.goto("/admin/import/students");
 
     // Create a valid CSV file
     const validCsv = `registerNumber,name,batchId,classId
@@ -23,8 +25,8 @@ S102,Test Student Two,batch-id,class-id`;
     // Upload file
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles({
-      name: 'students.csv',
-      mimeType: 'text/csv',
+      name: "students.csv",
+      mimeType: "text/csv",
       buffer: Buffer.from(validCsv),
     });
 
@@ -41,19 +43,21 @@ S102,Test Student Two,batch-id,class-id`;
 
     // Confirm import
     await page.click('button:has-text("Confirm Import")');
-    await page.waitForSelector('text=Import completed successfully');
+    await page.waitForSelector("text=Import completed successfully");
 
     // Navigate to students list
-    await page.goto('/admin/students');
+    await page.goto("/admin/students");
 
     // Verify imported students appear
-    await expect(page.locator('text=Test Student One')).toBeVisible();
-    await expect(page.locator('text=Test Student Two')).toBeVisible();
+    await expect(page.locator("text=Test Student One")).toBeVisible();
+    await expect(page.locator("text=Test Student Two")).toBeVisible();
   });
 
-  test('Invalid CSV file shows error rows, confirm button disabled', async ({ page }) => {
-    await loginAs(page, 'admin');
-    await page.goto('/admin/import/students');
+  test("Invalid CSV file shows error rows, confirm button disabled", async ({
+    page,
+  }) => {
+    await loginAs(page, "admin");
+    await page.goto("/admin/import/students");
 
     // Create an invalid CSV (missing required fields)
     const invalidCsv = `registerNumber,name
@@ -63,8 +67,8 @@ S202,Also Missing Batch ID`;
     // Upload file
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles({
-      name: 'invalid.csv',
-      mimeType: 'text/csv',
+      name: "invalid.csv",
+      mimeType: "text/csv",
       buffer: Buffer.from(invalidCsv),
     });
 
@@ -80,9 +84,11 @@ S202,Also Missing Batch ID`;
     await expect(confirmButton).toBeDisabled();
   });
 
-  test('Import preview expires after TTL, resets to step 1 (regression: CR Finding 15)', async ({ page }) => {
-    await loginAs(page, 'admin');
-    await page.goto('/admin/import/students');
+  test("Import preview expires after TTL, resets to step 1 (regression: CR Finding 15)", async ({
+    page,
+  }) => {
+    await loginAs(page, "admin");
+    await page.goto("/admin/import/students");
 
     // Upload file
     const validCsv = `registerNumber,name,batchId,classId
@@ -90,8 +96,8 @@ S301,TTL Test,batch-id,class-id`;
 
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles({
-      name: 'ttl.csv',
-      mimeType: 'text/csv',
+      name: "ttl.csv",
+      mimeType: "text/csv",
       buffer: Buffer.from(validCsv),
     });
 
@@ -105,19 +111,19 @@ S301,TTL Test,batch-id,class-id`;
     // await page.waitForSelector('[data-testid="upload-step"]', { timeout: 16 * 60 * 1000 });
   });
 
-  test('Client-side .csv file validation before upload', async ({ page }) => {
-    await loginAs(page, 'admin');
-    await page.goto('/admin/import/students');
+  test("Client-side .csv file validation before upload", async ({ page }) => {
+    await loginAs(page, "admin");
+    await page.goto("/admin/import/students");
 
     // Try to upload non-CSV file
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles({
-      name: 'not-csv.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('not a csv'),
+      name: "not-csv.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("not a csv"),
     });
 
     // Should show error
-    await expect(page.locator('text=Please upload a .csv file')).toBeVisible();
+    await expect(page.locator("text=Please upload a .csv file")).toBeVisible();
   });
 });

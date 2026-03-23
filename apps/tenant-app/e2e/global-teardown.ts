@@ -5,18 +5,19 @@
  * Hard-deletes the test tenant (CASCADE).
  */
 
-import axios from 'axios';
+import axios from "axios";
 
-const API_BASE_URL = process.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
+const API_BASE_URL =
+  process.env.VITE_API_BASE_URL || "http://localhost:3000/api/v1";
 
 export async function globalTeardown() {
-  console.log('🧹 E2E Global Teardown: Cleaning up test data...');
+  console.log("🧹 E2E Global Teardown: Cleaning up test data...");
 
   try {
     const tenantId = process.env.E2E_TENANT_ID;
 
     if (!tenantId) {
-      console.warn('⚠️  E2E_TENANT_ID not found, skipping teardown');
+      console.warn("⚠️  E2E_TENANT_ID not found, skipping teardown");
       return;
     }
 
@@ -26,7 +27,7 @@ export async function globalTeardown() {
 
     console.log(`✅ Test tenant deleted: ${tenantId}`);
   } catch (error) {
-    console.error('❌ E2E Global Teardown failed:', error);
+    console.error("❌ E2E Global Teardown failed:", error);
     // Don't exit with error; teardown failures shouldn't block test completion
   }
 }
