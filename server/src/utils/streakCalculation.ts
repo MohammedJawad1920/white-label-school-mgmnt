@@ -85,7 +85,10 @@ export function calculateStreaksForStudents(
   records: Array<{ studentId: string; status: AttendanceStatus; date: string }>,
 ): Map<string, number> {
   // Group by student
-  const byStudent = new Map<string, Array<{ status: AttendanceStatus; date: string }>>();
+  const byStudent = new Map<
+    string,
+    Array<{ status: AttendanceStatus; date: string }>
+  >();
 
   for (const record of records) {
     const existing = byStudent.get(record.studentId) ?? [];

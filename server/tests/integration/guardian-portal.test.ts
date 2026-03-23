@@ -54,7 +54,14 @@ async function createGuardianWithChild(
   await testPool.query(
     `INSERT INTO guardians (id, tenant_id, user_id, name, phone, relationship, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-    [guardianId, tenant.tenantId, guardianUserId, "Test Guardian", "+911234567890", "Father"],
+    [
+      guardianId,
+      tenant.tenantId,
+      guardianUserId,
+      "Test Guardian",
+      "+911234567890",
+      "Father",
+    ],
   );
 
   // Create student
@@ -85,13 +92,26 @@ async function createGuardianWithChild(
   await testPool.query(
     `INSERT INTO users (id, tenant_id, name, email, password_hash, roles, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, '["Student"]'::jsonb, NOW(), NOW())`,
-    [studentUserId, tenant.tenantId, "Test Student", `student-${uuidv4().slice(0, 8)}@test.local`, hash],
+    [
+      studentUserId,
+      tenant.tenantId,
+      "Test Student",
+      `student-${uuidv4().slice(0, 8)}@test.local`,
+      hash,
+    ],
   );
 
   await testPool.query(
     `INSERT INTO students (id, tenant_id, user_id, name, register_number, batch_id, class_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, 'S001', $5, $6, NOW(), NOW())`,
-    [studentId, tenant.tenantId, studentUserId, "Test Student", batchId, classId],
+    [
+      studentId,
+      tenant.tenantId,
+      studentUserId,
+      "Test Student",
+      batchId,
+      classId,
+    ],
   );
 
   // Link guardian to student
@@ -286,9 +306,7 @@ describe("GET /api/v1/guardian-portal/child/:childId/results", () => {
   it("returns 403 for unlinked child", async () => {
     if (SKIP) return;
     const res = await makeAgent()
-      .get(
-        `/api/v1/guardian-portal/child/${uuidv4()}/results`,
-      )
+      .get(`/api/v1/guardian-portal/child/${uuidv4()}/results`)
       .set("Authorization", `Bearer ${guardianToken}`);
 
     expect(res.status).toBe(403);

@@ -151,7 +151,12 @@ describe("validateAttendanceDate", () => {
     const lateUtc = new Date("2026-03-20T23:00:00Z");
 
     // Mar 20 in UTC is still today, but in IST it's yesterday
-    const utcResult = validateAttendanceDate("2026-03-20", "UTC", false, lateUtc);
+    const utcResult = validateAttendanceDate(
+      "2026-03-20",
+      "UTC",
+      false,
+      lateUtc,
+    );
     const istResult = validateAttendanceDate(
       "2026-03-20",
       "Asia/Kolkata",

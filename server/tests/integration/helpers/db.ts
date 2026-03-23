@@ -148,7 +148,8 @@ export async function createTestTenant(): Promise<TestTenant> {
        ($10, $2, 'assignments', TRUE, NOW()),
        ($11, $2, 'import', TRUE, NOW())`,
     [
-      featureIds.timetable, tenantId,
+      featureIds.timetable,
+      tenantId,
       featureIds.attendance,
       featureIds.leave,
       featureIds.guardians,
@@ -179,37 +180,83 @@ export async function createTestTenant(): Promise<TestTenant> {
  */
 export async function cleanupTenant(tenantId: string): Promise<void> {
   // Phase 2 tables (deepest FK dependencies)
-  await testPool.query("DELETE FROM assignment_submissions WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM assignments WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM exam_results WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM exam_student_summaries WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM exam_subjects WHERE tenant_id = $1", [tenantId]);
+  await testPool.query(
+    "DELETE FROM assignment_submissions WHERE tenant_id = $1",
+    [tenantId],
+  );
+  await testPool.query("DELETE FROM assignments WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM exam_results WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query(
+    "DELETE FROM exam_student_summaries WHERE tenant_id = $1",
+    [tenantId],
+  );
+  await testPool.query("DELETE FROM exam_subjects WHERE tenant_id = $1", [
+    tenantId,
+  ]);
   await testPool.query("DELETE FROM exams WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM external_results WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM fee_payments WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM fee_charges WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM announcements WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM notifications WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM push_subscriptions WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM leave_requests WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM student_guardians WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM guardians WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM promotion_logs WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM promotion_previews WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM import_jobs WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM external_results WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM fee_payments WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM fee_charges WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM announcements WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM notifications WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM push_subscriptions WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM leave_requests WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM student_guardians WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM guardians WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM promotion_logs WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM promotion_previews WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM import_jobs WHERE tenant_id = $1", [
+    tenantId,
+  ]);
 
   // Phase 1 tables (original)
-  await testPool.query("DELETE FROM attendance_records WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM timeslots WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM attendance_records WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM timeslots WHERE tenant_id = $1", [
+    tenantId,
+  ]);
   await testPool.query("DELETE FROM students WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM events WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM users WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM school_periods WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM school_periods WHERE tenant_id = $1", [
+    tenantId,
+  ]);
   await testPool.query("DELETE FROM classes WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM batches WHERE tenant_id = $1", [tenantId]);
   await testPool.query("DELETE FROM subjects WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM academic_sessions WHERE tenant_id = $1", [tenantId]);
-  await testPool.query("DELETE FROM tenant_features WHERE tenant_id = $1", [tenantId]);
+  await testPool.query("DELETE FROM academic_sessions WHERE tenant_id = $1", [
+    tenantId,
+  ]);
+  await testPool.query("DELETE FROM tenant_features WHERE tenant_id = $1", [
+    tenantId,
+  ]);
   await testPool.query("DELETE FROM tenants WHERE id = $1", [tenantId]);
 }
 

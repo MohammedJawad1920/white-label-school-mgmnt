@@ -129,7 +129,8 @@ describe("Security: Multi-Tenant Isolation", () => {
       .set("Authorization", `Bearer ${tokenB}`);
 
     expect(res.status).toBe(200);
-    const studentIds = res.body.students?.map((s: { id: string }) => s.id) ?? [];
+    const studentIds =
+      res.body.students?.map((s: { id: string }) => s.id) ?? [];
     expect(studentIds).not.toContain(studentIdA);
   });
 
@@ -355,7 +356,8 @@ describe("Security: Soft Delete Visibility", () => {
       .set("Authorization", `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
-    const studentIds = res.body.students?.map((s: { id: string }) => s.id) ?? [];
+    const studentIds =
+      res.body.students?.map((s: { id: string }) => s.id) ?? [];
     expect(studentIds).not.toContain(deletedStudentId);
   });
 
