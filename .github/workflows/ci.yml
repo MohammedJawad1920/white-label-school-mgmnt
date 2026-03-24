@@ -77,12 +77,12 @@ jobs:
       - name: Apply all 39 migrations
         run: npm run migrate
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/school_test
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Run integration tests
         run: npm run test:integration
         env:
-          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/school_test
+          TEST_DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JWT_SECRET: test-jwt-secret-for-ci
           BCRYPT_ROUNDS: "4"
 
@@ -158,7 +158,7 @@ jobs:
         working-directory: server
         run: npm run migrate
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/school_e2e
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Build server
         working-directory: server
@@ -168,7 +168,7 @@ jobs:
         working-directory: server
         run: node dist/server.js &
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/school_e2e
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NODE_ENV: test
           JWT_SECRET: e2e-jwt-secret
           BCRYPT_ROUNDS: "4"
@@ -206,7 +206,7 @@ jobs:
         run: npx playwright test
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:5173
-          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/school_e2e
+          TEST_DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4

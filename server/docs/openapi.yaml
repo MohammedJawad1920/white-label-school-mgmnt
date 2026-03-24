@@ -1072,7 +1072,7 @@ paths:
                   roles: ["Admin"]
                   activeRole: "Admin"
                   mustChangePassword: false
-                  classTeacherOf: null # should be string or null
+                  classTeacherOf: "" # string or null
                   studentId: null
         '401':
           description: Invalid credentials
@@ -3268,7 +3268,7 @@ paths:
                     type: "LEAVE_APPROVED"
                     title: "Leave Approved"
                     body: "Ali's leave has been approved"
-                    readAt: null
+                    readAt: ""
                     createdAt: "2026-03-19T08:00:00.000Z"
                 total: 1
 
@@ -4825,6 +4825,7 @@ paths:
                     name: "Exam Management"
                     enabled: false
                     enabledAt: null
+                    enabledAt: ""
 
 
         '401':
@@ -4832,31 +4833,20 @@ paths:
 
   # ─── GUARDIAN PORTAL — TIMETABLE ─────────────────────────────────
   /guardian/children/{studentId}/timetable:
-    get:
-      tags: [Guardian Portal]
-      summary: Child timetable (Guardian)
-      parameters:
-        - name: studentId
-          in: path
-          required: true
-          schema:
-            $ref: '#/components/schemas/UUID'
-        - name: dayOfWeek
-          in: query
-          schema:
-            type: string
-            enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
       responses:
         '200':
-          description: Timetable slots for student's class
+          description: All marked read
           content:
             application/json:
               schema:
                 type: object
+                required: [updated]
                 properties:
-                  timetable:
-                    type: array
-                    items:
+                  updated:
+                    type: integer
+                    description: Number of notifications marked as read
+              example:
+                updated: 7
                       $ref: '#/components/schemas/Timeslot'
         '403':
           description: Guardian not linked to student
