@@ -3270,7 +3270,7 @@ paths:
                     body: "Ali's leave has been approved"
                     readAt: null
                     createdAt: "2026-03-19T08:00:00.000Z"
-                total: 1
+                  total: 1
 
   /notifications/{notificationId}/read:
     put:
@@ -4825,6 +4825,7 @@ paths:
                     name: "Exam Management"
                     enabled: false
                     enabledAt: null
+
         '401':
           $ref: '#/components/responses/Unauthorized'
 

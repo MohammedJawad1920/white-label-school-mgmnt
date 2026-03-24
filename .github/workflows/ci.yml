@@ -189,7 +189,7 @@ jobs:
         run: npm run build
         env:
           VITE_API_BASE_URL: http://localhost:3000/api/v1
-          VITE_TENANT_ID: ${{ vars.E2E_TENANT_ID || '00000000-0000-0000-0000-000000000001' }}
+          VITE_TENANT_ID: 00000000-0000-0000-0000-000000000001
 
       - name: Serve tenant-app
         working-directory: apps/tenant-app
