@@ -14,6 +14,7 @@ import { classesApi } from "@/api/classes";
 import { batchesApi } from "@/api/batches";
 import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const schema = z.object({
   name: z.string().min(1, "Name is required").max(255),
@@ -45,12 +46,12 @@ export default function CreateStudentPage() {
   const [admissionError, setAdmissionError] = useState<string | null>(null);
 
   const { data: classesData } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 2 * 60 * 1000,
   });
   const { data: batchesData } = useQuery({
-    queryKey: ["batches"],
+    queryKey: QUERY_KEYS.batches(),
     queryFn: () => batchesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
@@ -69,7 +70,7 @@ export default function CreateStudentPage() {
   const mutation = useMutation({
     mutationFn: (values: FormValues) => studentsApi.create(values),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["students"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.students() });
       toast.success("Student created successfully.");
       navigate("/admin/students");
     },

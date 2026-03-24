@@ -4,6 +4,7 @@
  * Only Admins can set Excused status.
  */
 import { useState, useCallback } from "react";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import {
   useQuery,
   useMutation,
@@ -52,13 +53,13 @@ export default function AttendanceCorrectionPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const classesQuery = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
 
   const studentsQuery = useQuery({
-    queryKey: ["students", { classId: selectedClassId }],
+    queryKey: QUERY_KEYS.custom("students", { classId: selectedClassId }),
     queryFn: () => studentsApi.list({ classId: selectedClassId }),
     staleTime: 2 * 60 * 1000,
     enabled: !!selectedClassId,
@@ -69,7 +70,7 @@ export default function AttendanceCorrectionPage() {
   // Load each student's attendance for the selected date
   const historyQueries = useQueries({
     queries: classStudents.map((student) => ({
-      queryKey: ["student-attendance", student.id, selectedDate, "correction"],
+      queryKey: QUERY_KEYS.custom("student-attendance", student.id, selectedDate, "correction"),
       queryFn: () =>
         attendanceApi.getStudentHistory(student.id, {
           from: selectedDate,
@@ -120,7 +121,7 @@ export default function AttendanceCorrectionPage() {
       );
       if (updated > 0) {
         toast.success("Attendance corrected successfully.");
-        void qc.invalidateQueries({ queryKey: ["student-attendance"] });
+        void qc.invalidateQueries({ queryKey: QUERY_KEYS.custom("student-attendance") });
       }
     },
     onError: (err) => {

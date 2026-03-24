@@ -8,6 +8,7 @@ import { leaveApi } from "@/api/leave.api";
 import { examsApi } from "@/api/exams.api";
 import { attendanceApi } from "@/api/attendance";
 import { useAuth } from "@/hooks/useAuth";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 function todayISO(): string {
   return new Date().toISOString().split("T")[0]!;
@@ -56,35 +57,35 @@ export default function AdminDashboardPage() {
 
   // Total students
   const studentsQuery = useQuery({
-    queryKey: ["students", "count"],
+    queryKey: QUERY_KEYS.custom("students", "count"),
     queryFn: () => studentsApi.list({ status: "Active" }),
     staleTime: 5 * 60 * 1000,
   });
 
   // Active leave (on-campus)
   const onCampusQuery = useQuery({
-    queryKey: ["leave", "on-campus"],
+    queryKey: QUERY_KEYS.leave.onCampus(),
     queryFn: () => leaveApi.onCampus(),
     staleTime: 2 * 60 * 1000,
   });
 
   // Pending leaves
   const pendingLeavesQuery = useQuery({
-    queryKey: ["leave", { status: "PENDING" }],
+    queryKey: QUERY_KEYS.custom("leave", { status: "PENDING" }),
     queryFn: () => leaveApi.list({ status: "PENDING" }),
     staleTime: 2 * 60 * 1000,
   });
 
   // Upcoming exams (DRAFT + PUBLISHED status)
   const upcomingExamsQuery = useQuery({
-    queryKey: ["exams", { status: "PUBLISHED" }],
+    queryKey: QUERY_KEYS.custom("exams", { status: "PUBLISHED" }),
     queryFn: () => examsApi.list({ status: "PUBLISHED" }),
     staleTime: 5 * 60 * 1000,
   });
 
   // Attendance summary for today
   const attendanceSummaryQuery = useQuery({
-    queryKey: ["attendance-summary", today],
+    queryKey: QUERY_KEYS.custom("attendance-summary", today),
     queryFn: () =>
       attendanceApi.getSummary({
         from: today,

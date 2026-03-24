@@ -25,6 +25,7 @@
  */
 import { useState, useCallback, useEffect } from "react";
 import { useLocation } from "react-router-dom";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import {
   useQuery,
   useMutation,
@@ -199,13 +200,10 @@ export default function RecordAttendancePage() {
 
   // ── Slot list query ───────────────────────────────────────────────────────
   const slotsQ = useQuery({
-    queryKey: [
-      "timetable",
-      {
-        dayOfWeek: todayDayOfWeek(),
-        teacherId: isAdmin ? undefined : user?.id,
-      },
-    ],
+    queryKey: QUERY_KEYS.custom("timetable", {
+      dayOfWeek: todayDayOfWeek(),
+      teacherId: isAdmin ? undefined : user?.id,
+    }),
     queryFn: () =>
       timetableApi.list({
         dayOfWeek: todayDayOfWeek(),
@@ -224,7 +222,7 @@ export default function RecordAttendancePage() {
 
   // ── At-risk streaks query (CR-FE-016d) ──────────────────────────────────
   const streaksQ = useQuery({
-    queryKey: ["streaks", selectedSlotId],
+    queryKey: QUERY_KEYS.custom("streaks", selectedSlotId),
     queryFn: () => attendanceApi.getStreaks(selectedSlotId),
     staleTime: 3 * 60 * 1000,
     enabled: !!selectedSlotId,
@@ -235,7 +233,7 @@ export default function RecordAttendancePage() {
 
   // ── Students query — loads when slot selected ─────────────────────────────
   const studentsQ = useQuery({
-    queryKey: ["students"],
+    queryKey: QUERY_KEYS.students(),
     queryFn: () => studentsApi.list(),
     staleTime: 2 * 60 * 1000,
     enabled: !!selectedSlotId,
@@ -250,7 +248,12 @@ export default function RecordAttendancePage() {
   // ── Correction queries — one per student, enabled after 409 ALREADY_RECORDED ───
   const correctionQueries = useQueries({
     queries: classStudents.map((student) => ({
-      queryKey: ["student-attendance", student.id, selectedDate, "correction"],
+      queryKey: QUERY_KEYS.custom(
+        "student-attendance",
+        student.id,
+        selectedDate,
+        "correction",
+      ),
       queryFn: () =>
         attendanceApi.getStudentHistory(student.id, {
           from: selectedDate,
@@ -375,8 +378,12 @@ export default function RecordAttendancePage() {
       );
       if (updated > 0) appToast.success("Attendance updated successfully.");
       setAlreadyRecorded(false);
-      await queryClient.invalidateQueries({ queryKey: ["student-attendance"] });
-      await queryClient.invalidateQueries({ queryKey: ["attendance-summary"] });
+      await queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.custom("student-attendance"),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.attendanceSummary(""),
+      });
     },
     onError: (err) => {
       setSubmitError(parseApiError(err).message);
@@ -404,8 +411,12 @@ export default function RecordAttendancePage() {
       );
       appToast.success("Attendance recorded successfully.");
       setExceptions(new Map());
-      await queryClient.invalidateQueries({ queryKey: ["student-attendance"] });
-      await queryClient.invalidateQueries({ queryKey: ["attendance-summary"] });
+      await queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.custom("student-attendance"),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.attendanceSummary(""),
+      });
     },
     onError: (err) => {
       const { code, message } = parseApiError(err);

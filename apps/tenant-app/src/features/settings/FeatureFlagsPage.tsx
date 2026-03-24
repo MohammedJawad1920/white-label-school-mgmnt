@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { featuresApi } from "@/api/features";
 import { parseApiError } from "@/utils/errors";
 import type { Feature } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 function Skeleton({ className }: { className: string }) {
   return <div className={`animate-pulse bg-muted rounded ${className}`} />;
@@ -13,7 +14,7 @@ function Skeleton({ className }: { className: string }) {
 
 export default function FeatureFlagsPage() {
   const featuresQuery = useQuery({
-    queryKey: ["features"],
+    queryKey: QUERY_KEYS.features(),
     queryFn: () => featuresApi.list(),
     staleTime: 5 * 60 * 1000,
   });

@@ -308,3 +308,57 @@ describe("DELETE /api/v1/users/:id and bulk", () => {
     expect(res.body.deletedCount).toBe(2);
   });
 });
+
+describe("POST /api/v1/users/:id/reset-password", () => {
+  let tenant: TestTenant;
+  let token: string;
+  let targetUserId: string;
+
+  beforeAll(async () => {
+    if (SKIP) return;
+    tenant = await createTestTenant();
+    token = await loginAsAdmin(tenant);
+
+    const created = await makeAgent()
+      .post("/api/v1/users")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        name: "Reset Target",
+        email: `reset-${Date.now()}@test.local`,
+        password: "Reset@Pass1",
+        roles: ["Teacher"],
+      });
+
+    targetUserId = created.body.user.id as string;
+  });
+
+  afterAll(async () => {
+    if (SKIP) return;
+    await cleanupTenant(tenant.tenantId);
+  });
+
+  it("resets password and returns temporary password", async () => {
+    if (SKIP) return;
+
+    const res = await makeAgent()
+      .post(`/api/v1/users/${targetUserId}/reset-password`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("temporaryPassword");
+    expect(typeof res.body.temporaryPassword).toBe("string");
+    expect(res.body.temporaryPassword.length).toBeGreaterThan(0);
+    expect(res.body).toHaveProperty("user");
+    expect(res.body.user.mustChangePassword).toBe(true);
+  });
+
+  it("returns 404 for unknown user id", async () => {
+    if (SKIP) return;
+
+    const res = await makeAgent()
+      .post(`/api/v1/users/${randomUUID()}/reset-password`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+  });
+});

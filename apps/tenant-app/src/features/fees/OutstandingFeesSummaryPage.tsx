@@ -9,6 +9,7 @@ import { feesApi } from "@/api/fees.api";
 import { academicSessionsApi } from "@/api/academicSessions";
 import { parseApiError } from "@/utils/errors";
 import type { FeeSummaryEntry } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 function Skeleton({ className }: { className: string }) {
   return <div className={`animate-pulse bg-muted rounded ${className}`} />;
@@ -22,13 +23,13 @@ export default function OutstandingFeesSummaryPage() {
   const [sessionFilter, setSessionFilter] = useState("");
 
   const { data: sessionsData } = useQuery({
-    queryKey: ["academic-sessions"],
+    queryKey: QUERY_KEYS.custom("academic-sessions"),
     queryFn: () => academicSessionsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
 
   const summaryQuery = useQuery({
-    queryKey: ["fees", "summary", { sessionId: sessionFilter }],
+    queryKey: QUERY_KEYS.custom("fees", "summary", { sessionId: sessionFilter }),
     queryFn: () =>
       feesApi.summary({
         sessionId: sessionFilter || undefined,

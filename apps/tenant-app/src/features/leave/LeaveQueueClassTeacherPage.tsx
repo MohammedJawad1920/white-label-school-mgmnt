@@ -16,8 +16,8 @@ import { useIsClassTeacher } from "@/hooks/useIsClassTeacher";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppToast } from "@/hooks/useAppToast";
 import { parseApiError } from "@/utils/errors";
-import { QUERY_KEYS } from "@/utils/queryKeys";
 import type { LeaveRequest } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const STATUS_FILTER_OPTIONS = [
   { value: "", label: "All statuses" },

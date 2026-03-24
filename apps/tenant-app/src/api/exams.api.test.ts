@@ -21,7 +21,7 @@ describe("exams.api", () => {
     vi.clearAllMocks();
   });
 
-  describe("listExams", () => {
+  describe("list", () => {
     it("correctly unwraps response envelope from `.data.data` (regression: CR-FE-007)", async () => {
       const mockResponse = {
         data: {
@@ -46,12 +46,12 @@ describe("exams.api", () => {
 
       vi.mocked(apiClient.get).mockResolvedValue(mockResponse);
 
-      const result = await examsApi.listExams();
+      const result = await examsApi.examsApi.list();
 
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBe(2);
-      expect(result[0]).toHaveProperty("id");
-      expect(result[1].name).toBe("English");
+      expect(Array.isArray(result.exams)).toBe(true);
+      expect(result.exams.length).toBe(2);
+      expect(result.exams[0]).toHaveProperty("id");
+      expect(result.exams[1]!.name).toBe("English");
     });
 
     it("correctly reads from `.data.data` not `.data.exams`", async () => {
@@ -70,7 +70,7 @@ describe("exams.api", () => {
       };
 
       vi.mocked(apiClient.get).mockResolvedValue(mockResponse);
-      await examsApi.listExams();
+      await examsApi.examsApi.list();
 
       expect(apiClient.get).toHaveBeenCalledWith(
         expect.stringContaining("/exams"),
@@ -78,7 +78,7 @@ describe("exams.api", () => {
     });
   });
 
-  describe("getExam", () => {
+  describe("get", () => {
     it("correctly unwraps response envelope from `.data.data` (regression: CR-FE-008)", async () => {
       const mockResponse = {
         data: {
@@ -94,7 +94,7 @@ describe("exams.api", () => {
 
       vi.mocked(apiClient.get).mockResolvedValue(mockResponse);
 
-      const result = await examsApi.getExam("exam-1");
+      const result = await examsApi.examsApi.get("exam-1");
 
       expect(result).toBeDefined();
       expect(result.id).toBe("exam-1");
@@ -115,7 +115,7 @@ describe("exams.api", () => {
       };
 
       vi.mocked(apiClient.get).mockResolvedValue(mockResponse);
-      await examsApi.getExam("exam-1");
+      await examsApi.examsApi.get("exam-1");
 
       expect(apiClient.get).toHaveBeenCalledWith(
         expect.stringContaining("/exams/exam-1"),

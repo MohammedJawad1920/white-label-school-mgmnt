@@ -23,7 +23,8 @@ export async function listSubjects(req: Request, res: Response): Promise<void> {
      FROM subjects WHERE tenant_id = $1 AND deleted_at IS NULL ORDER BY name ASC`,
     [tenantId],
   );
-  res.status(200).json({ subjects: result.rows.map(fmt) });
+  const data = result.rows.map(fmt);
+  res.status(200).json({ data, total: data.length, subjects: data });
 }
 
 export async function createSubject(
@@ -43,7 +44,8 @@ export async function createSubject(
      RETURNING id, tenant_id, name, code, deleted_at, created_at, updated_at`,
     [id, tenantId, name.trim(), code?.trim() ?? null],
   );
-  res.status(201).json({ subject: fmt(result.rows[0]!) });
+  const data = fmt(result.rows[0]!);
+  res.status(201).json({ data, subject: data });
 }
 
 export async function updateSubject(
@@ -79,7 +81,8 @@ export async function updateSubject(
     send404(res, "Subject not found");
     return;
   }
-  res.status(200).json({ subject: fmt(result.rows[0]!) });
+  const data = fmt(result.rows[0]!);
+  res.status(200).json({ data, subject: data });
 }
 
 export async function deleteSubject(

@@ -136,7 +136,8 @@ export async function createEvent(req: Request, res: Response): Promise<void> {
     ],
   );
 
-  res.status(201).json({ event: formatEvent(result.rows[0]!) });
+  const data = formatEvent(result.rows[0]!);
+  res.status(201).json({ data, event: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -246,7 +247,7 @@ export async function listEvents(req: Request, res: Response): Promise<void> {
   );
 
   const events = result.rows.map(formatEvent);
-  res.status(200).json({ events, total: events.length });
+  res.status(200).json({ data: events, total: events.length, events });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -352,7 +353,8 @@ export async function updateEvent(req: Request, res: Response): Promise<void> {
     ],
   );
 
-  res.status(200).json({ event: formatEvent(updated.rows[0]!) });
+  const data = formatEvent(updated.rows[0]!);
+  res.status(200).json({ data, event: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════

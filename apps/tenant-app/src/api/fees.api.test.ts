@@ -35,13 +35,13 @@ describe("fees.api", () => {
 
       vi.mocked(apiClient.post).mockResolvedValue(mockResponse);
 
-      const result = await feesApi.recordPayment(
-        "charge-1",
-        5000,
-        "2026-03-23T10:00:00Z",
-      );
+      const result = await feesApi.feesApi.recordPayment("charge-1", {
+        amountPaid: 5000,
+        paidAt: "2026-03-23T10:00:00Z",
+        paymentMode: "Cash",
+      });
 
-      expect(result.amountPaid).toBe(5000);
+      expect(result.amount).toBe(5000);
       // Verify the POST call includes amountPaid and paidAt
       expect(apiClient.post).toHaveBeenCalledWith(
         expect.stringContaining("/fees"),
@@ -66,10 +66,14 @@ describe("fees.api", () => {
       };
 
       vi.mocked(apiClient.post).mockResolvedValue(mockResponse);
-      await feesApi.recordPayment("charge-1", 2000, "2026-03-23");
+      await feesApi.feesApi.recordPayment("charge-1", {
+        amountPaid: 2000,
+        paidAt: "2026-03-23",
+        paymentMode: "Cash",
+      });
 
       // Verify the call does NOT have an 'amount' field
-      const callArgs = vi.mocked(apiClient.post).mock.calls[0];
+      const callArgs = vi.mocked(apiClient.post).mock.calls[0]!;
       const payload = callArgs[1] as Record<string, unknown>;
       expect("amount" in payload).toBe(false);
       expect("amountPaid" in payload).toBe(true);
@@ -89,7 +93,11 @@ describe("fees.api", () => {
       };
 
       vi.mocked(apiClient.post).mockResolvedValue(mockResponse);
-      await feesApi.recordPayment("charge-1", 3000, "2026-03-23T14:30:00Z");
+      await feesApi.feesApi.recordPayment("charge-1", {
+        amountPaid: 3000,
+        paidAt: "2026-03-23T14:30:00Z",
+        paymentMode: "Cash",
+      });
 
       expect(apiClient.post).toHaveBeenCalledWith(
         expect.anything(),

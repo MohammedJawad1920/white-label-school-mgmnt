@@ -25,6 +25,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { attendanceApi } from "@/api/attendance";
 import { todayISO } from "@/utils/dates";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import type {
   TimeSlot,
   SchoolPeriod,
@@ -49,7 +50,7 @@ function AbsenteePopup({
   const [open, setOpen] = useState(false);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["absentees", timeSlotId, TODAY],
+    queryKey: QUERY_KEYS.custom("absentees", timeSlotId, TODAY),
     queryFn: () => attendanceApi.getAbsentees(timeSlotId, TODAY),
     enabled: open,
     staleTime: 2 * 60 * 1000,

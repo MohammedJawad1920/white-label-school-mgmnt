@@ -10,6 +10,7 @@ import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
 import { GradeBadge } from "@/components/GradeBadge";
 import { apiClient } from "@/api/client";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 function Skeleton({ className }: { className: string }) {
   return <div className={`animate-pulse bg-muted rounded ${className}`} />;
@@ -27,14 +28,14 @@ export default function ConsolidatedResultsPage() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const examQuery = useQuery({
-    queryKey: ["exams", examId],
+    queryKey: QUERY_KEYS.custom("exams", examId),
     queryFn: () => examsApi.get(examId!),
     staleTime: 2 * 60 * 1000,
     enabled: !!examId,
   });
 
   const resultsQuery = useQuery({
-    queryKey: ["exams", examId, "results"],
+    queryKey: QUERY_KEYS.custom("exams", examId, "results"),
     queryFn: () => examsApi.getResults(examId!),
     staleTime: 2 * 60 * 1000,
     enabled: !!examId,

@@ -24,7 +24,7 @@
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { pool } from "../../db/pool";
-import { send400, send404 } from "../../utils/errors";
+import { send400, send404, send409 } from "../../utils/errors";
 import { TimeslotRow, DayOfWeek, SchoolPeriodRow } from "../../types";
 
 // Row returned by the timetable JOIN query
@@ -116,7 +116,8 @@ export async function getTimetable(req: Request, res: Response): Promise<void> {
     params,
   );
 
-  res.status(200).json({ timetable: result.rows.map(fmt) });
+  const data = result.rows.map(fmt);
+  res.status(200).json({ data, total: data.length, timetable: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -243,15 +244,11 @@ export async function createTimeslot(
       "code" in err &&
       (err as NodeJS.ErrnoException).code === "23505"
     ) {
-      res.status(409).json({
-        error: {
-          code: "CONFLICT",
-          message:
-            "This period slot is already occupied for the given class and day",
-          details: { classId, dayOfWeek, periodNumber: periodNum },
-          timestamp: new Date().toISOString(),
-        },
-      });
+      send409(
+        res,
+        "This period slot is already occupied for the given class and day",
+        "CONFLICT",
+      );
       return;
     }
     throw err;
@@ -263,7 +260,8 @@ export async function createTimeslot(
     [id],
   );
 
-  res.status(201).json({ timeSlot: fmt(result.rows[0]!) });
+  const data = fmt(result.rows[0]!);
+  res.status(201).json({ data, timeSlot: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════

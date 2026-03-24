@@ -8,6 +8,7 @@ import { notificationsApi } from "@/api/notifications.api";
 import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
 import type { Notification } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 function Skeleton({ className }: { className: string }) {
   return <div className={`animate-pulse bg-muted rounded ${className}`} />;
@@ -41,10 +42,10 @@ export default function NotificationHistoryPage() {
   const PAGE_SIZE = 50;
 
   const notificationsQuery = useQuery({
-    queryKey: [
-      "notifications",
-      { unreadOnly: showUnreadOnly, limit: PAGE_SIZE },
-    ],
+    queryKey: QUERY_KEYS.custom("notifications", {
+      unreadOnly: showUnreadOnly,
+      limit: PAGE_SIZE,
+    }),
     queryFn: () =>
       notificationsApi.list({
         unreadOnly: showUnreadOnly || undefined,
@@ -56,7 +57,7 @@ export default function NotificationHistoryPage() {
   const markReadMut = useMutation({
     mutationFn: (id: string) => notificationsApi.markRead(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["notifications"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.notifications.all() });
     },
     onError: (err) => toast.mutationError(parseApiError(err).message),
   });
@@ -64,7 +65,7 @@ export default function NotificationHistoryPage() {
   const markAllReadMut = useMutation({
     mutationFn: () => notificationsApi.markAllRead(),
     onSuccess: (data) => {
-      void qc.invalidateQueries({ queryKey: ["notifications"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.notifications.all() });
       toast.success(
         `${data.updated} notification${data.updated !== 1 ? "s" : ""} marked as read.`,
       );

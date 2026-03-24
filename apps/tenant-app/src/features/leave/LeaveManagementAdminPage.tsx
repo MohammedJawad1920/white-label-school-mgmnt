@@ -12,6 +12,7 @@ import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
 import { LeaveStatusBadge } from "@/components/LeaveStatusBadge";
 import type { LeaveRequest, LeaveStatus } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const LEAVE_STATUSES: LeaveStatus[] = [
   "PENDING",
@@ -97,16 +98,16 @@ export default function LeaveManagementAdminPage() {
   const [rejectTarget, setRejectTarget] = useState<LeaveRequest | null>(null);
 
   const { data: classesData } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
 
   const leavesQuery = useQuery({
-    queryKey: [
-      "leave",
-      { classId: classFilter || undefined, status: statusFilter || undefined },
-    ],
+    queryKey: QUERY_KEYS.custom("leave", {
+      classId: classFilter || undefined,
+      status: statusFilter || undefined,
+    }),
     queryFn: () =>
       leaveApi.list({
         classId: classFilter || undefined,
@@ -116,7 +117,7 @@ export default function LeaveManagementAdminPage() {
   });
 
   const onCampusQuery = useQuery({
-    queryKey: ["leave", "on-campus"],
+    queryKey: QUERY_KEYS.leave.onCampus(),
     queryFn: () => leaveApi.onCampus(),
     staleTime: 1 * 60 * 1000,
   });
@@ -124,7 +125,7 @@ export default function LeaveManagementAdminPage() {
   const approveMut = useMutation({
     mutationFn: (id: string) => leaveApi.approve(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["leave"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.leave.all() });
       toast.success("Leave request approved.");
     },
     onError: (err) => toast.mutationError(parseApiError(err).message),
@@ -134,7 +135,7 @@ export default function LeaveManagementAdminPage() {
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       leaveApi.reject(id, reason),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["leave"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.leave.all() });
       setRejectTarget(null);
       toast.success("Leave request rejected.");
     },

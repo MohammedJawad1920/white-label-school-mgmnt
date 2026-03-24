@@ -15,6 +15,7 @@ import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
 import { GradeBadge } from "@/components/GradeBadge";
 import type { ExamSubject } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const addSubjectSchema = z.object({
   subjectId: z.string().min(1, "Subject is required"),
@@ -42,7 +43,7 @@ export default function ExamDetailPage() {
   const [showAddSubject, setShowAddSubject] = useState(false);
 
   const examQuery = useQuery({
-    queryKey: ["exams", examId],
+    queryKey: QUERY_KEYS.custom("exams", examId),
     queryFn: () => examsApi.get(examId!),
     staleTime: 2 * 60 * 1000,
     enabled: !!examId,
@@ -50,13 +51,13 @@ export default function ExamDetailPage() {
 
   // Subjects for the exam's class come from GET /subjects
   const subjectsQuery = useQuery({
-    queryKey: ["subjects"],
+    queryKey: QUERY_KEYS.subjects(),
     queryFn: () => subjectsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
 
   const sessionsQuery = useQuery({
-    queryKey: ["academic-sessions"],
+    queryKey: QUERY_KEYS.custom("academic-sessions"),
     queryFn: () => academicSessionsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
@@ -85,7 +86,7 @@ export default function ExamDetailPage() {
   const publishMut = useMutation({
     mutationFn: () => examsApi.publish(examId!),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["exams", examId] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.custom("exams", examId) });
       toast.success("Exam published.");
     },
     onError: (err) => toast.mutationError(parseApiError(err).message),
@@ -94,7 +95,7 @@ export default function ExamDetailPage() {
   const unpublishMut = useMutation({
     mutationFn: () => examsApi.unpublish(examId!),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["exams", examId] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.custom("exams", examId) });
       toast.success("Exam unpublished.");
     },
     onError: (err) => toast.mutationError(parseApiError(err).message),

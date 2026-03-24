@@ -43,29 +43,33 @@ export async function seedLeaveRequest(
   startDate: string,
   endDate: string,
 ): Promise<string> {
+  const current = await client.get("/academic-sessions/current");
+  const sessionId = current.data.data?.id as string;
   const res = await client.post("/leave", {
     studentId,
+    sessionId,
+    leaveType: "HomeVisit",
+    durationType: startDate === endDate ? "SingleDay" : "MultiDay",
     startDate,
     endDate,
     reason: "E2E test leave",
+    expectedReturnAt: `${endDate}T18:00:00.000Z`,
   });
-  return res.data.leave.id;
+  return (res.data.data?.id as string | undefined) ?? (res.data.leave?.id as string);
 }
 
 export async function approveLeave(
   client: AxiosInstance,
   leaveId: string,
 ): Promise<void> {
-  await client.patch(`/leave/${leaveId}/approve`, {});
+  await client.put(`/leave/${leaveId}/approve`, {});
 }
 
 export async function publishExam(
   client: AxiosInstance,
   examId: string,
 ): Promise<void> {
-  await client.patch(`/exams/${examId}`, {
-    status: "published",
-  });
+  await client.put(`/exams/${examId}/publish`);
 }
 
 export async function createFeeCharge(
@@ -74,13 +78,17 @@ export async function createFeeCharge(
   amount: number,
   dueDate: string,
 ): Promise<string> {
+  const current = await client.get("/academic-sessions/current");
+  const sessionId = current.data.data?.id as string;
   const res = await client.post("/fees/charges", {
     studentId,
+    sessionId,
+    category: "TUITION",
     amount,
     dueDate,
     description: "E2E test fee",
   });
-  return res.data.charge.id;
+  return (res.data.data?.id as string | undefined) ?? (res.data.charge?.id as string);
 }
 
 export async function recordPayment(
@@ -89,10 +97,10 @@ export async function recordPayment(
   amountPaid: number,
   paidAt: string,
 ): Promise<void> {
-  await client.post(`/fees/charges/${chargeId}/payment`, {
+  await client.post(`/fees/charges/${chargeId}/payments`, {
     amountPaid,
     paidAt,
-    method: "cash",
+    paymentMode: "Cash",
   });
 }
 
@@ -114,33 +122,34 @@ export async function activateSession(
   client: AxiosInstance,
   sessionId: string,
 ): Promise<void> {
-  await client.post(`/academic-sessions/${sessionId}/activate`, {});
+  await client.put(`/academic-sessions/${sessionId}/activate`);
 }
 
 export async function seedBatch(
   client: AxiosInstance,
   name: string,
-  level: string,
+  _level: string,
 ): Promise<string> {
+  const year = new Date().getFullYear();
   const res = await client.post("/batches", {
     name,
-    level,
+    startYear: year,
+    endYear: year + 1,
   });
-  return res.data.batch.id;
+  return (res.data.data?.id as string | undefined) ?? (res.data.batch?.id as string);
 }
 
 export async function seedClass(
   client: AxiosInstance,
   batchId: string,
-  sessionId: string,
+  _sessionId: string,
   name: string,
 ): Promise<string> {
   const res = await client.post("/classes", {
     batchId,
-    sessionId,
     name,
   });
-  return res.data.class.id;
+  return (res.data.data?.id as string | undefined) ?? (res.data.class?.id as string);
 }
 
 export async function seedStudent(
@@ -153,8 +162,9 @@ export async function seedStudent(
   const res = await client.post("/students", {
     batchId,
     classId,
-    registerNumber,
+    admissionNumber: registerNumber,
+    dob: "2012-01-15",
     name,
   });
-  return res.data.student.id;
+  return (res.data.data?.id as string | undefined) ?? (res.data.student?.id as string);
 }

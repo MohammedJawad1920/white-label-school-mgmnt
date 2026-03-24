@@ -143,7 +143,7 @@ export async function createGuardian(
         email ?? null,
         relationship ?? null,
         isPrimary ?? false,
-        canSubmitLeave ?? false,
+        canSubmitLeave ?? true,
       ],
     );
     const guardianRow = guardianResult.rows[0]!;
@@ -184,7 +184,7 @@ export async function createGuardian(
           name.trim(),
           email,
           passwordHash,
-          ["Guardian"],
+          JSON.stringify(["Guardian"]),
           0,
           true,
         ],

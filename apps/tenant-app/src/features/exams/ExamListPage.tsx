@@ -14,6 +14,7 @@ import { academicSessionsApi } from "@/api/academicSessions";
 import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
 import type { Exam, ExamStatus } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const EXAM_STATUSES: ExamStatus[] = ["DRAFT", "PUBLISHED", "UNPUBLISHED"];
 
@@ -44,12 +45,12 @@ function CreateExamForm({ onClose }: { onClose: () => void }) {
   const [rootError, setRootError] = useState<string | null>(null);
 
   const { data: classesData } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
   const { data: sessionsData } = useQuery({
-    queryKey: ["academic-sessions"],
+    queryKey: QUERY_KEYS.custom("academic-sessions"),
     queryFn: () => academicSessionsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
@@ -63,7 +64,7 @@ function CreateExamForm({ onClose }: { onClose: () => void }) {
   const mutation = useMutation({
     mutationFn: (v: CreateFormValues) => examsApi.create(v),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["exams"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.exams.all() });
       toast.success("Exam created.");
       onClose();
     },
@@ -201,20 +202,21 @@ export default function ExamListPage() {
   const [showCreate, setShowCreate] = useState(false);
 
   const { data: classesData } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
   const { data: sessionsData } = useQuery({
-    queryKey: ["academic-sessions"],
+    queryKey: QUERY_KEYS.custom("academic-sessions"),
     queryFn: () => academicSessionsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
   const examsQuery = useQuery({
-    queryKey: [
-      "exams",
-      { sessionId: sessionFilter, classId: classFilter, status: statusFilter },
-    ],
+    queryKey: QUERY_KEYS.custom("exams", {
+      sessionId: sessionFilter,
+      classId: classFilter,
+      status: statusFilter,
+    }),
     queryFn: () =>
       examsApi.list({
         sessionId: sessionFilter || undefined,

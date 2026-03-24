@@ -23,7 +23,7 @@
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { pool } from "../../db/pool";
-import { send400, send404 } from "../../utils/errors";
+import { send400, send404, send409 } from "../../utils/errors";
 import { SchoolPeriodRow } from "../../types";
 
 // ── Time helpers ──────────────────────────────────────────────────────────────
@@ -81,7 +81,8 @@ export async function listPeriods(req: Request, res: Response): Promise<void> {
     [tenantId],
   );
 
-  res.status(200).json({ periods: result.rows.map(fmt) });
+  const data = result.rows.map(fmt);
+  res.status(200).json({ data, total: data.length, periods: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -120,13 +121,9 @@ export async function createPeriod(req: Request, res: Response): Promise<void> {
     return;
   }
   if (!isTimeBefore(startTime, endTime)) {
-    res.status(400).json({
-      error: {
-        code: "PERIOD_TIME_INVALID",
-        message: "startTime must be before endTime",
-        details: { startTime, endTime },
-        timestamp: new Date().toISOString(),
-      },
+    send400(res, "startTime must be before endTime", "PERIOD_TIME_INVALID", {
+      startTime,
+      endTime,
     });
     return;
   }
@@ -142,21 +139,19 @@ export async function createPeriod(req: Request, res: Response): Promise<void> {
       [id, tenantId, periodNum, (label ?? "").trim(), startTime, endTime],
     );
 
-    res.status(201).json({ period: fmt(result.rows[0]!) });
+    const data = fmt(result.rows[0]!);
+    res.status(201).json({ data, period: data });
   } catch (err: unknown) {
     if (
       err instanceof Error &&
       "code" in err &&
       (err as NodeJS.ErrnoException).code === "23505"
     ) {
-      res.status(409).json({
-        error: {
-          code: "DUPLICATE_PERIOD_NUMBER",
-          message: `Period number ${periodNum} already exists for this school`,
-          details: { periodNumber: periodNum },
-          timestamp: new Date().toISOString(),
-        },
-      });
+      send409(
+        res,
+        `Period number ${periodNum} already exists for this school`,
+        "DUPLICATE_PERIOD_NUMBER",
+      );
       return;
     }
     throw err;
@@ -206,13 +201,9 @@ export async function updatePeriod(req: Request, res: Response): Promise<void> {
     return;
   }
   if (!isTimeBefore(newStart, newEnd)) {
-    res.status(400).json({
-      error: {
-        code: "PERIOD_TIME_INVALID",
-        message: "startTime must be before endTime",
-        details: { startTime: newStart, endTime: newEnd },
-        timestamp: new Date().toISOString(),
-      },
+    send400(res, "startTime must be before endTime", "PERIOD_TIME_INVALID", {
+      startTime: newStart,
+      endTime: newEnd,
     });
     return;
   }
@@ -244,7 +235,8 @@ export async function updatePeriod(req: Request, res: Response): Promise<void> {
     params,
   );
 
-  res.status(200).json({ period: fmt(result.rows[0]!) });
+  const data = fmt(result.rows[0]!);
+  res.status(200).json({ data, period: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -283,14 +275,11 @@ export async function deletePeriod(req: Request, res: Response): Promise<void> {
   );
 
   if (parseInt(tsCheck.rows[0]?.count ?? "0", 10) > 0) {
-    res.status(409).json({
-      error: {
-        code: "HAS_REFERENCES",
-        message: `Cannot delete: active timeslots are assigned to period ${periodNumber}`,
-        details: { periodNumber },
-        timestamp: new Date().toISOString(),
-      },
-    });
+    send409(
+      res,
+      `Cannot delete: active timeslots are assigned to period ${periodNumber}`,
+      "HAS_REFERENCES",
+    );
     return;
   }
 

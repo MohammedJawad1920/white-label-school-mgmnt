@@ -17,9 +17,9 @@ import { useParams, useNavigate, useBlocker } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { academicSessionsApi } from "@/api/academicSessions";
 import { parseApiError } from "@/utils/errors";
-import { QUERY_KEYS } from "@/utils/queryKeys";
 import { useAppToast } from "@/hooks/useAppToast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import type {
   AcademicSession,
   PromotionPreview,

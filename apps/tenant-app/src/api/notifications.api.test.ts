@@ -20,20 +20,22 @@ describe("notifications.api", () => {
     vi.clearAllMocks();
   });
 
-  describe("listNotifications", () => {
+  describe("list", () => {
     it("correctly unwraps response envelope from `.data.data` (regression: CR-FE-004)", async () => {
       const mockResponse = {
         data: {
           data: [
             {
               id: "notif-1",
-              message: "Leave approved",
+              title: "Leave approved",
+              body: "Leave approved",
               type: "leave",
               readAt: null,
             },
             {
               id: "notif-2",
-              message: "Exam published",
+              title: "Exam published",
+              body: "Exam published",
               type: "exam",
               readAt: null,
             },
@@ -43,24 +45,30 @@ describe("notifications.api", () => {
 
       vi.mocked(apiClient.get).mockResolvedValue(mockResponse);
 
-      const result = await notificationsApi.listNotifications();
+      const result = await notificationsApi.notificationsApi.list();
 
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBe(2);
-      expect(result[0].message).toBe("Leave approved");
+      expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.length).toBe(2);
+      expect(result.data[0]!.title).toBe("Leave approved");
     });
 
     it("correctly reads from `.data.data` not `.data.notifications`", async () => {
       const mockResponse = {
         data: {
           data: [
-            { id: "notif-1", message: "Test", type: "leave", readAt: null },
+            {
+              id: "notif-1",
+              title: "Test",
+              body: "Test",
+              type: "leave",
+              readAt: null,
+            },
           ],
         },
       };
 
       vi.mocked(apiClient.get).mockResolvedValue(mockResponse);
-      await notificationsApi.listNotifications();
+      await notificationsApi.notificationsApi.list();
 
       expect(apiClient.get).toHaveBeenCalledWith(
         expect.stringContaining("/notifications"),
@@ -76,12 +84,12 @@ describe("notifications.api", () => {
         },
       };
 
-      vi.mocked(apiClient.post).mockResolvedValue(mockResponse);
+      vi.mocked(apiClient.put).mockResolvedValue(mockResponse);
 
-      const result = await notificationsApi.markAllRead();
+      const result = await notificationsApi.notificationsApi.markAllRead();
 
-      expect(typeof result).toBe("number");
-      expect(result).toBe(5);
+      expect(typeof result.updated).toBe("number");
+      expect(result.updated).toBe(5);
     });
 
     it("sends POST request to mark-all-read endpoint", async () => {
@@ -91,11 +99,11 @@ describe("notifications.api", () => {
         },
       };
 
-      vi.mocked(apiClient.post).mockResolvedValue(mockResponse);
-      await notificationsApi.markAllRead();
+      vi.mocked(apiClient.put).mockResolvedValue(mockResponse);
+      await notificationsApi.notificationsApi.markAllRead();
 
-      expect(apiClient.post).toHaveBeenCalledWith(
-        expect.stringContaining("/notifications/mark-all-read"),
+      expect(apiClient.put).toHaveBeenCalledWith(
+        expect.stringContaining("/notifications/read-all"),
       );
     });
   });

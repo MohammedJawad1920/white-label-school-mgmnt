@@ -172,13 +172,13 @@ export default function MonthlySheetPage() {
   );
 
   const classesQ = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 2 * 60 * 1000,
   });
 
   const subjectsQ = useQuery({
-    queryKey: ["subjects"],
+    queryKey: QUERY_KEYS.subjects(),
     queryFn: () => subjectsApi.list(),
     staleTime: 2 * 60 * 1000,
   });

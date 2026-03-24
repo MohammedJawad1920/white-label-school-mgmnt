@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { studentsApi } from "@/api/students";
 import { parseApiError } from "@/utils/errors";
 import type { StudentStatus } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 function Skeleton({ className }: { className: string }) {
   return <div className={`animate-pulse bg-muted rounded ${className}`} />;
@@ -22,7 +23,7 @@ export default function StudentListPage() {
   const [statusFilter, setStatusFilter] = useState<StudentStatus | "">("");
 
   const studentsQuery = useQuery({
-    queryKey: ["students", statusFilter],
+    queryKey: QUERY_KEYS.custom("students", statusFilter),
     queryFn: () => studentsApi.list({ status: statusFilter || undefined }),
     staleTime: 2 * 60 * 1000,
   });

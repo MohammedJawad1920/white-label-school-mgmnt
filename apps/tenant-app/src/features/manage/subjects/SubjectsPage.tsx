@@ -10,6 +10,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { subjectsApi } from "@/api/subjects";
 import { parseApiError } from "@/utils/errors";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import {
   TableSkeleton,
   BulkActionBar,
@@ -105,13 +106,13 @@ export default function SubjectsPage() {
   const [drawerError, setDrawerError] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["subjects"],
+    queryKey: QUERY_KEYS.subjects(),
     queryFn: () => subjectsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
   const subjects = data?.subjects ?? [];
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["subjects"] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: QUERY_KEYS.subjects() });
 
   const createMut = useMutation({
     mutationFn: (v: FormValues) => subjectsApi.create(v),

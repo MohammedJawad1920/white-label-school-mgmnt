@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { importApi } from "@/api/import.api";
 import { parseApiError } from "@/utils/errors";
 import type { ApiImportJob, ImportJobStatus } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const STATUS_STYLES: Record<ImportJobStatus, string> = {
   PENDING: "bg-yellow-100 text-yellow-800",
@@ -28,7 +29,7 @@ function formatDate(iso: string): string {
 
 export default function ImportHistoryPage() {
   const historyQuery = useQuery({
-    queryKey: ["import", "history"],
+    queryKey: QUERY_KEYS.importJobs.history(),
     queryFn: () => importApi.history(),
     staleTime: 1 * 60 * 1000,
   });

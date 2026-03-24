@@ -276,7 +276,8 @@ export async function createExam(req: Request, res: Response): Promise<void> {
     class_name: classRow.rows[0]?.name ?? "",
   };
 
-  res.status(201).json({ exam: formatExam(examWithClass, []) });
+  const data = formatExam(examWithClass, []);
+  res.status(201).json({ data, exam: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -441,7 +442,8 @@ export async function updateExam(req: Request, res: Response): Promise<void> {
     class_name: classRow.rows[0]?.name ?? "",
   };
   const subjects = await getExamSubjectsWithNames(id, tenantId);
-  res.status(200).json({ exam: formatExam(examWithClass, subjects) });
+  const data = formatExam(examWithClass, subjects);
+  res.status(200).json({ data, exam: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -20,8 +20,8 @@ import { attendanceApi } from "@/api/attendance";
 import { parseApiError } from "@/utils/errors";
 import { formatDisplayDate, todayISO } from "@/utils/dates";
 import { StatusBadge } from "@/components/StatusBadge";
-import { QUERY_KEYS } from "@/utils/queryKeys";
 import type { AttendanceRecord, AttendanceStatus } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const PAGE_LIMIT = 50;
 
@@ -156,7 +156,7 @@ export default function StudentAttendanceHistoryPage() {
         // M-04fe: use QUERY_KEYS factory prefix for this student
         // TODO M-04fe: QUERY_KEYS needs a base studentAttendance(studentId) key
         //   for prefix-based invalidation; using inline array for now
-        queryKey: ["student-attendance", studentId],
+        queryKey: QUERY_KEYS.custom("student-attendance", studentId),
       });
       setCorrectingRecord(null);
       setCorrectError(null);

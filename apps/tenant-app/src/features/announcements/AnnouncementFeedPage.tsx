@@ -11,6 +11,7 @@ import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
 import { useAuth } from "@/hooks/useAuth";
 import type { Announcement, AudienceType } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const AUDIENCE_TYPES: AudienceType[] = [
   "All",
@@ -56,7 +57,7 @@ export default function AnnouncementFeedPage() {
   const PAGE_SIZE = 20;
 
   const announcementsQuery = useQuery({
-    queryKey: ["announcements", { limit: PAGE_SIZE, offset }],
+    queryKey: QUERY_KEYS.custom("announcements", { limit: PAGE_SIZE, offset }),
     queryFn: () => announcementsApi.list({ limit: PAGE_SIZE, offset }),
     staleTime: 2 * 60 * 1000,
   });
@@ -64,7 +65,7 @@ export default function AnnouncementFeedPage() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => announcementsApi.delete(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["announcements"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.announcements.all() });
       toast.success("Announcement deleted.");
     },
     onError: (err) => toast.mutationError(parseApiError(err).message),

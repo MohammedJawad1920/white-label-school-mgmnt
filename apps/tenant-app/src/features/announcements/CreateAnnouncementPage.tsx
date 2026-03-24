@@ -14,6 +14,7 @@ import { classesApi } from "@/api/classes";
 import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
 import type { AudienceType } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const schema = z
   .object({
@@ -73,7 +74,7 @@ export default function CreateAnnouncementPage() {
   }, [blocker]);
 
   const { data: classesData } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 5 * 60 * 1000,
     enabled: audienceType === "Class",
@@ -91,7 +92,7 @@ export default function CreateAnnouncementPage() {
         expiresAt: v.expiresAt || undefined,
       }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["announcements"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.announcements.all() });
       toast.success("Announcement created.");
       navigate("/admin/announcements");
     },

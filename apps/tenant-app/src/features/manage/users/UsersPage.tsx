@@ -19,6 +19,7 @@ import { z } from "zod";
 import { usersApi } from "@/api/users";
 import { useAuth } from "@/hooks/useAuth";
 import { parseApiError } from "@/utils/errors";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import {
   TableSkeleton,
   BulkActionBar,
@@ -334,7 +335,7 @@ export default function UsersPage() {
   const [bulkFailed, setBulkFailed] = useState<Record<string, string>>({});
 
   const { data, isLoading } = useQuery({
-    queryKey: ["users", roleFilter, searchQuery],
+    queryKey: QUERY_KEYS.custom("users", roleFilter, searchQuery),
     queryFn: () =>
       usersApi.list({
         role: roleFilter || undefined,
@@ -344,7 +345,7 @@ export default function UsersPage() {
   });
   const users = data?.users ?? [];
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["users"] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: QUERY_KEYS.users() });
 
   const createMut = useMutation({
     mutationFn: (v: CreateFormValues) =>

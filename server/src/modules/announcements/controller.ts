@@ -336,7 +336,8 @@ export async function createAnnouncement(
     [id],
   );
 
-  res.status(201).json({ announcement: formatAnnouncement(result.rows[0]!) });
+  const data = formatAnnouncement(result.rows[0]!);
+  res.status(201).json({ data, announcement: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -397,9 +398,11 @@ export async function listAnnouncements(
     allParams,
   );
 
+  const data = result.rows.map(formatAnnouncement);
   res.status(200).json({
-    data: result.rows.map(formatAnnouncement),
+    data,
     total,
+    announcements: data,
   });
 }
 
@@ -426,7 +429,8 @@ export async function getAnnouncement(
     return;
   }
 
-  res.status(200).json({ announcement: formatAnnouncement(result.rows[0]!) });
+  const data = formatAnnouncement(result.rows[0]!);
+  res.status(200).json({ data, announcement: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -527,9 +531,8 @@ export async function updateAnnouncement(
     [id],
   );
 
-  res
-    .status(200)
-    .json({ announcement: formatAnnouncement(withCreator.rows[0]!) });
+  const data = formatAnnouncement(withCreator.rows[0]!);
+  res.status(200).json({ data, announcement: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════

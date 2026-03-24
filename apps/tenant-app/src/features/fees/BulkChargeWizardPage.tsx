@@ -18,6 +18,7 @@ import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
 import { StepWizard } from "@/components/StepWizard";
 import type { FeeCategory, Class, Student } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const FEE_CATEGORIES: FeeCategory[] = [
   "TUITION",
@@ -80,17 +81,17 @@ export default function BulkChargeWizardPage() {
   const [chargeData, setChargeData] = useState<ChargeValues | null>(null);
 
   const { data: classesData } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
   const { data: sessionsData } = useQuery({
-    queryKey: ["academic-sessions"],
+    queryKey: QUERY_KEYS.custom("academic-sessions"),
     queryFn: () => academicSessionsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
   const { data: studentsData } = useQuery({
-    queryKey: ["students"],
+    queryKey: QUERY_KEYS.students(),
     queryFn: () => studentsApi.list(),
     staleTime: 2 * 60 * 1000,
     enabled: step === 0,
@@ -121,7 +122,7 @@ export default function BulkChargeWizardPage() {
       return feesApi.bulkCharge(payload);
     },
     onSuccess: (data) => {
-      void qc.invalidateQueries({ queryKey: ["fees", "charges"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.custom("fees", "charges") });
       toast.success(
         `${data.charged} charge${data.charged !== 1 ? "s" : ""} created${data.skipped > 0 ? `, ${data.skipped} skipped` : ""}.`,
       );

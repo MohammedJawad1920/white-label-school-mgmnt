@@ -32,7 +32,8 @@ export async function listBatches(req: Request, res: Response): Promise<void> {
      FROM batches WHERE ${where} ORDER BY start_year DESC`,
     params,
   );
-  res.status(200).json({ batches: result.rows.map(fmt) });
+  const data = result.rows.map(fmt);
+  res.status(200).json({ data, total: data.length, batches: data });
 }
 
 export async function createBatch(req: Request, res: Response): Promise<void> {
@@ -60,7 +61,8 @@ export async function createBatch(req: Request, res: Response): Promise<void> {
      RETURNING id, tenant_id, name, start_year, end_year, status, deleted_at, created_at, updated_at`,
     [id, tenantId, name.trim(), startYear, endYear, batchStatus],
   );
-  res.status(201).json({ batch: fmt(result.rows[0]!) });
+  const data = fmt(result.rows[0]!);
+  res.status(201).json({ data, batch: data });
 }
 
 export async function updateBatch(req: Request, res: Response): Promise<void> {
@@ -93,7 +95,8 @@ export async function updateBatch(req: Request, res: Response): Promise<void> {
     send404(res, "Batch not found");
     return;
   }
-  res.status(200).json({ batch: fmt(result.rows[0]!) });
+  const data = fmt(result.rows[0]!);
+  res.status(200).json({ data, batch: data });
 }
 
 export async function deleteBatch(req: Request, res: Response): Promise<void> {

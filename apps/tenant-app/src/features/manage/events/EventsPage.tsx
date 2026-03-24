@@ -26,6 +26,7 @@ import { eventsApi } from "@/api/events";
 import { parseApiError } from "@/utils/errors";
 import { toast } from "sonner";
 import { formatDisplayDate } from "@/utils/dates";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import {
   TableSkeleton,
   Drawer,
@@ -226,7 +227,7 @@ export default function EventsPage() {
 
   // ── Queries ─────────────────────────────────────────────────────────────────
   const eventsQ = useQuery({
-    queryKey: ["events", "manage"],
+    queryKey: QUERY_KEYS.custom("events", "manage"),
     queryFn: () => eventsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
@@ -261,7 +262,7 @@ export default function EventsPage() {
       setDrawerOpen(false);
       setRootError(null);
       toast.success("Event created successfully.");
-      await queryClient.invalidateQueries({ queryKey: ["events"] });
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.custom("events") });
     },
     onError: (err) => {
       setRootError(parseApiError(err).message);
@@ -282,7 +283,7 @@ export default function EventsPage() {
       setEditEvent(null);
       setRootError(null);
       toast.success("Event updated successfully.");
-      await queryClient.invalidateQueries({ queryKey: ["events"] });
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.custom("events") });
     },
     onError: (err) => {
       setRootError(parseApiError(err).message);
@@ -294,7 +295,7 @@ export default function EventsPage() {
     onSuccess: async () => {
       setDeleteTarget(null);
       toast.success("Event deleted successfully.");
-      await queryClient.invalidateQueries({ queryKey: ["events"] });
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.custom("events") });
     },
     onError: (err) => {
       setDeleteTarget(null);

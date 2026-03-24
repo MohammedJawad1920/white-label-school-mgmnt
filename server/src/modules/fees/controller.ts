@@ -203,7 +203,8 @@ export async function createCharge(req: Request, res: Response): Promise<void> {
     [id],
   );
 
-  res.status(201).json({ charge: formatFeeCharge(result.rows[0]!) });
+  const data = formatFeeCharge(result.rows[0]!);
+  res.status(201).json({ data, charge: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -310,7 +311,9 @@ export async function bulkCharge(req: Request, res: Response): Promise<void> {
   }
 
   if (resolvedStudentIds.length === 0) {
-    res.status(201).json({ charged: 0, skipped: 0 });
+    res
+      .status(201)
+      .json({ data: { charged: 0, skipped: 0 }, charged: 0, skipped: 0 });
     return;
   }
 
@@ -355,10 +358,11 @@ export async function bulkCharge(req: Request, res: Response): Promise<void> {
     }
   }
 
-  res.status(201).json({
+  const data = {
     charged,
     skipped: resolvedStudentIds.length - charged,
-  });
+  };
+  res.status(201).json({ data, charged: data.charged, skipped: data.skipped });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -407,7 +411,7 @@ export async function listCharges(req: Request, res: Response): Promise<void> {
     );
     const myStudentId = myStudent.rows[0]?.id;
     if (!myStudentId) {
-      res.status(200).json({ data: [] });
+      res.status(200).json({ data: [], total: 0, charges: [] });
       return;
     }
     conditions.push(`fc.student_id = $${paramIdx++}`);
@@ -423,7 +427,7 @@ export async function listCharges(req: Request, res: Response): Promise<void> {
     );
     const childIds = childrenResult.rows.map((r) => r.id);
     if (childIds.length === 0) {
-      res.status(200).json({ data: [] });
+      res.status(200).json({ data: [], total: 0, charges: [] });
       return;
     }
     conditions.push(`fc.student_id = ANY($${paramIdx++}::uuid[])`);
@@ -447,7 +451,8 @@ export async function listCharges(req: Request, res: Response): Promise<void> {
     params,
   );
 
-  res.status(200).json({ data: result.rows.map(formatFeeCharge) });
+  const data = result.rows.map(formatFeeCharge);
+  res.status(200).json({ data, total: data.length, charges: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -605,7 +610,8 @@ export async function recordPayment(
     return;
   }
 
-  res.status(201).json({ payment: formatFeePayment(txResult.payment) });
+  const data = formatFeePayment(txResult.payment);
+  res.status(201).json({ data, payment: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -675,5 +681,5 @@ export async function feeSummary(req: Request, res: Response): Promise<void> {
     outstanding: parseFloat(row.outstanding),
   }));
 
-  res.status(200).json({ data });
+  res.status(200).json({ data, total: data.length, summary: data });
 }

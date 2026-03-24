@@ -11,6 +11,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { timetableApi } from "@/api/timetable";
 import { parseApiError } from "@/utils/errors";
 import type { TimeSlot } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 interface DeleteSlotDialogProps {
   slot: TimeSlot | null;
@@ -24,7 +25,7 @@ export function DeleteSlotDialog({ slot, onClose }: DeleteSlotDialogProps) {
   const mutation = useMutation({
     mutationFn: () => timetableApi.deleteSlot(slot!.id),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["timetable"] });
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.timetable() });
       onClose();
     },
     onError: (err) => {

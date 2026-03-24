@@ -38,7 +38,8 @@ export async function listClasses(req: Request, res: Response): Promise<void> {
      WHERE ${where} ORDER BY c.name ASC`,
     params,
   );
-  res.status(200).json({ classes: result.rows.map(fmt) });
+  const data = result.rows.map(fmt);
+  res.status(200).json({ data, total: data.length, classes: data });
 }
 
 export async function createClass(req: Request, res: Response): Promise<void> {

@@ -16,6 +16,7 @@ import { studentsApi } from "@/api/students";
 import { classesApi } from "@/api/classes";
 import { todayISO } from "@/utils/dates";
 import { parseApiError } from "@/utils/errors";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const THIS_YEAR = new Date().getFullYear();
@@ -124,13 +125,13 @@ function RankingsTab() {
   const [offset, setOffset] = useState(0);
 
   const classesQ = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 2 * 60 * 1000,
   });
 
   const toppersQ = useQuery({
-    queryKey: ["toppers", classId, from, to, offset],
+    queryKey: QUERY_KEYS.custom("toppers", classId, from, to, offset),
     queryFn: () =>
       attendanceApi.getToppers({
         classId,
@@ -388,19 +389,19 @@ export default function AttendanceSummaryPage() {
 
   // Fetch students for the picker (Admin only route)
   const studentsQ = useQuery({
-    queryKey: ["students-list-picker"],
+    queryKey: QUERY_KEYS.custom("students-list-picker"),
     queryFn: () => studentsApi.list({ limit: 500 }),
     staleTime: 2 * 60 * 1000,
   });
 
   // CR-25: monthly attendance summary
   const summaryQ = useQuery({
-    queryKey: [
+    queryKey: QUERY_KEYS.custom(
       "student-attendance-summary",
       selectedStudentId,
       selectedYear,
       selectedMonth,
-    ],
+    ),
     queryFn: () =>
       attendanceApi.getStudentSummary(
         selectedStudentId,

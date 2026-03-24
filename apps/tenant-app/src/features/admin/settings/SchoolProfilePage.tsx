@@ -14,9 +14,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { schoolProfileApi } from "@/api/schoolProfile";
 import { parseApiError } from "@/utils/errors";
-import { QUERY_KEYS } from "@/utils/queryKeys";
 import { useAppToast } from "@/hooks/useAppToast";
 import type { UpdateSchoolProfileRequest } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 // Valid student levels — mirrors VALID_LEVELS on server (M-017)
 const VALID_LEVELS = [

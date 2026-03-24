@@ -17,21 +17,18 @@ test.describe("E2E-001: Auth - Change Password Flow", () => {
     await page.goto("/login");
 
     // Login with credentials
-    await page.fill('input[name="email"]', process.env.E2E_ADMIN_EMAIL!);
-    await page.fill('input[name="password"]', process.env.E2E_ADMIN_PASSWORD!);
-    await page.click('button:has-text("Login")');
+    await page.fill("#email", process.env.E2E_ADMIN_EMAIL!);
+    await page.fill("#password", process.env.E2E_ADMIN_PASSWORD!);
+    await page.click('button:has-text("Sign in")');
 
     // If must_change_password is true, should redirect to /change-password
     const url = page.url();
 
     // Fill change password form (if on that page)
     if (url.includes("/change-password")) {
-      await page.fill(
-        'input[name="currentPassword"]',
-        process.env.E2E_ADMIN_PASSWORD!,
-      );
-      await page.fill('input[name="newPassword"]', "NewPassword@123");
-      await page.fill('input[name="confirmPassword"]', "NewPassword@123");
+      await page.fill("#currentPassword", process.env.E2E_ADMIN_PASSWORD!);
+      await page.fill("#newPassword", "NewPassword@123");
+      await page.fill("#confirmNewPassword", "NewPassword@123");
       await page.click('button:has-text("Change Password")');
 
       // Should NOT redirect back to /change-password
@@ -49,12 +46,9 @@ test.describe("E2E-001: Auth - Change Password Flow", () => {
 
     // If redirected to change-password, change it
     if (page.url().includes("/change-password")) {
-      await page.fill(
-        'input[name="currentPassword"]',
-        process.env.E2E_ADMIN_PASSWORD!,
-      );
-      await page.fill('input[name="newPassword"]', "NewPass@2026");
-      await page.fill('input[name="confirmPassword"]', "NewPass@2026");
+      await page.fill("#currentPassword", process.env.E2E_ADMIN_PASSWORD!);
+      await page.fill("#newPassword", "NewPass@2026");
+      await page.fill("#confirmNewPassword", "NewPass@2026");
       await page.click('button:has-text("Change Password")');
     }
 

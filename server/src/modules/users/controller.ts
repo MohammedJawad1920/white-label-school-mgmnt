@@ -34,6 +34,7 @@ function formatUser(u: UserRow) {
     name: u.name,
     email: u.email,
     roles: u.roles,
+    mustChangePassword: u.must_change_password,
     createdAt: u.created_at.toISOString(),
     updatedAt: u.updated_at.toISOString(),
   };
@@ -69,7 +70,8 @@ export async function listUsers(req: Request, res: Response): Promise<void> {
     params,
   );
 
-  res.status(200).json({ users: result.rows.map(formatUser) });
+  const data = result.rows.map(formatUser);
+  res.status(200).json({ data, total: data.length, users: data });
 }
 
 // GET /api/users/:id — CR-15 (Admin only; Student-role users return 404)
@@ -95,7 +97,8 @@ export async function getUser(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  res.status(200).json({ user: formatUser(user) });
+  const data = formatUser(user);
+  res.status(200).json({ data, user: data });
 }
 
 // POST /api/users
@@ -270,7 +273,8 @@ export async function updateUserRoles(
     return;
   }
 
-  res.status(200).json({ user: formatUser(result.rows[0]!) });
+  const data = formatUser(result.rows[0]!);
+  res.status(200).json({ data, user: data });
 }
 
 // DELETE /api/users/:id
@@ -419,8 +423,13 @@ export async function resetUserPassword(
     [passwordHash, id, tenantId],
   );
 
+  const updatedUser = updated.rows[0]!;
+
   res.status(200).json({
-    user: formatUser(updated.rows[0]!),
+    user: {
+      ...formatUser(updatedUser),
+      mustChangePassword: true,
+    },
     temporaryPassword,
   });
 }

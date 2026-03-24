@@ -28,6 +28,7 @@ import { subjectsApi } from "@/api/subjects";
 import { parseApiError } from "@/utils/errors";
 import { cn } from "@/utils/cn";
 import { toast } from "sonner";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const DAYS = [
   "Monday",
@@ -111,20 +112,20 @@ export function CreateSlotDrawer({
 
   // ── Data for dropdowns ────────────────────────────────────────────────────
   const { data: classesData } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 2 * 60 * 1000,
     enabled: open,
   });
   const { data: subjectsData } = useQuery({
-    queryKey: ["subjects"],
+    queryKey: QUERY_KEYS.subjects(),
     queryFn: () => subjectsApi.list(),
     staleTime: 5 * 60 * 1000,
     enabled: open,
   });
   // Teachers only — Freeze: "teacherId: required (must be a user with Teacher role)"
   const { data: teachersData } = useQuery({
-    queryKey: ["users", "Teacher", ""],
+    queryKey: QUERY_KEYS.custom("users", "Teacher", ""),
     queryFn: () => usersApi.list({ role: "Teacher" }),
     staleTime: 2 * 60 * 1000,
     enabled: open,
@@ -145,8 +146,8 @@ export function CreateSlotDrawer({
     mutationFn: (values: FormValues) => timetableApi.create(values),
     onSuccess: async () => {
       // Freeze §3: POST /timetable invalidates both timetable AND school-periods
-      await queryClient.invalidateQueries({ queryKey: ["timetable"] });
-      await queryClient.invalidateQueries({ queryKey: ["school-periods"] });
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.timetable() });
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.schoolPeriods() });
       toast.success("Slot created successfully.");
       reset();
       onClose();

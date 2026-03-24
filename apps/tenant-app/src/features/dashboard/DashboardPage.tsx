@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { todayISO, todayDayOfWeek, formatDisplayDate } from "@/utils/dates";
 import { parseApiError } from "@/utils/errors";
 import { format, subDays } from "date-fns";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import type {
   Event,
   AttendanceTopper,
@@ -179,7 +180,7 @@ function UpcomingEventsCard() {
   );
 
   const { data, isLoading } = useQuery({
-    queryKey: ["events", "upcoming", today],
+    queryKey: QUERY_KEYS.custom("events", "upcoming", today),
     queryFn: () => eventsApi.list({ from: today, to: monthEnd }),
     staleTime: 10 * 60 * 1000,
   });
@@ -303,7 +304,7 @@ function ClassRankingsCard({
 
   const topperQueries = useQueries({
     queries: classIds.map((classId) => ({
-      queryKey: ["toppers", classId, THIRTY_DAYS_AGO, TODAY],
+      queryKey: QUERY_KEYS.custom("toppers", classId, THIRTY_DAYS_AGO, TODAY),
       queryFn: () =>
         attendanceApi.getToppers({
           classId,
@@ -403,7 +404,7 @@ function StudentDashboard() {
   const studentId = user?.studentId ?? null;
 
   const { data: attendanceData, isLoading: loadingHistory } = useQuery({
-    queryKey: ["student-attendance", studentId, { limit: 10 }],
+    queryKey: QUERY_KEYS.custom("student-attendance", studentId, { limit: 10 }),
     queryFn: () =>
       attendanceApi.getStudentHistory(studentId!, { limit: 10, offset: 0 }),
     enabled: !!studentId,
@@ -411,7 +412,7 @@ function StudentDashboard() {
   });
 
   const { data: timetableData } = useQuery({
-    queryKey: ["timetable"],
+    queryKey: QUERY_KEYS.timetable(),
     queryFn: () => timetableApi.list({}),
     staleTime: 5 * 60 * 1000,
   });
@@ -424,7 +425,7 @@ function StudentDashboard() {
 
   const streakQueries = useQueries({
     queries: uniqueTimeSlotIds.map((tsId) => ({
-      queryKey: ["streaks", tsId],
+      queryKey: QUERY_KEYS.custom("streaks", tsId),
       queryFn: () => attendanceApi.getStreaks(tsId),
       enabled: !!studentId && uniqueTimeSlotIds.length > 0,
       staleTime: 5 * 60 * 1000,
@@ -559,7 +560,7 @@ export default function DashboardPage() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
-    queryKey: ["timetable", { dayOfWeek: todayDayOfWeek() }],
+    queryKey: QUERY_KEYS.custom("timetable", { dayOfWeek: todayDayOfWeek() }),
     queryFn: () => timetableApi.list({ dayOfWeek: todayDayOfWeek() }),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
@@ -567,7 +568,7 @@ export default function DashboardPage() {
   });
 
   const periodsQ = useQuery({
-    queryKey: ["school-periods"],
+    queryKey: QUERY_KEYS.schoolPeriods(),
     queryFn: () => schoolPeriodsApi.list(),
     staleTime: 10 * 60 * 1000,
   });
@@ -583,7 +584,7 @@ export default function DashboardPage() {
   // Daily summary queries lifted here: shared by AdminStatBar + TodayTimetableGrid
   const dailySummaryQueries = useQueries({
     queries: uniqueClassIds.map((classId) => ({
-      queryKey: ["daily-summary", classId, TODAY],
+      queryKey: QUERY_KEYS.custom("daily-summary", classId, TODAY),
       queryFn: () => attendanceApi.getDailySummary(classId, TODAY),
       staleTime: 2 * 60 * 1000,
       refetchInterval: 5 * 60 * 1000,
@@ -596,8 +597,8 @@ export default function DashboardPage() {
   }, [data]);
 
   const onRefresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["timetable"] });
-    void queryClient.invalidateQueries({ queryKey: ["daily-summary"] });
+    void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.timetable() });
+    void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.custom("daily-summary") });
   }, [queryClient]);
 
   // Map classId → className for rankings card

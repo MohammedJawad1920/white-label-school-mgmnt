@@ -19,6 +19,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { schoolPeriodsApi } from "@/api/schoolPeriods";
 import { parseApiError } from "@/utils/errors";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import {
   TableSkeleton,
   Drawer,
@@ -210,7 +211,7 @@ export default function SchoolPeriodsPage() {
   const [drawerError, setDrawerError] = useState<string | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["school-periods"],
+    queryKey: QUERY_KEYS.schoolPeriods(),
     queryFn: () => schoolPeriodsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
@@ -231,8 +232,8 @@ export default function SchoolPeriodsPage() {
   // Freeze §Screen: "On any mutation: invalidate ['school-periods'] AND ['timetable']
   // (timetable grid derives times from periods)."
   const invalidateBoth = async () => {
-    await qc.invalidateQueries({ queryKey: ["school-periods"] });
-    await qc.invalidateQueries({ queryKey: ["timetable"] });
+    await qc.invalidateQueries({ queryKey: QUERY_KEYS.schoolPeriods() });
+    await qc.invalidateQueries({ queryKey: QUERY_KEYS.timetable() });
   };
 
   const createMut = useMutation({

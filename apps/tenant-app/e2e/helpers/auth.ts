@@ -47,19 +47,33 @@ export async function loginAs(
   await page.goto("/login");
 
   // Fill in login form
-  await page.fill('input[name="email"]', email);
-  await page.fill('input[name="password"]', password);
-
-  // Optional: tenant selection if multi-tenant UI
-  if (page.locator('input[name="tenantId"]').isVisible()) {
-    await page.fill('input[name="tenantId"]', tenantId);
-  }
+  await page.fill("#email", email);
+  await page.fill("#password", password);
 
   // Submit login
-  await page.click('button:has-text("Login")');
+  await page.click('button:has-text("Sign in")');
+
+  // First login for some seeded users (guardian/student) may force password change.
+  if (page.url().includes("/change-password")) {
+    const updatedPassword =
+      role === "student" ? "Student@E2E456!" : "Guardian@E2E456!";
+    await page.fill("#currentPassword", password);
+    await page.fill("#newPassword", updatedPassword);
+    await page.fill("#confirmNewPassword", updatedPassword);
+    await page.click('button:has-text("Change Password")');
+
+    if (role === "student") {
+      process.env.E2E_STUDENT_PASSWORD = updatedPassword;
+    }
+    if (role === "guardian") {
+      process.env.E2E_GUARDIAN_PASSWORD = updatedPassword;
+    }
+  }
 
   // Wait for navigation or dashboard to appear
-  await page.waitForURL((url) => !url.pathname.includes("/login"));
+  await page.waitForURL((url) => !url.pathname.includes("/login"), {
+    timeout: 20000,
+  });
 
   console.log(`✅ Logged in as ${role}: ${email}`);
 }
@@ -79,16 +93,16 @@ export async function logout(page: Page) {
 
 export async function getCurrentUser(page: Page) {
   // This could read from localStorage or make an API call
-  const tokenStr = await page.evaluate(() =>
-    sessionStorage.getItem("auth-token"),
-  );
+  const raw = await page.evaluate(() => sessionStorage.getItem("auth_token"));
 
-  if (!tokenStr) {
+  if (!raw) {
     return null;
   }
 
   try {
-    const payload = JSON.parse(atob(tokenStr.split(".")[1]));
+    const parsed = JSON.parse(raw) as { token?: string };
+    if (!parsed.token) return null;
+    const payload = JSON.parse(atob(parsed.token.split(".")[1]!));
     return payload.user;
   } catch {
     return null;

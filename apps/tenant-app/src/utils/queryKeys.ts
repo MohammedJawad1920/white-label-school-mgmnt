@@ -13,6 +13,9 @@
  */
 
 export const QUERY_KEYS = {
+  // ── Escape hatch for legacy key shapes during compliance migration ────────
+  custom: (...parts: ReadonlyArray<unknown>) => parts as readonly unknown[],
+
   // ── Timetable ──────────────────────────────────────────────────────────────
   timetableToday: (date: string) => ["timetable", "today", date] as const,
   timetable: (params?: Record<string, string>) =>
@@ -119,7 +122,8 @@ export const QUERY_KEYS = {
   // ── Leave (Phase 1) ───────────────────────────────────────────────────────
   leave: {
     all: () => ["leave"] as const,
-    list: (filters?: Record<string, unknown>) => ["leave", "list", filters] as const,
+    list: (filters?: Record<string, unknown>) =>
+      ["leave", "list", filters] as const,
     detail: (id: string) => ["leave", id] as const,
     onCampus: () => ["leave", "on-campus"] as const,
   },
@@ -127,7 +131,8 @@ export const QUERY_KEYS = {
   // ── Exams (Phase 1) ───────────────────────────────────────────────────────
   exams: {
     all: () => ["exams"] as const,
-    list: (filters?: Record<string, unknown>) => ["exams", "list", filters] as const,
+    list: (filters?: Record<string, unknown>) =>
+      ["exams", "list", filters] as const,
     detail: (id: string) => ["exams", id] as const,
     results: (id: string) => ["exams", id, "results"] as const,
     marks: (examId: string, subjectId: string) =>

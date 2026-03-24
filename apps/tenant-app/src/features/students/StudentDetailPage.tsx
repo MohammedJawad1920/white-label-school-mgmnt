@@ -10,6 +10,7 @@ import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
 import { useAuth } from "@/hooks/useAuth";
 import type { Guardian } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 function Skeleton({ className }: { className: string }) {
   return <div className={`animate-pulse bg-muted rounded ${className}`} />;
@@ -24,14 +25,14 @@ export default function StudentDetailPage() {
   const isAdmin = user?.activeRole === "Admin";
 
   const studentQuery = useQuery({
-    queryKey: ["students", "list"],
+    queryKey: QUERY_KEYS.custom("students", "list"),
     queryFn: () => studentsApi.list(),
     staleTime: 2 * 60 * 1000,
     enabled: !!id,
   });
 
   const guardiansQuery = useQuery({
-    queryKey: ["guardians", "student", id],
+    queryKey: QUERY_KEYS.custom("guardians", "student", id),
     queryFn: () => guardiansApi.listForStudent(id!),
     staleTime: 2 * 60 * 1000,
     enabled: !!id,
@@ -40,7 +41,7 @@ export default function StudentDetailPage() {
   const deleteGuardianMut = useMutation({
     mutationFn: (guardianId: string) => guardiansApi.delete(guardianId),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["guardians", "student", id] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.custom("guardians", "student", id) });
       toast.success("Guardian removed.");
     },
     onError: (err) => {

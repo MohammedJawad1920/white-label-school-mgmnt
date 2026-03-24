@@ -30,6 +30,7 @@ import { classesApi } from "@/api/classes";
 import { batchesApi } from "@/api/batches";
 import { parseApiError } from "@/utils/errors";
 import { toast } from "sonner";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import {
   TableSkeleton,
   BulkActionBar,
@@ -527,17 +528,17 @@ export default function StudentsPage() {
   const [statusFilter, setStatusFilter] = useState<StudentStatus | "">("");
 
   const { data: studentsData, isLoading } = useQuery({
-    queryKey: ["students", statusFilter],
+    queryKey: QUERY_KEYS.custom("students", statusFilter),
     queryFn: () => studentsApi.list({ status: statusFilter || undefined }),
     staleTime: 2 * 60 * 1000,
   });
   const { data: classesData } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 2 * 60 * 1000,
   });
   const { data: batchesData } = useQuery({
-    queryKey: ["batches"],
+    queryKey: QUERY_KEYS.batches(),
     queryFn: () => batchesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
@@ -546,7 +547,7 @@ export default function StudentsPage() {
   const classes = classesData?.classes ?? [];
   const batches = batchesData?.batches ?? [];
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["students"] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: QUERY_KEYS.students() });
 
   const createMut = useMutation({
     mutationFn: (v: CreateFormValues) => studentsApi.create(v),

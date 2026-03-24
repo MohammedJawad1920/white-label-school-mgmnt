@@ -326,7 +326,8 @@ export async function createAssignment(
   });
 
   const assignment = await fetchAssignmentWithMeta(id, tenantId);
-  res.status(201).json({ assignment: formatAssignment(assignment!) });
+  const data = formatAssignment(assignment!);
+  res.status(201).json({ data, assignment: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -400,7 +401,7 @@ export async function listAssignments(
       );
       const studentClassId = studentResult.rows[0]?.class_id;
       if (!studentClassId) {
-        res.status(200).json({ data: [] });
+        res.status(200).json({ data: [], total: 0, assignments: [] });
         return;
       }
       if (!classIdFilter) {
@@ -422,7 +423,7 @@ export async function listAssignments(
       .map((r) => r.class_id)
       .filter((cid): cid is string => cid !== null);
     if (childClassIds.length === 0) {
-      res.status(200).json({ data: [] });
+      res.status(200).json({ data: [], total: 0, assignments: [] });
       return;
     }
     if (!classIdFilter) {
@@ -439,7 +440,8 @@ export async function listAssignments(
     params,
   );
 
-  res.status(200).json({ data: result.rows.map(formatAssignment) });
+  const data = result.rows.map(formatAssignment);
+  res.status(200).json({ data, total: data.length, assignments: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -459,7 +461,8 @@ export async function getAssignment(
     return;
   }
 
-  res.status(200).json({ assignment: formatAssignment(assignment) });
+  const data = formatAssignment(assignment);
+  res.status(200).json({ data, assignment: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -559,7 +562,8 @@ export async function updateAssignment(
   );
 
   const assignment = await fetchAssignmentWithMeta(id, tenantId);
-  res.status(200).json({ assignment: formatAssignment(assignment!) });
+  const data = formatAssignment(assignment!);
+  res.status(200).json({ data, assignment: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -624,7 +628,8 @@ export async function closeAssignment(
   );
 
   const assignment = await fetchAssignmentWithMeta(id, tenantId);
-  res.status(200).json({ assignment: formatAssignment(assignment!) });
+  const data = formatAssignment(assignment!);
+  res.status(200).json({ data, assignment: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -672,9 +677,15 @@ export async function getSubmissions(
     [id, tenantId],
   );
 
+  const assignmentData = formatAssignment(assignment);
+  const submissions = submissionsResult.rows.map(formatSubmission);
   res.status(200).json({
-    assignment: formatAssignment(assignment),
-    submissions: submissionsResult.rows.map(formatSubmission),
+    data: {
+      assignment: assignmentData,
+      submissions,
+    },
+    assignment: assignmentData,
+    submissions,
   });
 }
 

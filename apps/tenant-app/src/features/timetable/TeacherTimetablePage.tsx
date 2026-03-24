@@ -11,8 +11,8 @@ import { timetableApi } from "@/api/timetable";
 import { schoolPeriodsApi } from "@/api/schoolPeriods";
 import { useAuth } from "@/hooks/useAuth";
 import { parseApiError } from "@/utils/errors";
-import { QUERY_KEYS } from "@/utils/queryKeys";
 import type { TimeSlot } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const DAYS = [
   "Monday",

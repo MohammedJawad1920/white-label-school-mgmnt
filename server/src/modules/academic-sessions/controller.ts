@@ -110,7 +110,8 @@ export async function createSession(
     [id, tenantId, name.trim(), startDate, endDate],
   );
 
-  res.status(201).json({ session: formatSession(result.rows[0]!) });
+  const data = formatSession(result.rows[0]!);
+  res.status(201).json({ data, session: data });
 }
 
 // ─── GET /academic-sessions ─────────────────────────────────────────────────
@@ -125,10 +126,8 @@ export async function listSessions(req: Request, res: Response): Promise<void> {
     [tenantId],
   );
 
-  res.status(200).json({
-    sessions: result.rows.map(formatSession),
-    total: result.rowCount ?? 0,
-  });
+  const data = result.rows.map(formatSession);
+  res.status(200).json({ data, total: result.rowCount ?? 0, sessions: data });
 }
 
 // ─── GET /academic-sessions/current ─────────────────────────────────────────
@@ -208,7 +207,8 @@ export async function activateSession(
     [id, tenantId],
   );
 
-  res.status(200).json({ session: formatSession(updated.rows[0]!) });
+  const data = formatSession(updated.rows[0]!);
+  res.status(200).json({ data, session: data });
 }
 
 // ─── PUT /academic-sessions/:id/close ───────────────────────────────────────
@@ -239,7 +239,8 @@ export async function closeSession(req: Request, res: Response): Promise<void> {
     [id, tenantId],
   );
 
-  res.status(200).json({ session: formatSession(updated.rows[0]!) });
+  const data = formatSession(updated.rows[0]!);
+  res.status(200).json({ data, session: data });
 }
 
 // ─── POST /academic-sessions/:id/copy-timetable ─────────────────────────────

@@ -10,6 +10,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { batchesApi } from "@/api/batches";
 import { parseApiError } from "@/utils/errors";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import {
   TableSkeleton,
   BulkActionBar,
@@ -155,13 +156,13 @@ export default function BatchesPage() {
   const [drawerError, setDrawerError] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["batches"],
+    queryKey: QUERY_KEYS.batches(),
     queryFn: () => batchesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
   const batches = data?.batches ?? [];
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["batches"] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: QUERY_KEYS.batches() });
 
   const createMut = useMutation({
     mutationFn: (v: FormValues) => batchesApi.create(v),

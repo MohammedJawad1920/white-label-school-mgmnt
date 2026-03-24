@@ -102,7 +102,7 @@ export async function createTestTenant(): Promise<TestTenant> {
     timetable: uuidv4(),
     attendance: uuidv4(),
     leave: uuidv4(),
-    guardians: uuidv4(),
+    guardian: uuidv4(),
     notifications: uuidv4(),
     exams: uuidv4(),
     fees: uuidv4(),
@@ -110,6 +110,83 @@ export async function createTestTenant(): Promise<TestTenant> {
     assignments: uuidv4(),
     import: uuidv4(),
   };
+
+  const featureDefinitions: Array<{
+    key:
+      | "timetable"
+      | "attendance"
+      | "leave"
+      | "exams"
+      | "fees"
+      | "announcements"
+      | "assignments"
+      | "import"
+      | "guardian"
+      | "notifications";
+    name: string;
+    description: string;
+  }> = [
+    {
+      key: "timetable",
+      name: "Timetable Management",
+      description: "Create and manage class schedules with teacher assignments",
+    },
+    {
+      key: "attendance",
+      name: "Attendance Tracking",
+      description: "Record and view student attendance per class period",
+    },
+    {
+      key: "leave",
+      name: "Leave Management",
+      description: "Manage leave requests and approvals",
+    },
+    {
+      key: "exams",
+      name: "Exam Management",
+      description: "Create exams, enter marks, and publish results",
+    },
+    {
+      key: "fees",
+      name: "Fees Management",
+      description: "Track charges, payments, and balances",
+    },
+    {
+      key: "announcements",
+      name: "Announcements",
+      description: "Publish announcements to school users",
+    },
+    {
+      key: "assignments",
+      name: "Assignments",
+      description: "Create and submit assignment work",
+    },
+    {
+      key: "import",
+      name: "CSV Import",
+      description: "Bulk import school data from CSV files",
+    },
+    {
+      key: "guardian",
+      name: "Guardian Portal",
+      description: "Guardian-specific views and actions",
+    },
+    {
+      key: "notifications",
+      name: "Notifications",
+      description: "In-app and push notifications",
+    },
+  ];
+
+  // Ensure all feature keys exist before inserting tenant_features rows.
+  for (const feature of featureDefinitions) {
+    await testPool.query(
+      `INSERT INTO features (id, key, name, description, created_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (key) DO NOTHING`,
+      [uuidv4(), feature.key, feature.name, feature.description],
+    );
+  }
 
   // Tenant
   await testPool.query(
@@ -140,7 +217,7 @@ export async function createTestTenant(): Promise<TestTenant> {
        ($1, $2, 'timetable', TRUE, NOW()),
        ($3, $2, 'attendance', TRUE, NOW()),
        ($4, $2, 'leave', TRUE, NOW()),
-       ($5, $2, 'guardians', TRUE, NOW()),
+      ($5, $2, 'guardian', TRUE, NOW()),
        ($6, $2, 'notifications', TRUE, NOW()),
        ($7, $2, 'exams', TRUE, NOW()),
        ($8, $2, 'fees', TRUE, NOW()),
@@ -152,7 +229,7 @@ export async function createTestTenant(): Promise<TestTenant> {
       tenantId,
       featureIds.attendance,
       featureIds.leave,
-      featureIds.guardians,
+      featureIds.guardian,
       featureIds.notifications,
       featureIds.exams,
       featureIds.fees,

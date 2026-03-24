@@ -20,6 +20,7 @@
  * using <table> (which is hard to make responsive).
  */
 import { useState } from "react";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import {
   useQuery,
   useQueries,
@@ -157,7 +158,7 @@ export default function TimetablePage() {
   const deleteSlotMut = useMutation({
     mutationFn: (slotId: string) => timetableApi.deleteSlot(slotId),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["timetable"] });
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.timetable() });
       toast.success("Slot deleted successfully.");
       setDeleteSlot(null);
     },
@@ -180,26 +181,26 @@ export default function TimetablePage() {
   const canFetch = !!(filterDay || filterClassId || filterTeacher);
 
   const timetableQ = useQuery({
-    queryKey: ["timetable", filters],
+    queryKey: QUERY_KEYS.custom("timetable", filters),
     queryFn: () => timetableApi.list(filters),
     staleTime: 5 * 60 * 1000,
     enabled: canFetch,
   });
 
   const periodsQ = useQuery({
-    queryKey: ["school-periods"],
+    queryKey: QUERY_KEYS.schoolPeriods(),
     queryFn: () => schoolPeriodsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
 
   const classesQ = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 2 * 60 * 1000,
   });
 
   const teachersQ = useQuery({
-    queryKey: ["users", "Teacher", ""],
+    queryKey: QUERY_KEYS.custom("users", "Teacher", ""),
     queryFn: () => usersApi.list({ role: "Teacher" }),
     staleTime: 2 * 60 * 1000,
   });
@@ -220,7 +221,7 @@ export default function TimetablePage() {
 
   const dailySummaryQueries = useQueries({
     queries: todayClassIds.map((classId) => ({
-      queryKey: ["daily-summary", classId, todayISO()],
+      queryKey: QUERY_KEYS.custom("daily-summary", classId, todayISO()),
       queryFn: () => attendanceApi.getDailySummary(classId, todayISO()),
       staleTime: 2 * 60 * 1000,
       enabled: todayInGrid,

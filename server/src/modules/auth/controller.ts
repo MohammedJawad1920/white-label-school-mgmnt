@@ -16,7 +16,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { pool } from "../../db/pool";
 import { config } from "../../config/env";
-import { send400, send401, send404, send422 } from "../../utils/errors";
+import { send400, send401, send403, send404, send422 } from "../../utils/errors";
 import {
   UserRow,
   StudentRow,
@@ -244,14 +244,11 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
     "Guardian",
   ];
   if (!validSwitchRoles.includes(role)) {
-    res.status(400).json({
-      error: {
-        code: "ROLE_NOT_ASSIGNED",
-        message: "Requested role is not assigned to this user",
-        details: {},
-        timestamp: new Date().toISOString(),
-      },
-    });
+    send400(
+      res,
+      "Requested role is not assigned to this user",
+      "ROLE_NOT_ASSIGNED",
+    );
     return;
   }
 
@@ -269,25 +266,15 @@ export async function switchRole(req: Request, res: Response): Promise<void> {
     return;
   }
   if (user.roles.length < 2) {
-    res.status(403).json({
-      error: {
-        code: "SINGLE_ROLE_USER",
-        message: "User has only one role; switching not applicable",
-        details: {},
-        timestamp: new Date().toISOString(),
-      },
-    });
+    send403(res, "User has only one role; switching not applicable", "SINGLE_ROLE_USER");
     return;
   }
   if (!user.roles.includes(role as UserRole)) {
-    res.status(400).json({
-      error: {
-        code: "ROLE_NOT_ASSIGNED",
-        message: "Requested role is not assigned to this user",
-        details: {},
-        timestamp: new Date().toISOString(),
-      },
-    });
+    send400(
+      res,
+      "Requested role is not assigned to this user",
+      "ROLE_NOT_ASSIGNED",
+    );
     return;
   }
 

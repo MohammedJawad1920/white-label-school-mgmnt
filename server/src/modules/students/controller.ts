@@ -113,7 +113,8 @@ export async function listStudents(req: Request, res: Response): Promise<void> {
     `${STUDENT_SELECT} WHERE ${conditions.join(" AND ")} ORDER BY s.name ASC`,
     params,
   );
-  res.status(200).json({ students: result.rows.map(fmt) });
+  const data = result.rows.map(fmt);
+  res.status(200).json({ data, total: data.length, students: data });
 }
 // ── GET /api/students/:id ─────────────────────────────────────────────────
 // CR-15: Admin—any student; Teacher—scoped to class; Student—own record only
@@ -148,7 +149,8 @@ export async function getStudent(req: Request, res: Response): Promise<void> {
       });
       return;
     }
-    res.status(200).json({ student: fmt(student) });
+    const data = fmt(student);
+    res.status(200).json({ data, student: data });
     return;
   }
 
@@ -177,7 +179,8 @@ export async function getStudent(req: Request, res: Response): Promise<void> {
     }
   }
 
-  res.status(200).json({ student: fmt(student) });
+  const data = fmt(student);
+  res.status(200).json({ data, student: data });
 }
 // ── POST /api/students ───────────────────────────────────────────────────────
 // v3.5 CR-13: atomically creates a users row + students row in one transaction
@@ -314,7 +317,8 @@ export async function createStudent(
     `${STUDENT_SELECT} WHERE s.id = $1 AND s.tenant_id = $2`,
     [studentId, tenantId],
   );
-  res.status(201).json({ student: fmt(created.rows[0]!) });
+  const data = fmt(created.rows[0]!);
+  res.status(201).json({ data, student: data });
 }
 
 // ── PUT /api/students/:id ────────────────────────────────────────────────────
@@ -483,7 +487,8 @@ export async function updateStudent(
     `${STUDENT_SELECT} WHERE s.id = $1 AND s.tenant_id = $2`,
     [id, tenantId],
   );
-  res.status(200).json({ student: fmt(updated.rows[0]!) });
+  const data = fmt(updated.rows[0]!);
+  res.status(200).json({ data, student: data });
 }
 
 // ── PUT /api/students/:studentId/link-account  (v3.4 CR-08 — DEPRECATED v3.5) ──
@@ -551,7 +556,8 @@ export async function linkStudentAccount(
     `${STUDENT_SELECT} WHERE s.id = $1 AND s.tenant_id = $2`,
     [studentId, tenantId],
   );
-  res.status(200).json({ student: fmt(updated.rows[0]!) });
+  const data = fmt(updated.rows[0]!);
+  res.status(200).json({ data, student: data });
 }
 
 // ── DELETE /api/students/:id ─────────────────────────────────────────────────

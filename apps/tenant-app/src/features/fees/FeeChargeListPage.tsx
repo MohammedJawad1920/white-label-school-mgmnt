@@ -12,6 +12,7 @@ import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
 import { PaymentModal } from "@/components/PaymentModal";
 import type { FeeCharge } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 function Skeleton({ className }: { className: string }) {
   return <div className={`animate-pulse bg-muted rounded ${className}`} />;
@@ -30,23 +31,22 @@ export default function FeeChargeListPage() {
   const [paymentCharge, setPaymentCharge] = useState<FeeCharge | null>(null);
 
   const { data: classesData } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: sessionsData } = useQuery({
-    queryKey: ["academic-sessions"],
+    queryKey: QUERY_KEYS.custom("academic-sessions"),
     queryFn: () => academicSessionsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
 
   const chargesQuery = useQuery({
-    queryKey: [
-      "fees",
-      "charges",
-      { sessionId: sessionFilter, classId: classFilter },
-    ],
+    queryKey: QUERY_KEYS.custom("fees", "charges", {
+      sessionId: sessionFilter,
+      classId: classFilter,
+    }),
     queryFn: () =>
       feesApi.listCharges({
         sessionId: sessionFilter || undefined,
@@ -71,7 +71,9 @@ export default function FeeChargeListPage() {
         notes: data.notes,
       }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["fees", "charges"] });
+      void qc.invalidateQueries({
+        queryKey: QUERY_KEYS.custom("fees", "charges"),
+      });
       setPaymentCharge(null);
       toast.success("Payment recorded.");
     },
@@ -81,7 +83,9 @@ export default function FeeChargeListPage() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => feesApi.deleteCharge(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["fees", "charges"] });
+      void qc.invalidateQueries({
+        queryKey: QUERY_KEYS.custom("fees", "charges"),
+      });
       toast.success("Charge deleted.");
     },
     onError: (err) => {

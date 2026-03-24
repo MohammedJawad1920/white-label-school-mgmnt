@@ -89,7 +89,7 @@ describe("GradeConfigPage", () => {
       { grade: "F", minScore: 0, maxScore: 64 },
     ];
 
-    const firstRow = gradeConfig[0];
+    const firstRow = gradeConfig[0]!;
 
     expect(firstRow).toBeDefined();
     expect(firstRow.grade).toBe("A+");

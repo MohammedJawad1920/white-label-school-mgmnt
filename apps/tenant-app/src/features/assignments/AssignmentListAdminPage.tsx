@@ -15,6 +15,7 @@ import { academicSessionsApi } from "@/api/academicSessions";
 import { parseApiError } from "@/utils/errors";
 import { useAppToast } from "@/hooks/useAppToast";
 import type { Assignment } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 const ASSIGNMENT_TYPES = [
   "HOMEWORK",
@@ -52,17 +53,17 @@ function CreateAssignmentForm({ onClose }: { onClose: () => void }) {
   const toast = useAppToast();
 
   const { data: classesData } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
   const { data: subjectsData } = useQuery({
-    queryKey: ["subjects"],
+    queryKey: QUERY_KEYS.subjects(),
     queryFn: () => subjectsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
   const { data: sessionsData } = useQuery({
-    queryKey: ["academic-sessions"],
+    queryKey: QUERY_KEYS.custom("academic-sessions"),
     queryFn: () => academicSessionsApi.list(),
     staleTime: 5 * 60 * 1000,
   });
@@ -79,7 +80,7 @@ function CreateAssignmentForm({ onClose }: { onClose: () => void }) {
   const mutation = useMutation({
     mutationFn: (v: CreateFormValues) => assignmentsApi.create(v),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["assignments"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.assignments.all() });
       toast.success("Assignment created.");
       onClose();
     },
@@ -270,13 +271,13 @@ export default function AssignmentListAdminPage() {
   const [showCreate, setShowCreate] = useState(false);
 
   const { data: classesData } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
 
   const assignmentsQuery = useQuery({
-    queryKey: ["assignments", { classId: classFilter, status: statusFilter }],
+    queryKey: QUERY_KEYS.custom("assignments", { classId: classFilter, status: statusFilter }),
     queryFn: () =>
       assignmentsApi.list({
         classId: classFilter || undefined,
@@ -288,7 +289,7 @@ export default function AssignmentListAdminPage() {
   const closeMut = useMutation({
     mutationFn: (id: string) => assignmentsApi.close(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["assignments"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.assignments.all() });
       toast.success("Assignment closed.");
     },
     onError: (err) => toast.mutationError(parseApiError(err).message),
@@ -297,7 +298,7 @@ export default function AssignmentListAdminPage() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => assignmentsApi.delete(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["assignments"] });
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.assignments.all() });
       toast.success("Assignment deleted.");
     },
     onError: (err) => toast.mutationError(parseApiError(err).message),

@@ -161,7 +161,8 @@ export async function listTenants(req: Request, res: Response): Promise<void> {
     params,
   );
 
-  res.status(200).json({ tenants: result.rows.map(formatTenant) });
+  const data = result.rows.map(formatTenant);
+  res.status(200).json({ data, total: data.length, tenants: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -395,7 +396,7 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
       return { tenant: newTenant, adminUser: newAdmin };
     });
 
-    res.status(201).json({
+    const data = {
       tenant: formatTenant(tenant),
       admin: {
         id: adminUser.id,
@@ -403,7 +404,8 @@ export async function createTenant(req: Request, res: Response): Promise<void> {
         email: adminUser.email,
         roles: adminUser.roles,
       },
-    });
+    };
+    res.status(201).json({ data, tenant: data.tenant, admin: data.admin });
   } catch (err: unknown) {
     // Admin email collision (sentinel thrown from inside transaction)
     if (err instanceof Error && err.message === "ADMIN_EMAIL_TAKEN") {
@@ -498,7 +500,8 @@ export async function updateTenant(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    res.status(200).json({ tenant: formatTenant(updated) });
+    const data = formatTenant(updated);
+    res.status(200).json({ data, tenant: data });
   } catch (err: unknown) {
     if (
       err instanceof Error &&
@@ -555,13 +558,12 @@ export async function deactivateTenant(
     return;
   }
 
-  res.status(200).json({
-    tenant: {
-      id: updated.id,
-      status: updated.status,
-      deactivatedAt: updated.deactivated_at?.toISOString() ?? null,
-    },
-  });
+  const data = {
+    id: updated.id,
+    status: updated.status,
+    deactivatedAt: updated.deactivated_at?.toISOString() ?? null,
+  };
+  res.status(200).json({ data, tenant: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -607,13 +609,12 @@ export async function reactivateTenant(
     return;
   }
 
-  res.status(200).json({
-    tenant: {
-      id: updated.id,
-      status: updated.status,
-      deactivatedAt: updated.deactivated_at?.toISOString() ?? null,
-    },
-  });
+  const data = {
+    id: updated.id,
+    status: updated.status,
+    deactivatedAt: updated.deactivated_at?.toISOString() ?? null,
+  };
+  res.status(200).json({ data, tenant: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -664,17 +665,17 @@ export async function getTenantFeatures(
     [tenantId],
   );
 
-  res.status(200).json({
-    features: result.rows.map((r) => ({
-      id: r.id,
-      tenantId: r.tenant_id,
-      featureKey: r.key,
-      featureName: r.name,
-      featureDescription: r.description ?? "",
-      enabled: r.enabled,
-      enabledAt: r.enabled_at?.toISOString() ?? null,
-    })),
-  });
+  const data = result.rows.map((r) => ({
+    id: r.id,
+    tenantId: r.tenant_id,
+    featureKey: r.key,
+    featureName: r.name,
+    featureDescription: r.description ?? "",
+    enabled: r.enabled,
+    enabledAt: r.enabled_at?.toISOString() ?? null,
+  }));
+
+  res.status(200).json({ data, total: data.length, features: data });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -739,14 +740,12 @@ export async function toggleTenantFeature(
     const timetableEnabled = timetableCheck.rows[0]?.enabled ?? false;
 
     if (!timetableEnabled) {
-      res.status(400).json({
-        error: {
-          code: "FEATURE_DEPENDENCY",
-          message: "Attendance requires Timetable to be enabled first",
-          details: { required: "timetable", requested: "attendance" },
-          timestamp: new Date().toISOString(),
-        },
-      });
+      send400(
+        res,
+        "Attendance requires Timetable to be enabled first",
+        "FEATURE_DEPENDENCY",
+        { required: "timetable", requested: "attendance" },
+      );
       return;
     }
   }
@@ -782,15 +781,15 @@ export async function toggleTenantFeature(
   );
   const feat = featureResult.rows[0]!;
 
-  res.status(200).json({
-    feature: {
-      id: feat.id,
-      tenantId,
-      featureKey: feat.key,
-      featureName: feat.name,
-      featureDescription: feat.description ?? "",
-      enabled: feat.enabled,
-      enabledAt: feat.enabled_at?.toISOString() ?? null,
-    },
-  });
+  const data = {
+    id: feat.id,
+    tenantId,
+    featureKey: feat.key,
+    featureName: feat.name,
+    featureDescription: feat.description ?? "",
+    enabled: feat.enabled,
+    enabledAt: feat.enabled_at?.toISOString() ?? null,
+  };
+
+  res.status(200).json({ data, feature: data });
 }

@@ -17,8 +17,8 @@ import { toast } from "sonner";
 import { academicSessionsApi } from "@/api/academicSessions";
 import { classesApi } from "@/api/classes";
 import { parseApiError } from "@/utils/errors";
-import { QUERY_KEYS } from "@/utils/queryKeys";
 import type { AcademicSessionStatus } from "@/types/api";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 
 function statusBadgeCls(status: AcademicSessionStatus): string {
   switch (status) {
@@ -58,7 +58,7 @@ export default function SessionDetailPage() {
   // H-04fe: load classes for this session
   const { data: classesData } = useQuery({
     // QUERY_KEYS.classes() doesn't support sessionId filtering — using inline key
-    queryKey: ["classes", { sessionId: id }],
+    queryKey: QUERY_KEYS.custom("classes", { sessionId: id }),
     queryFn: () => classesApi.listBySession(id!),
     staleTime: 5 * 60 * 1000,
     enabled: !!id,

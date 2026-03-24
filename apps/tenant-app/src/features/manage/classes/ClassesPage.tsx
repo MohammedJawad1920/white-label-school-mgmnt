@@ -14,6 +14,7 @@ import { classesApi } from "@/api/classes";
 import { batchesApi } from "@/api/batches";
 import { parseApiError } from "@/utils/errors";
 import { toast } from "sonner";
+import { QUERY_KEYS } from "@/utils/queryKeys";
 import {
   TableSkeleton,
   BulkActionBar,
@@ -58,7 +59,7 @@ function ClassForm({
     defaultValues,
   });
   const { data: batchesData } = useQuery({
-    queryKey: ["batches"],
+    queryKey: QUERY_KEYS.batches(),
     queryFn: () => batchesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
@@ -135,12 +136,12 @@ export default function ClassesPage() {
   );
 
   const { data: classesData, isLoading } = useQuery({
-    queryKey: ["classes"],
+    queryKey: QUERY_KEYS.classes(),
     queryFn: () => classesApi.list(),
     staleTime: 2 * 60 * 1000,
   });
   const { data: batchesData } = useQuery({
-    queryKey: ["batches"],
+    queryKey: QUERY_KEYS.batches(),
     queryFn: () => batchesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
@@ -149,7 +150,7 @@ export default function ClassesPage() {
     (batchesData?.batches ?? []).map((b) => [b.id, b.name]),
   );
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["classes"] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: QUERY_KEYS.classes() });
 
   const createMut = useMutation({
     mutationFn: (v: FormValues) => classesApi.create(v),
@@ -215,8 +216,8 @@ export default function ClassesPage() {
       return classesApi.promote(promoteSource!.id, body);
     },
     onSuccess: async (data) => {
-      await qc.invalidateQueries({ queryKey: ["classes"] });
-      await qc.invalidateQueries({ queryKey: ["students"] });
+      await qc.invalidateQueries({ queryKey: QUERY_KEYS.classes() });
+      await qc.invalidateQueries({ queryKey: QUERY_KEYS.students() });
       setPromoteSource(null);
       setPromoteTargetId("");
       setPromoteError(null);

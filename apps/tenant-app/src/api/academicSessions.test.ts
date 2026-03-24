@@ -29,12 +29,13 @@ describe("academicSessions.api", () => {
 
       vi.mocked(apiClient.post).mockResolvedValue(mockResponse);
 
-      const result = await academicSessionsApi.copyTimetable(
-        "target-session-id",
-        "source-session-id",
-      );
+      const result =
+        await academicSessionsApi.academicSessionsApi.copyTimetable(
+          "target-session-id",
+          { fromSessionId: "source-session-id" },
+        );
 
-      expect(result.copiedCount).toBe(24);
+      expect(result.copied).toBe(24);
       // Verify the POST call includes fromSessionId not sourceSessionId
       expect(apiClient.post).toHaveBeenCalledWith(
         expect.stringContaining("/academic-sessions/"),
@@ -52,9 +53,11 @@ describe("academicSessions.api", () => {
       };
 
       vi.mocked(apiClient.post).mockResolvedValue(mockResponse);
-      await academicSessionsApi.copyTimetable("target-id", "source-id");
+      await academicSessionsApi.academicSessionsApi.copyTimetable("target-id", {
+        fromSessionId: "source-id",
+      });
 
-      const callArgs = vi.mocked(apiClient.post).mock.calls[0];
+      const callArgs = vi.mocked(apiClient.post).mock.calls[0]!;
       const payload = callArgs[1] as Record<string, unknown>;
       expect("fromSessionId" in payload).toBe(true);
       expect("sourceSessionId" in payload).toBe(false);
@@ -68,7 +71,12 @@ describe("academicSessions.api", () => {
       };
 
       vi.mocked(apiClient.post).mockResolvedValue(mockResponse);
-      await academicSessionsApi.copyTimetable("target-123", "source-456");
+      await academicSessionsApi.academicSessionsApi.copyTimetable(
+        "target-123",
+        {
+          fromSessionId: "source-456",
+        },
+      );
 
       expect(apiClient.post).toHaveBeenCalledWith(
         expect.stringContaining("/academic-sessions/target-123"),
