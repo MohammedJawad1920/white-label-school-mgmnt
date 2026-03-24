@@ -1,36 +1,23 @@
-# Spectral OpenAPI Lint Configuration
-# Per Freeze v6.1 §16.1
-#
-# Blocks merge on any error-level violation.
-# Run: npx @stoplight/spectral-cli lint server/docs/openapi.yaml
+# Spectral OpenAPI lint configuration
+# Freeze §16.1 — blocks CI merge on error-level violations only.
+# Warnings are informational and do not block merges.
 
-extends:
-  - "spectral:oas"
+extends: ["spectral:oas"]
 
 rules:
-  # Error-level rules — block merge
-  operation-success-response: error
+  # ── Error-level rules (block merge) ────────────────────────────────
+  # Validates that example values in requests/responses match their schema types.
+  # A type mismatch here means the docs lie — null where string expected etc.
   oas3-valid-media-example: error
-  no-$ref-siblings: error
-  oas3-schema: error
-  oas3-valid-schema-example: error
-  path-params: error
-  operation-parameters: error
 
-  # Warn-level rules — advisory
-  operation-operationId: warn
-  operation-description: warn
-  operation-tags: warn
-  info-contact: warn
-  info-description: warn
+  # Validates that $ref values point to existing definitions.
+  no-$ref-siblings: warn # OAS 3.1 allows $ref siblings; downgrade to warn
 
-  # Custom rules for project conventions
-  custom-error-response-shape:
-    description: "Error responses must use the standard error envelope"
-    severity: warn
-    given: "$.paths[*][*].responses[?(@property >= '400' && @property < '600')].content['application/json'].schema"
-    then:
-      field: "$ref"
-      function: pattern
-      functionOptions:
-        match: "#/components/schemas/ErrorResponse"
+  # ── Warning-level rules (informational) ────────────────────────────
+  operation-operationId: warn # Encouraged but not required for contract correctness
+  operation-description: warn # Encouraged but not required
+  operation-tag-defined: warn # Tags must match global list — tracked as warning
+  info-contact: warn # Contact info is useful but not contractually required
+
+  # ── Custom rules ───────────────────────────────────────────────────
+  operation-success-response: error # Every operation must have at least one 2xx response

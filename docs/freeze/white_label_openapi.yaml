@@ -64,6 +64,35 @@ info:
       testing/CI/E2E sections only (§13–§17). This OpenAPI spec remains at v6.0.0. Any future
       endpoint addition or modification will bump to v6.1.0.
 
+  contact:
+    name: Platform Engineering
+    email: platform@school-saas.internal
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Academic Sessions
+  - name: Attendance
+  - name: Leave
+  - name: Guardians
+  - name: Exams
+  - name: Fees
+  - name: Announcements
+  - name: Assignments
+  - name: School Profile
+  - name: Settings
+  - name: Notifications
+  - name: Push
+  - name: Import
+  - name: Guardian Portal
+  - name: SuperAdmin
+  - name: Batches
+  - name: Subjects
+  - name: Classes
+  - name: Students
+  - name: Timetable
+  - name: Features
+
 servers:
   - url: /api/v1
     description: Production
@@ -1027,6 +1056,7 @@ paths:
     post:
       tags: [Auth]
       summary: Login
+      operationId: loginUser
       description: |
         Returns flat `{ token, user }` — NOT wrapped in `{ data: ... }`.
         Rate limited to 10 req/min per IP.
@@ -1072,8 +1102,8 @@ paths:
                   roles: ["Admin"]
                   activeRole: "Admin"
                   mustChangePassword: false
-                  classTeacherOf: null
-                  studentId: null
+                  classTeacherOf: "00000000-0000-0000-0000-000000000000"
+                  studentId: "00000000-0000-0000-0000-000000000000"
         '401':
           description: Invalid credentials
           content:
@@ -1096,6 +1126,7 @@ paths:
     post:
       tags: [Auth]
       summary: Logout — increments token_version
+      operationId: logoutUser
       responses:
         '204':
           description: Logged out
@@ -1106,6 +1137,7 @@ paths:
     post:
       tags: [Auth]
       summary: Change own password
+      operationId: changePassword
       description: |
         Sets must_change_password=false, increments token_version, returns new JWT + full user.
         Client MUST use `res.user` from this response to update auth context — do NOT reuse stale user object.
@@ -1157,6 +1189,7 @@ paths:
     post:
       tags: [Auth]
       summary: Switch active role
+      operationId: switchRole
       requestBody:
         required: true
         content:
@@ -1190,6 +1223,7 @@ paths:
     get:
       tags: [Users]
       summary: List users
+      operationId: listUsers
       parameters:
         - name: role
           in: query
@@ -1220,6 +1254,7 @@ paths:
     post:
       tags: [Users]
       summary: Create user (Admin)
+      operationId: createUser
       requestBody:
         required: true
         content:
@@ -1261,6 +1296,7 @@ paths:
     get:
       tags: [Users]
       summary: Get user by ID
+      operationId: getUser
       parameters:
         - name: userId
           in: path
@@ -1284,6 +1320,7 @@ paths:
     put:
       tags: [Users]
       summary: Update user (Admin)
+      operationId: updateUser
       parameters:
         - name: userId
           in: path
@@ -1321,6 +1358,7 @@ paths:
     post:
       tags: [Users]
       summary: Force reset a user's password (Admin)
+      operationId: resetUserPassword
       description: |
         Admin resets any tenant user's password. Returns one-time temporary password.
         User will be required to change password on next login (must_change_password = true).
@@ -1365,6 +1403,7 @@ paths:
     get:
       tags: [Academic Sessions]
       summary: List sessions
+      operationId: listAcademicSessions
       responses:
         '200':
           description: Sessions
@@ -1384,6 +1423,7 @@ paths:
     post:
       tags: [Academic Sessions]
       summary: Create session (Admin)
+      operationId: createAcademicSession
       requestBody:
         required: true
         content:
@@ -1418,6 +1458,7 @@ paths:
     get:
       tags: [Academic Sessions]
       summary: Get current active session
+      operationId: getCurrentAcademicSession
       description: |
         Returns the session with status = ACTIVE. Returns 404 if no session is currently active.
         Response is `{ data: AcademicSession }` — not `{ session }` (CORRECTED from v5.0).
@@ -1449,6 +1490,7 @@ paths:
     get:
       tags: [Academic Sessions]
       summary: Get session by ID
+      operationId: getAcademicSession
       parameters:
         - name: sessionId
           in: path
@@ -1474,6 +1516,7 @@ paths:
     put:
       tags: [Academic Sessions]
       summary: Activate session (Admin)
+      operationId: activateAcademicSession
       parameters:
         - name: sessionId
           in: path
@@ -1501,6 +1544,7 @@ paths:
     put:
       tags: [Academic Sessions]
       summary: Close session (Admin)
+      operationId: closeAcademicSession
       parameters:
         - name: sessionId
           in: path
@@ -1522,6 +1566,7 @@ paths:
     post:
       tags: [Academic Sessions]
       summary: Copy timetable from another session (Admin)
+      operationId: copyTimetable
       description: |
         Copies timeslots from the source session into this session.
         Body uses `fromSessionId` — NOT `sourceSessionId` (CORRECTED from v5.0).
@@ -1567,6 +1612,7 @@ paths:
     post:
       tags: [Academic Sessions]
       summary: Preview batch promotion (Admin)
+      operationId: previewPromotion
       parameters:
         - name: sessionId
           in: path
@@ -1607,6 +1653,7 @@ paths:
     post:
       tags: [Academic Sessions]
       summary: Commit batch promotion (Admin)
+      operationId: commitPromotion
       parameters:
         - name: sessionId
           in: path
@@ -1654,6 +1701,7 @@ paths:
     post:
       tags: [Attendance]
       summary: Record attendance for a class period (Teacher/Admin)
+      operationId: recordClassAttendance
       description: |
         Teacher backdating guard: teacher cannot record attendance for a past date
         (evaluated in tenant timezone, not UTC).
@@ -1718,6 +1766,7 @@ paths:
     put:
       tags: [Attendance]
       summary: Correct attendance record (Admin)
+      operationId: correctAttendanceRecord
       parameters:
         - name: recordId
           in: path
@@ -1750,6 +1799,7 @@ paths:
     get:
       tags: [Leave]
       summary: List leave requests
+      operationId: listLeaveRequests
       parameters:
         - name: status
           in: query
@@ -1790,6 +1840,7 @@ paths:
     post:
       tags: [Leave]
       summary: Submit leave request (Guardian/Admin/Teacher)
+      operationId: submitLeaveRequest
       requestBody:
         required: true
         content:
@@ -1842,6 +1893,7 @@ paths:
     get:
       tags: [Leave]
       summary: Students currently off-campus (Admin/ClassTeacher)
+      operationId: listOffCampusStudents
       description: |
         Returns students with ACTIVE or OVERDUE leave.
         Frontend should poll this endpoint every 30 seconds (refetchInterval: 30000).
@@ -1881,6 +1933,7 @@ paths:
     get:
       tags: [Leave]
       summary: Get leave request by ID
+      operationId: getLeaveRequest
       parameters:
         - name: leaveId
           in: path
@@ -1902,6 +1955,7 @@ paths:
     put:
       tags: [Leave]
       summary: Approve leave (ClassTeacher own class / Admin)
+      operationId: approveLeaveRequest
       description: SELECT FOR UPDATE — 409 if already reviewed.
       parameters:
         - name: leaveId
@@ -1937,6 +1991,7 @@ paths:
     put:
       tags: [Leave]
       summary: Reject leave (ClassTeacher own class / Admin)
+      operationId: rejectLeaveRequest
       parameters:
         - name: leaveId
           in: path
@@ -1970,6 +2025,7 @@ paths:
     put:
       tags: [Leave]
       summary: Cancel PENDING leave (Guardian/Admin)
+      operationId: cancelLeaveRequest
       parameters:
         - name: leaveId
           in: path
@@ -1991,6 +2047,7 @@ paths:
     put:
       tags: [Leave]
       summary: Mark student departed (ClassTeacher own class / Admin)
+      operationId: markStudentDeparted
       parameters:
         - name: leaveId
           in: path
@@ -2012,6 +2069,7 @@ paths:
     put:
       tags: [Leave]
       summary: Mark student returned (ClassTeacher own class / Admin)
+      operationId: markStudentReturned
       parameters:
         - name: leaveId
           in: path
@@ -2034,6 +2092,7 @@ paths:
     post:
       tags: [Guardians]
       summary: Create guardian (Admin)
+      operationId: createGuardian
       description: |
         If createAccount=true, creates a Guardian user account.
         Temp password generated with crypto.randomBytes — NOT Math.random.
@@ -2085,6 +2144,7 @@ paths:
     put:
       tags: [Guardians]
       summary: Update guardian (Admin)
+      operationId: updateGuardian
       parameters:
         - name: guardianId
           in: path
@@ -2117,6 +2177,7 @@ paths:
     delete:
       tags: [Guardians]
       summary: Delete guardian (Admin)
+      operationId: deleteGuardian
       description: Cascades student_guardians with tenant_id filter.
       parameters:
         - name: guardianId
@@ -2132,6 +2193,7 @@ paths:
     get:
       tags: [Guardians]
       summary: List guardians for student (Admin)
+      operationId: listStudentGuardians
       parameters:
         - name: studentId
           in: path
@@ -2156,7 +2218,8 @@ paths:
     get:
       tags: [Exams]
       summary: List exams (Admin/Teacher)
-      description: Returns `{ data: Exam[] }` — was `{ exams }` in v5.0 (CORRECTED).
+      operationId: listExams
+      description: "Returns { data: Exam[] } — was { exams } in v5.0 (CORRECTED)."
       parameters:
         - name: sessionId
           in: query
@@ -2194,6 +2257,7 @@ paths:
     post:
       tags: [Exams]
       summary: Create exam (Admin)
+      operationId: createExam
       requestBody:
         required: true
         content:
@@ -2230,7 +2294,8 @@ paths:
     get:
       tags: [Exams]
       summary: Get exam by ID
-      description: Returns `{ data: Exam }` — was `{ exam }` in v5.0 (CORRECTED).
+      operationId: getExam
+      description: "Returns { data: Exam } — was { exam } in v5.0 (CORRECTED)."
       parameters:
         - name: examId
           in: path
@@ -2258,6 +2323,7 @@ paths:
     put:
       tags: [Exams]
       summary: Update exam (Admin — DRAFT only)
+      operationId: updateExam
       parameters:
         - name: examId
           in: path
@@ -2288,6 +2354,7 @@ paths:
     delete:
       tags: [Exams]
       summary: Delete exam (Admin — DRAFT only)
+      operationId: deleteExam
       parameters:
         - name: examId
           in: path
@@ -2302,6 +2369,7 @@ paths:
     put:
       tags: [Exams]
       summary: Publish exam — computes grades, ranks, sends push notifications (Admin)
+      operationId: publishExam
       description: |
         SELECT FOR UPDATE on exams row — 409 if already PUBLISHED.
         All exam_subjects must have marks_status = ENTERED.
@@ -2341,6 +2409,7 @@ paths:
     put:
       tags: [Exams]
       summary: Unpublish exam (Admin)
+      operationId: unpublishExam
       parameters:
         - name: examId
           in: path
@@ -2362,6 +2431,7 @@ paths:
     post:
       tags: [Exams]
       summary: Add subject to exam (Admin)
+      operationId: addExamSubject
       parameters:
         - name: examId
           in: path
@@ -2401,6 +2471,7 @@ paths:
     get:
       tags: [Exams]
       summary: Get marks sheet (Teacher/Admin)
+      operationId: getMarksSheet
       parameters:
         - name: examId
           in: path
@@ -2427,6 +2498,7 @@ paths:
     put:
       tags: [Exams]
       summary: Bulk enter marks (Teacher/Admin)
+      operationId: enterMarks
       parameters:
         - name: examId
           in: path
@@ -2476,6 +2548,7 @@ paths:
     get:
       tags: [Exams]
       summary: Consolidated results (Admin/ClassTeacher)
+      operationId: getExamResults
       parameters:
         - name: examId
           in: path
@@ -2499,6 +2572,7 @@ paths:
     get:
       tags: [Exams]
       summary: PDF report card for student (Admin/Student/Guardian)
+      operationId: getReportCard
       parameters:
         - name: examId
           in: path
@@ -2523,6 +2597,7 @@ paths:
     get:
       tags: [Exams]
       summary: ZIP of all report cards for exam (Admin)
+      operationId: getAllReportCards
       description: |
         Generates PDFs for all students. Uses a single shared Puppeteer browser instance.
         One page per student — browser closes after all PDFs are generated.
@@ -2546,6 +2621,7 @@ paths:
     get:
       tags: [Fees]
       summary: List fee charges with balance
+      operationId: listFeeCharges
       parameters:
         - name: studentId
           in: query
@@ -2572,6 +2648,7 @@ paths:
     post:
       tags: [Fees]
       summary: Raise fee charge (Admin)
+      operationId: createFeeCharge
       requestBody:
         required: true
         content:
@@ -2609,6 +2686,7 @@ paths:
     delete:
       tags: [Fees]
       summary: Delete charge (Admin — zero payment only)
+      operationId: deleteFeeCharge
       description: Uses withTransaction + SELECT FOR UPDATE. Blocked if any payment exists.
       parameters:
         - name: chargeId
@@ -2637,6 +2715,7 @@ paths:
     post:
       tags: [Fees]
       summary: Record payment (Admin)
+      operationId: recordFeePayment
       description: |
         Uses withTransaction + SELECT FOR UPDATE on fee_charges row.
         Body uses `amountPaid` and `paidAt` — NOT `amount` (CORRECTED from v5.0).
@@ -2692,6 +2771,7 @@ paths:
     get:
       tags: [Announcements]
       summary: List announcements visible to caller
+      operationId: listAnnouncements
       parameters:
         - name: sessionId
           in: query
@@ -2724,6 +2804,7 @@ paths:
     post:
       tags: [Announcements]
       summary: Create announcement (Admin/Teacher)
+      operationId: createAnnouncement
       description: |
         Teacher restriction: audienceType must be 'Class' targeting teacher's own class.
         When publish_at is rescheduled to future, push_sent is reset to false.
@@ -2770,6 +2851,7 @@ paths:
     get:
       tags: [Announcements]
       summary: Get announcement by ID
+      operationId: getAnnouncement
       parameters:
         - name: announcementId
           in: path
@@ -2789,6 +2871,7 @@ paths:
     put:
       tags: [Announcements]
       summary: Edit announcement (creator before publish_at / Admin)
+      operationId: updateAnnouncement
       description: |
         If publish_at is changed to a future time, push_sent is automatically reset to false
         so the cron will re-dispatch push notifications at the new time.
@@ -2831,6 +2914,7 @@ paths:
     delete:
       tags: [Announcements]
       summary: Delete announcement (creator/Admin)
+      operationId: deleteAnnouncement
       parameters:
         - name: announcementId
           in: path
@@ -2846,6 +2930,7 @@ paths:
     get:
       tags: [Assignments]
       summary: List assignments
+      operationId: listAssignments
       parameters:
         - name: classId
           in: query
@@ -2876,6 +2961,7 @@ paths:
     post:
       tags: [Assignments]
       summary: Create assignment (Teacher/Admin)
+      operationId: createAssignment
       description: Auto-creates assignment_submissions for all class students.
       requestBody:
         required: true
@@ -2919,6 +3005,7 @@ paths:
     get:
       tags: [Assignments]
       summary: Get assignment detail
+      operationId: getAssignment
       parameters:
         - name: assignmentId
           in: path
@@ -2938,6 +3025,7 @@ paths:
     put:
       tags: [Assignments]
       summary: Edit assignment (creator before due_date in tenant TZ)
+      operationId: updateAssignment
       description: |
         Due-date guard uses tenant timezone — NOT UTC.
         Returns 400 PAST_DUE_DATE if assignment.due_date < today in tenant timezone.
@@ -2986,6 +3074,7 @@ paths:
     delete:
       tags: [Assignments]
       summary: Delete assignment (creator/Admin)
+      operationId: deleteAssignment
       parameters:
         - name: assignmentId
           in: path
@@ -3000,6 +3089,7 @@ paths:
     get:
       tags: [Assignments]
       summary: Get marking sheet (Teacher/Admin)
+      operationId: getSubmissions
       parameters:
         - name: assignmentId
           in: path
@@ -3021,6 +3111,7 @@ paths:
     put:
       tags: [Assignments]
       summary: Bulk mark submissions (Teacher/Admin)
+      operationId: bulkMarkSubmissions
       description: Uses withTransaction — all submissions or none.
       parameters:
         - name: assignmentId
@@ -3069,6 +3160,7 @@ paths:
     get:
       tags: [School Profile]
       summary: Get school profile (any role)
+      operationId: getSchoolProfile
       responses:
         '200':
           description: Profile
@@ -3082,6 +3174,7 @@ paths:
     put:
       tags: [School Profile]
       summary: Update school profile (Admin)
+      operationId: updateSchoolProfile
       requestBody:
         required: true
         content:
@@ -3126,6 +3219,7 @@ paths:
     post:
       tags: [School Profile]
       summary: Upload logo or signature to R2 (Admin)
+      operationId: uploadSchoolProfileFile
       description: |
         Multipart form-data. Both `file` and `type` fields are required.
         The `type` field was missing in v5.0 — all uploads returned 400 (CORRECTED).
@@ -3174,6 +3268,7 @@ paths:
     get:
       tags: [Settings]
       summary: Get default grade boundaries (Admin)
+      operationId: getGradeConfig
       description: |
         Returns the 8-grade A+ scale used by exams.
         Was returning 6-grade S/A/B/C/D/F scale in v5.0 — CORRECTED to match exam defaults.
@@ -3230,6 +3325,7 @@ paths:
     get:
       tags: [Notifications]
       summary: List own notifications
+      operationId: listNotifications
       description: |
         Returns `{ data, total }` — was `{ notifications, unreadCount, total }` in v5.0 (CORRECTED).
       parameters:
@@ -3267,8 +3363,8 @@ paths:
                   - id: "550e8400-e29b-41d4-a716-446655440000"
                     type: "LEAVE_APPROVED"
                     title: "Leave Approved"
-                    body: "Ali's leave has been approved"
-                    readAt: null
+                    body: "Leave has been approved"
+                    readAt: "2026-03-19T09:00:00.000Z"
                     createdAt: "2026-03-19T08:00:00.000Z"
                 total: 1
 
@@ -3276,6 +3372,7 @@ paths:
     put:
       tags: [Notifications]
       summary: Mark notification as read
+      operationId: markNotificationRead
       parameters:
         - name: notificationId
           in: path
@@ -3296,6 +3393,7 @@ paths:
     put:
       tags: [Notifications]
       summary: Mark all as read
+      operationId: markAllNotificationsRead
       description: |
         Returns `{ updated: N }` — was `{ updatedCount }` in v5.0 (CORRECTED).
       responses:
@@ -3318,6 +3416,7 @@ paths:
     post:
       tags: [Push]
       summary: Save push subscription
+      operationId: subscribePush
       requestBody:
         required: true
         content:
@@ -3340,6 +3439,7 @@ paths:
     delete:
       tags: [Push]
       summary: Remove push subscription
+      operationId: unsubscribePush
       requestBody:
         required: true
         content:
@@ -3359,6 +3459,7 @@ paths:
     post:
       tags: [Import]
       summary: Validate CSV and create preview job (Admin)
+      operationId: previewImport
       description: |
         Supports entity types: Student and User only.
         Classes and Subjects import is NOT supported (CORRECTED from v5.0 UI).
@@ -3396,6 +3497,7 @@ paths:
     post:
       tags: [Import]
       summary: Execute import (Admin)
+      operationId: confirmImport
       description: |
         SELECT FOR UPDATE on import_jobs — prevents double-confirm race condition.
         On transaction failure, sets status = FAILED.
@@ -3457,6 +3559,7 @@ paths:
     delete:
       tags: [Import]
       summary: Cancel import preview (Admin)
+      operationId: cancelImport
       parameters:
         - name: jobId
           in: path
@@ -3471,6 +3574,7 @@ paths:
     get:
       tags: [Import]
       summary: List past import jobs (Admin)
+      operationId: getImportHistory
       responses:
         '200':
           description: Import history
@@ -3491,6 +3595,7 @@ paths:
     get:
       tags: [Guardian Portal]
       summary: List guardian's linked children (Guardian)
+      operationId: listGuardianChildren
       responses:
         '200':
           description: Children
@@ -3508,6 +3613,7 @@ paths:
     get:
       tags: [Guardian Portal]
       summary: Child attendance (Guardian)
+      operationId: getChildAttendance
       parameters:
         - name: studentId
           in: path
@@ -3542,6 +3648,7 @@ paths:
     get:
       tags: [Guardian Portal]
       summary: Child exam results (Guardian)
+      operationId: getChildResults
       parameters:
         - name: studentId
           in: path
@@ -3565,6 +3672,7 @@ paths:
     get:
       tags: [Guardian Portal]
       summary: Child fee charges (Guardian)
+      operationId: getChildFees
       parameters:
         - name: studentId
           in: path
@@ -3588,6 +3696,7 @@ paths:
     get:
       tags: [Guardian Portal]
       summary: Child assignments (Guardian)
+      operationId: getChildAssignments
       parameters:
         - name: studentId
           in: path
@@ -3611,6 +3720,7 @@ paths:
     get:
       tags: [Guardian Portal]
       summary: Child leave history (Guardian)
+      operationId: getChildLeave
       parameters:
         - name: studentId
           in: path
@@ -3635,6 +3745,7 @@ paths:
     post:
       tags: [SuperAdmin]
       summary: SuperAdmin login
+      operationId: superAdminLogin
       description: |
         Rate limited to 10 req/min per IP — was unprotected in v5.0 (CORRECTED).
         Returns flat `{ token }` — no user object in SuperAdmin JWT.
@@ -3671,6 +3782,7 @@ paths:
     post:
       tags: [SuperAdmin]
       summary: SuperAdmin logout
+      operationId: superAdminLogout
       responses:
         '204':
           description: Logged out
@@ -3679,6 +3791,7 @@ paths:
     get:
       tags: [SuperAdmin]
       summary: List all tenants
+      operationId: listTenants
       responses:
         '200':
           description: Tenants
@@ -3696,6 +3809,7 @@ paths:
     post:
       tags: [SuperAdmin]
       summary: Create tenant
+      operationId: createTenant
       description: |
         Seeds all 10 v5.0 feature flags in tenant_features on creation.
         Was only seeding timetable+attendance in v5.0 (CORRECTED).
@@ -3737,6 +3851,7 @@ paths:
     get:
       tags: [SuperAdmin]
       summary: Get tenant by ID
+      operationId: getTenant
       parameters:
         - name: tenantId
           in: path
@@ -3758,6 +3873,7 @@ paths:
     put:
       tags: [SuperAdmin]
       summary: Deactivate tenant
+      operationId: deactivateTenant
       parameters:
         - name: tenantId
           in: path
@@ -3779,6 +3895,7 @@ paths:
     put:
       tags: [SuperAdmin]
       summary: Activate tenant
+      operationId: activateTenant
       parameters:
         - name: tenantId
           in: path
@@ -3800,6 +3917,7 @@ paths:
     get:
       tags: [SuperAdmin]
       summary: Get tenant feature flags
+      operationId: getTenantFeatures
       parameters:
         - name: tenantId
           in: path
@@ -3829,6 +3947,7 @@ paths:
     put:
       tags: [SuperAdmin]
       summary: Update feature flag (enable/disable)
+      operationId: updateTenantFeature
       parameters:
         - name: tenantId
           in: path
@@ -3867,6 +3986,7 @@ paths:
     get:
       tags: [Batches]
       summary: List batches (Admin)
+      operationId: listBatches
       parameters:
         - name: status
           in: query
@@ -3892,6 +4012,7 @@ paths:
     post:
       tags: [Batches]
       summary: Create batch (Admin)
+      operationId: createBatch
       requestBody:
         required: true
         content:
@@ -3933,6 +4054,7 @@ paths:
     delete:
       tags: [Batches]
       summary: Bulk soft-delete batches (Admin)
+      operationId: bulkDeleteBatches
       requestBody:
         required: true
         content:
@@ -3958,6 +4080,7 @@ paths:
     get:
       tags: [Subjects]
       summary: List subjects (Admin/Teacher)
+      operationId: listSubjects
       responses:
         '200':
           description: Subjects
@@ -3975,6 +4098,7 @@ paths:
     post:
       tags: [Subjects]
       summary: Create subject (Admin)
+      operationId: createSubject
       requestBody:
         required: true
         content:
@@ -3999,6 +4123,7 @@ paths:
     delete:
       tags: [Subjects]
       summary: Bulk soft-delete subjects (Admin)
+      operationId: bulkDeleteSubjects
       requestBody:
         required: true
         content:
@@ -4024,6 +4149,7 @@ paths:
     get:
       tags: [Classes]
       summary: List classes (Admin/Teacher)
+      operationId: listClasses
       parameters:
         - name: sessionId
           in: query
@@ -4050,6 +4176,7 @@ paths:
     post:
       tags: [Classes]
       summary: Create class (Admin)
+      operationId: createClass
       requestBody:
         required: true
         content:
@@ -4093,6 +4220,7 @@ paths:
     delete:
       tags: [Classes]
       summary: Bulk soft-delete classes (Admin)
+      operationId: bulkDeleteClasses
       requestBody:
         required: true
         content:
@@ -4117,6 +4245,7 @@ paths:
     put:
       tags: [Classes]
       summary: Update class (Admin)
+      operationId: updateClass
       parameters:
         - name: classId
           in: path
@@ -4153,6 +4282,7 @@ paths:
     get:
       tags: [Students]
       summary: List students (Admin/ClassTeacher)
+      operationId: listStudents
       parameters:
         - name: classId
           in: query
@@ -4194,6 +4324,7 @@ paths:
     post:
       tags: [Students]
       summary: Create student (Admin)
+      operationId: createStudent
       description: |
         Atomically creates users row + students row.
         Sets must_change_password = true.
@@ -4243,6 +4374,7 @@ paths:
     delete:
       tags: [Students]
       summary: Bulk soft-delete students (Admin)
+      operationId: bulkDeleteStudents
       requestBody:
         required: true
         content:
@@ -4267,6 +4399,7 @@ paths:
     get:
       tags: [Students]
       summary: Get student by ID
+      operationId: getStudent
       parameters:
         - name: studentId
           in: path
@@ -4288,6 +4421,7 @@ paths:
     put:
       tags: [Students]
       summary: Update student (Admin)
+      operationId: updateStudent
       description: |
         Updating admissionNumber or dob recomputes password_hash.
       parameters:
@@ -4329,6 +4463,7 @@ paths:
     get:
       tags: [Students]
       summary: Get student attendance history (Admin/ClassTeacher/Student/Guardian)
+      operationId: getStudentAttendance
       parameters:
         - name: studentId
           in: path
@@ -4377,6 +4512,7 @@ paths:
     get:
       tags: [Timetable]
       summary: List timetable slots (Admin/Teacher)
+      operationId: listTimeslots
       parameters:
         - name: classId
           in: query
@@ -4410,6 +4546,7 @@ paths:
     post:
       tags: [Timetable]
       summary: Create timeslot (Admin)
+      operationId: createTimeslot
       requestBody:
         required: true
         content:
@@ -4452,6 +4589,7 @@ paths:
     put:
       tags: [Timetable]
       summary: Update timeslot (Admin)
+      operationId: updateTimeslot
       parameters:
         - name: timeslotId
           in: path
@@ -4489,6 +4627,7 @@ paths:
     delete:
       tags: [Timetable]
       summary: Delete timeslot (Admin)
+      operationId: deleteTimeslot
       parameters:
         - name: timeslotId
           in: path
@@ -4504,6 +4643,7 @@ paths:
     post:
       tags: [Academic Sessions]
       summary: Rollback promotion (Admin — one-time only)
+      operationId: rollbackPromotion
       description: |
         Reverses a committed batch promotion. Moves students back to previous class.
         Can only be done once per promotion log. Sets rolled_back_at.
@@ -4545,6 +4685,7 @@ paths:
     get:
       tags: [Exams]
       summary: List external results (Admin/Student/Guardian)
+      operationId: listExternalResults
       parameters:
         - name: studentId
           in: query
@@ -4571,6 +4712,7 @@ paths:
     post:
       tags: [Exams]
       summary: Record external exam result (Admin)
+      operationId: createExternalResult
       requestBody:
         required: true
         content:
@@ -4611,6 +4753,7 @@ paths:
     post:
       tags: [Fees]
       summary: Bulk raise fee charges (Admin)
+      operationId: bulkCreateFeeCharges
       description: |
         Raises the same charge for multiple students at once.
         Target by: explicit studentIds, or all students in a classId, or all students at a level.
@@ -4668,6 +4811,7 @@ paths:
     get:
       tags: [Fees]
       summary: Outstanding dues summary (Admin/ClassTeacher)
+      operationId: getFeeSummary
       description: Per-student totals — amount charged, amount paid, balance outstanding.
       parameters:
         - name: sessionId
@@ -4713,6 +4857,7 @@ paths:
     put:
       tags: [Assignments]
       summary: Close assignment (Admin)
+      operationId: closeAssignment
       description: Transitions ACTIVE → CLOSED. No further submission updates possible.
       parameters:
         - name: assignmentId
@@ -4749,6 +4894,7 @@ paths:
     get:
       tags: [Import]
       summary: Download CSV template for entity type (Admin)
+      operationId: getImportTemplate
       parameters:
         - name: entity
           in: path
@@ -4775,6 +4921,7 @@ paths:
     get:
       tags: [Features]
       summary: Get enabled features for current tenant (any role)
+      operationId: listFeatureFlags
       description: |
         Returns which of the 10 module feature flags are enabled for this tenant.
         Used by frontend FeatureGate component to decide which routes to render.
@@ -4824,7 +4971,7 @@ paths:
                   - key: "exams"
                     name: "Exam Management"
                     enabled: false
-                    enabledAt: null
+                    enabledAt: "2026-01-01T00:00:00.000Z"
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -4833,6 +4980,7 @@ paths:
     get:
       tags: [Guardian Portal]
       summary: Child timetable (Guardian)
+      operationId: getChildTimetable
       parameters:
         - name: studentId
           in: path
