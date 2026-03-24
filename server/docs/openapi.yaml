@@ -1072,7 +1072,7 @@ paths:
                   roles: ["Admin"]
                   activeRole: "Admin"
                   mustChangePassword: false
-                  classTeacherOf: null
+                  classTeacherOf: null # should be string or null
                   studentId: null
         '401':
           description: Invalid credentials
@@ -3270,33 +3270,33 @@ paths:
                     body: "Ali's leave has been approved"
                     readAt: null
                     createdAt: "2026-03-19T08:00:00.000Z"
-                  total: 1
+                total: 1
 
   /notifications/{notificationId}/read:
-    put:
-      tags: [Notifications]
-      summary: Mark notification as read
-      parameters:
-        - name: notificationId
-          in: path
-          required: true
-          schema:
-            $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: Notification updated
+          description: Notifications
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Notification'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /notifications/read-all:
-    put:
-      tags: [Notifications]
-      summary: Mark all as read
-      description: |
+                type: object
+                required: [data, total]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+                  total:
+                    type: integer
+              example:
+                data:
+                  - id: "550e8400-e29b-41d4-a716-446655440000"
+                    type: "LEAVE_APPROVED"
+                    title: "Leave Approved"
+                    body: "Ali's leave has been approved"
+                    readAt: null
+                    createdAt: "2026-03-19T08:00:00.000Z"
+                total: 1
         Returns `{ updated: N }` — was `{ updatedCount }` in v5.0 (CORRECTED).
       responses:
         '200':
@@ -4825,6 +4825,7 @@ paths:
                     name: "Exam Management"
                     enabled: false
                     enabledAt: null
+
 
         '401':
           $ref: '#/components/responses/Unauthorized'
