@@ -147,10 +147,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install Playwright browsers
-        working-directory: apps/tenant-app
-        run: npx playwright install --with-deps chromium
-
       - name: Install server dependencies
         working-directory: server
         run: npm ci
@@ -216,3 +212,10 @@ jobs:
           name: playwright-report
           path: apps/tenant-app/playwright-report/
           retention-days: 7
+      - name: Install tenant-app dependencies
+        working-directory: apps/tenant-app
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: apps/tenant-app
+        run: npx playwright install --with-deps chromium
