@@ -203,7 +203,7 @@ jobs:
         run: npx playwright test
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:5173
-          TEST_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/school_e2e
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
@@ -212,10 +212,3 @@ jobs:
           name: playwright-report
           path: apps/tenant-app/playwright-report/
           retention-days: 7
-      - name: Install tenant-app dependencies
-        working-directory: apps/tenant-app
-        run: npm ci
-
-      - name: Install Playwright browsers
-        working-directory: apps/tenant-app
-        run: npx playwright install --with-deps chromium
