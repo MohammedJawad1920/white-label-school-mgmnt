@@ -1,4 +1,4 @@
-# CI Pipeline — per Freeze v6.1 §15
+# CI Pipeline
 #
 # Jobs:
 #   - server-unit: Server unit tests
@@ -40,7 +40,7 @@ jobs:
         run: npm ci
 
       - name: Run unit tests
-        run: npm run test:unit
+        run: npm test
 
   server-integration:
     name: Server Integration Tests
@@ -74,15 +74,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Apply all 39 migrations
+
+      - name: Apply all migrations
         run: npm run migrate
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/school_test
 
       - name: Run integration tests
         run: npm run test:integration
         env:
-          TEST_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/school_test
           JWT_SECRET: test-jwt-secret-for-ci
           BCRYPT_ROUNDS: "4"
 
@@ -148,6 +149,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install Playwright browsers
+        working-directory: apps/tenant-app
         run: npx playwright install --with-deps chromium
 
       - name: Install server dependencies
@@ -158,7 +160,7 @@ jobs:
         working-directory: server
         run: npm run migrate
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/school_e2e
 
       - name: Build server
         working-directory: server
@@ -168,7 +170,7 @@ jobs:
         working-directory: server
         run: node dist/server.js &
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/school_e2e
           NODE_ENV: test
           JWT_SECRET: e2e-jwt-secret
           BCRYPT_ROUNDS: "4"
